@@ -1,3 +1,16 @@
+# datafile extensions
+data_processing.log
+data_summary.csv
+*.log
+*/*.log
+*.csv
+*.xlsx
+*.ipynb
+*.html
+test_output.txt
+*.parquet
+*/*.parquet
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
