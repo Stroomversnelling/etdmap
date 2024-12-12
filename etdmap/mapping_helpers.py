@@ -1,6 +1,6 @@
 import logging
 import pandas as pd
-from data_model import model_column_order, model_column_type, cumulative_columns
+from etdmap.data_model import model_column_order, model_column_type, cumulative_columns
 
 def rearrange_model_columns(
     household_df: pd.DataFrame,

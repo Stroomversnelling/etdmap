@@ -1,8 +1,7 @@
 import os
-
 import pandas as pd
-from data_model import cumulative_columns
 from pandas import DataFrame, Series
+from etdmap.data_model import cumulative_columns
 
 
 def load_thresholds():
