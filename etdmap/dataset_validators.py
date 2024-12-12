@@ -1,6 +1,6 @@
 import pandas as pd
-from mapping_helpers import cumulative_columns
 from pandas import DataFrame
+from etdmap.data_model import cumulative_columns
 
 year_allowed_jitter = 18  # approx 5% of the year
 

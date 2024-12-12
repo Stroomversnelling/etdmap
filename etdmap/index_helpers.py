@@ -1,9 +1,8 @@
 import logging
 import os
-
 import pandas as pd
-from dataset_validators import dataset_flag_conditions
-from mapping_helpers import cumulative_columns
+from etdmap.data_model import cumulative_columns
+from etdmap.dataset_validators import dataset_flag_conditions
 
 mapped_folder_path = os.getenv('MAPPED_FOLDER_PATH')
 bsv_metadata_file = os.getenv('BSV_METADATA_FILE')
@@ -22,14 +21,12 @@ def read_metadata(
         return df
     else:
         logging.error(
-            f'Not all required columns in sheet "Data" in metadata file: {
-                metadata_file
-            }',
+            f'Not all required columns in sheet "Data" in metadata file: '
+            f'{metadata_file}',
         )
         raise Exception(
-            f'Not all required columns in sheet "Data" in metadata file: {
-                metadata_file
-            }',
+            f'Not all required columns in sheet "Data" in metadata file:'
+            f'{metadata_file}',
         )
 
 
@@ -169,9 +166,8 @@ def update_index(
                 )
             except Exception as e:
                 logging.error(
-                    f"Error validating with {flag} for household {
-                        household_code
-                    }: {e}",
+                    f"Error validating with {flag} for household "
+                    f"{household_code}: {e}",
                     exc_info=True,
                 )
                 index_df.loc[
