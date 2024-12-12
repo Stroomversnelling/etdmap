@@ -1,7 +1,7 @@
 import os
 
 import pandas as pd
-from mapping_helpers import cumulative_columns
+from data_model import cumulative_columns
 from pandas import DataFrame, Series
 
 

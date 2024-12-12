@@ -1,58 +1,6 @@
 import logging
-
 import pandas as pd
-
-model_column_order = [
-    'ReadingDate',
-    'ElektriciteitNetgebruikHoog',
-    'ElektriciteitNetgebruikLaag',
-    'ElektriciteitTerugleveringHoog',
-    'ElektriciteitTerugleveringLaag',
-    'ElektriciteitVermogen',
-    'Gasgebruik',
-    'ElektriciteitsgebruikWTW',
-    'ElektriciteitsgebruikWarmtepomp',
-    'ElektriciteitsgebruikBooster',
-    'ElektriciteitsgebruikBoilervat',
-    'ElektriciteitsgebruikRadiator',
-    'ElektriciteitsgebruikHuishoudelijk',
-    'TemperatuurWarmTapwater',
-    'TemperatuurWoonkamer',
-    'TemperatuurSetpointWoonkamer',
-    'WarmteproductieWarmtepomp',
-    'WatergebruikWarmTapwater',
-    'Zon-opwekMomentaan',
-    'Zon-opwekTotaal',
-    'CO2',
-    'Luchtvochtigheid',
-    'Ventilatiedebiet',
-]
-model_column_type = {
-    'ReadingDate': 'datetime64[ns]',  # pandas datetime column
-    'ElektriciteitNetgebruikHoog': 'float64',
-    'ElektriciteitNetgebruikLaag': 'float64',
-    'ElektriciteitTerugleveringHoog': 'float64',
-    'ElektriciteitTerugleveringLaag': 'float64',
-    'ElektriciteitVermogen': 'float64',
-    'Gasgebruik': 'float64',
-    'ElektriciteitsgebruikWTW': 'float64',
-    'ElektriciteitsgebruikWarmtepomp': 'float64',
-    'ElektriciteitsgebruikBooster': 'float64',
-    'ElektriciteitsgebruikBoilervat': 'float64',
-    'ElektriciteitsgebruikRadiator': 'float64',
-    # 'ElektriciteitsgebruikHuishoudelijk': 'float64',
-    'TemperatuurWarmTapwater': 'float64',
-    'TemperatuurWoonkamer': 'float64',
-    'TemperatuurSetpointWoonkamer': 'float64',
-    'WarmteproductieWarmtepomp': 'float64',
-    'WatergebruikWarmTapwater': 'float64',
-    'Zon-opwekMomentaan': 'float64',
-    'Zon-opwekTotaal': 'float64',
-    'CO2': 'float64',
-    'Luchtvochtigheid': 'float64',
-    'Ventilatiedebiet': 'float64',
-}
-
+from data_model import model_column_order, model_column_type, cumulative_columns
 
 def rearrange_model_columns(
     household_df: pd.DataFrame,
@@ -91,25 +39,6 @@ def rearrange_model_columns(
             + [col for col in household_df.columns if col not in model_column_order]
         ]
     return household_df
-
-
-cumulative_columns = [
-    'ElektriciteitNetgebruikHoog',
-    'ElektriciteitNetgebruikLaag',
-    'ElektriciteitTerugleveringHoog',
-    'ElektriciteitTerugleveringLaag',
-    'Gasgebruik',
-    'ElektriciteitsgebruikWTW',
-    'ElektriciteitsgebruikWarmtepomp',
-    'ElektriciteitsgebruikBooster',
-    'ElektriciteitsgebruikBoilervat',
-    'ElektriciteitsgebruikRadiator',
-    # 'ElektriciteitsgebruikHuishoudelijk',
-    'WarmteproductieWarmtepomp',
-    'WatergebruikWarmTapwater',
-    'Zon-opwekTotaal',
-]
-
 
 # Check for any gaps greater than one hour
 # Check if at least 90% of the values are not NA

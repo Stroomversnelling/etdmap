@@ -3,7 +3,7 @@ import os
 
 import pandas as pd
 from dataset_validators import dataset_flag_conditions
-from mapping_helpers import cumulative_columns
+from data_model import cumulative_columns
 
 mapped_folder_path = os.getenv('MAPPED_FOLDER_PATH')
 bsv_metadata_file = os.getenv('BSV_METADATA_FILE')
