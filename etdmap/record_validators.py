@@ -5,7 +5,7 @@ from etdmap.data_model import cumulative_columns
 
 
 def load_thresholds():
-    thresholds_file = r'.\data\Thresholds.csv'
+    thresholds_file = r'.\data\thresholds.csv'
     df = pd.read_csv(thresholds_file)
     return df
 
