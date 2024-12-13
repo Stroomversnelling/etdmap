@@ -1,12 +1,14 @@
 import logging
 import os
+
 import pandas as pd
+
+import etdmap
 from etdmap.data_model import cumulative_columns
 from etdmap.dataset_validators import dataset_flag_conditions
 
-mapped_folder_path = os.getenv('MAPPED_FOLDER_PATH')
-bsv_metadata_file = os.getenv('BSV_METADATA_FILE')
-
+mapped_folder_path = etdmap.options.mapped_folder_path
+bsv_metadata_file = etdmap.options.bsv_metadata_file
 
 def read_metadata(
     metadata_file: str,

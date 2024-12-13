@@ -1,1 +1,3 @@
-from etdmap._config import options  # noqa: F401
+from etdmap._config import options
+
+__all__ = ["options"]
