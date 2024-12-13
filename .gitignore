@@ -12,6 +12,9 @@ test_output.txt
 *.parquet
 */*.parquet
 
+# gitignore exceptions to above extensions
+!.\data\thresholds.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
