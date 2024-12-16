@@ -1,11 +1,11 @@
 import pandas as pd
 from pandas import DataFrame, Series
-
+from importlib.resources import files
 from etdmap.data_model import cumulative_columns
 
 
 def load_thresholds():
-    thresholds_file = r'.\data\thresholds.csv'
+    thresholds_file = files("etdmap.data").joinpath("thresholds.csv")
     df = pd.read_csv(thresholds_file)
     return df
 

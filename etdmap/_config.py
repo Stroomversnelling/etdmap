@@ -38,20 +38,32 @@ class Options:
 
 # Define allowed Options
 mapped_folder_path = Option(
-    key="mapping_folder_path",
+    key="mapped_folder_path",
     default_value=None,
     doc=(
-        "The folder containing the raw data files"
+        "The folder containing the mapped data files"
     ),
     validator=None,
     callback=None,
 )
 
+aggregate_folder_path = Option(
+    key="aggregate_folder_path",
+    default_value=None,
+    doc=(
+        "The folder containing the data files derived from mapped data file, "
+        "including those aggregated and resampled."
+    ),
+    validator=None,
+    callback=None,
+)
+
+
 bsv_metadata_file = Option(
     key="bsv_metadata_file",
     default_value=None,
     doc=(
-        "BSV_METADATA_FILE is the file where metadata about each household is kept and managed to consistently map data source provider households to BSV households"
+        "The file where metadata about each household is kept and managed to consistently map data source provider households to BSV households"
 
     ),
     validator=None,
@@ -62,6 +74,7 @@ bsv_metadata_file = Option(
 options = Options(
     {
         "mapped_folder_path": mapped_folder_path,
+        "aggregate_folder_path": aggregate_folder_path,
         "bsv_metadata_file": bsv_metadata_file
     }
 )
@@ -73,7 +86,7 @@ options = Options(
 
 # class Options:
 #     def __init__(self):
-#         self.mapping_folder = None
+#         self.mapped_folder = None
 #         self.aggregate_folder = None
 
 # options = Options()
