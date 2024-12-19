@@ -12,6 +12,9 @@ test_output.txt
 *.parquet
 */*.parquet
 
+# All quarto directories for html exports
+*_files
+
 # gitignore exceptions to above extensions
 !.\data\thresholds.csv
 

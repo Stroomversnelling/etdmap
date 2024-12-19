@@ -6,6 +6,17 @@ year_allowed_jitter = 18  # approx 5% of the year
 
 
 def validate_columns(df: DataFrame, columns: list, condition_func) -> bool:
+    """
+    Validate a dataset based on specified columns in a DataFrame based on a given condition function.
+
+    Parameters:
+    df (DataFrame): The input DataFrame to be validated.
+    columns (list): A list of column names to be checked for validity.
+    condition_func (function): A function that takes a DataFrame as an argument and returns a boolean Series indicating which rows meet the validation criteria.
+
+    Returns:
+    bool: True if all valid rows meet the specified condition, pd.NA if no valid rows are found or if any of the specified columns do not exist in the DataFrame.
+    """
     if all(col in df.columns for col in columns):
         valid_mask = df[columns].notna().all(axis=1)
         if valid_mask.any():
