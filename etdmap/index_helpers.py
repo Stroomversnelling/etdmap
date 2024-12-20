@@ -16,6 +16,7 @@ bsv_metadata_columns = [
     'Notities',
     'Dataleverancier',
 ]
+
 def get_bsv_metadata():
     """
     Reads and returns metadata from the BSV metadata file, ensuring that all required columns are present.
@@ -54,7 +55,13 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
     """
     if required_columns is None:
         required_columns = ['HuisId']
-    xl = pd.ExcelFile(metadata_file)
+    if metadata_file is not None:
+        xl = pd.ExcelFile(metadata_file)
+    else:
+        raise ValueError(f'invalid file path: {metadata_file} '
+                         "perhaps you forgot to set the option. You can "
+                         "do this with etdmap.options.bsv_metadata_file = 'your/path"
+                         )
     df = xl.parse(sheet_name="Data")
 
     if all(col in df.columns for col in required_columns):
@@ -66,7 +73,7 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
             f'Not all required columns in sheet "Data" in metadata file: '
             f"{metadata_file}",
         )
-        raise Exception(
+        raise ValueError(
             f'Not all required columns in sheet "Data" in metadata file:'
             f"{metadata_file}",
         )
