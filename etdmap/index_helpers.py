@@ -55,20 +55,20 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
     if required_columns is None:
         required_columns = ['HuisId']
     xl = pd.ExcelFile(metadata_file)
-    df = xl.parse(sheet_name='Data')
+    df = xl.parse(sheet_name="Data")
 
     if all(col in df.columns for col in required_columns):
         # Ensure HuisId is a string
-        df['HuisId'] = df['HuisId'].astype(str)
+        df["HuisId"] = df["HuisId"].astype(str)
         return df
     else:
         logging.error(
             f'Not all required columns in sheet "Data" in metadata file: '
-            f'{metadata_file}',
+            f"{metadata_file}",
         )
         raise Exception(
             f'Not all required columns in sheet "Data" in metadata file:'
-            f'{metadata_file}',
+            f"{metadata_file}",
         )
 
 def read_index() -> tuple[pd.DataFrame, str]:
@@ -92,7 +92,7 @@ def read_index() -> tuple[pd.DataFrame, str]:
         )
 
     # Ensure HuisId is a string
-    index_df['HuisId'] = index_df['HuisId'].astype(str)
+    index_df["HuisId"] = index_df["HuisId"].astype(str)
 
     return index_df, index_path
 
@@ -157,10 +157,10 @@ def update_index(
     index_path = os.path.join(etdmap.options.mapped_folder_path, 'index.parquet')
 
     # Ensure HuisId is a string in new_entry
-    new_entry['HuisId'] = str(new_entry['HuisId'])
-    new_entry['Dataleverancier'] = data_provider
+    new_entry["HuisId"] = str(new_entry["HuisId"])
+    new_entry["Dataleverancier"] = data_provider
 
-    if new_entry['HuisId'] in index_df['HuisId'].values:
+    if new_entry["HuisId"] in index_df["HuisId"].values:
         index_df.loc[
             index_df['HuisId'] == new_entry['HuisId'],
             ['HuisIdBSV', 'Dataleverancier'],
@@ -182,7 +182,7 @@ def update_index(
             if flag not in index_df.columns:
                 index_df[flag] = pd.Series(
                     pd.NA,
-                    dtype='boolean',
+                    dtype="boolean",
                     index=index_df.index,
                 )
             try:
@@ -204,11 +204,11 @@ def update_index(
     # Ensure all flag columns are of BooleanDtype
     for flag in dataset_flag_conditions.keys():
         if flag in index_df.columns:
-            index_df[flag] = index_df[flag].astype('boolean')
+            index_df[flag] = index_df[flag].astype("boolean")
 
     index_df = update_meta_validators(index_df)
 
-    index_df.to_parquet(index_path, engine='pyarrow')
+    index_df.to_parquet(index_path, engine="pyarrow")
 
     return index_df
 
@@ -234,11 +234,11 @@ def update_meta_validators(index_df):
     cols = ['validate_' + col + 'Diff' for col in cumulative_columns]
 
     if all(col in index_df.columns for col in cols):
-        index_df['validate_cumulative_diff_ok'] = index_df[cols].all(axis=1)
+        index_df["validate_cumulative_diff_ok"] = index_df[cols].all(axis=1)
     else:
-        index_df['validate_cumulative_diff_ok'] = pd.Series(
+        index_df["validate_cumulative_diff_ok"] = pd.Series(
             pd.NA,
-            dtype='boolean',
+            dtype="boolean",
             index=index_df.index,
         )
 
@@ -267,14 +267,14 @@ def update_meenemen() -> pd.DataFrame:
 
     index_df, index_path = read_index()
 
-    index_df.drop(columns=['Meenemen'], inplace=True)
+    index_df.drop(columns=["Meenemen"], inplace=True)
 
     bsv_metadata_df = get_bsv_metadata()
 
-    bsv_meenemen = bsv_metadata_df[['HuisIdBSV', 'Meenemen']]
-    index_df = index_df.merge(bsv_meenemen, on=['HuisIdBSV'])
+    bsv_meenemen = bsv_metadata_df[["HuisIdBSV", "Meenemen"]]
+    index_df = index_df.merge(bsv_meenemen, on=["HuisIdBSV"])
 
-    index_df.to_parquet(index_path, engine='pyarrow')
+    index_df.to_parquet(index_path, engine="pyarrow")
 
     return index_df
 
@@ -298,16 +298,16 @@ def add_metadata_to_index(
     pd.DataFrame: The updated index DataFrame.
     """
 
-    if 'level_0' in index_df.columns:
-        index_df.drop(columns=['level_0'], inplace=True)
+    if "level_0" in index_df.columns:
+        index_df.drop(columns=["level_0"], inplace=True)
 
     if data_leverancier is None:
         raise Exception(
-            'Need to provide a supplier explicitly (data_leverancier is None).',  # noqa #E501
+            "Need to provide a supplier explicitly (data_leverancier is None).",  # E501
         )
 
     def metadata_format(df: pd.DataFrame):
-        df['HuisId'] = df['HuisId'].astype(str)
+        df["HuisId"] = df["HuisId"].astype(str)
         return df
 
     index_path = os.path.join(etdmap.options.mapped_folder_path, 'index.parquet')
@@ -317,7 +317,7 @@ def add_metadata_to_index(
     bsv_metadata_df = get_bsv_metadata()
 
     bsv_metadata_filtered_df = metadata_format(
-        bsv_metadata_df[bsv_metadata_df['Dataleverancier'] == data_leverancier].copy(),
+        bsv_metadata_df[bsv_metadata_df["Dataleverancier"] == data_leverancier].copy(),
     )
 
     # Shared columns
@@ -328,15 +328,15 @@ def add_metadata_to_index(
     # bsv_metadata_df and add a warning if not
     index_df.reset_index(inplace=True)
 
-    index_df['source'] = 'index_df'
-    metadata_df['source'] = 'metadata_df'
-    bsv_metadata_filtered_df['source'] = 'bsv_metadata_df'
+    index_df["source"] = "index_df"
+    metadata_df["source"] = "metadata_df"
+    bsv_metadata_filtered_df["source"] = "bsv_metadata_df"
 
-    shared_columns_source = shared_columns.tolist() + ['source']
+    shared_columns_source = [*shared_columns.tolist(), 'source']
 
     concatenated_df = pd.concat(
         [
-            index_df[index_df['Dataleverancier'] == data_leverancier][
+            index_df[index_df["Dataleverancier"] == data_leverancier][
                 shared_columns_source
             ],
             metadata_df[shared_columns_source],
@@ -346,27 +346,27 @@ def add_metadata_to_index(
     grouped_df = (
         concatenated_df.groupby(shared_columns.tolist())
         .size()
-        .reset_index(name='count')
+        .reset_index(name="count")
     )
-    inconsistent_combinations = grouped_df[grouped_df['count'] != 3]
+    inconsistent_combinations = grouped_df[grouped_df["count"] != 3]
 
     if not inconsistent_combinations.empty:
         logging.warning(
-            'The following combinations of shared column values are '
-            'inconsistent across the datasets:',
+            "The following combinations of shared column values are "
+            "inconsistent across the datasets:",
         )
         logging.warning(inconsistent_combinations)
 
-    index_df.drop(columns=['source'], inplace=True)
-    metadata_df.drop(columns=['source'], inplace=True)
-    bsv_metadata_filtered_df.drop(columns=['source'], inplace=True)
+    index_df.drop(columns=["source"], inplace=True)
+    metadata_df.drop(columns=["source"], inplace=True)
+    bsv_metadata_filtered_df.drop(columns=["source"], inplace=True)
 
     # Make sure data supplier is defined
-    if 'Dataleverancier' not in metadata_df.columns:
+    if "Dataleverancier" not in metadata_df.columns:
         if data_leverancier is None:
-            raise Exception('Data source not identified. Cannot add metadata.')
+            raise Exception("Data source not identified. Cannot add metadata.")
         else:
-            metadata_df['Dataleverancier'] = data_leverancier
+            metadata_df["Dataleverancier"] = data_leverancier
 
     # Define protected columns and drop them from provider metadata
     protected_columns = ['HuisIdBSV', 'ProjectIdBSV']
@@ -379,17 +379,17 @@ def add_metadata_to_index(
     metadata_df = metadata_df.merge(
         bsv_metadata_filtered_df[
             [
-                'HuisId',
-                'ProjectId',
-                'Dataleverancier',
-                'HuisIdBSV',
-                'ProjectIdBSV',
-                'Meenemen',
-                'Notities',
+                "HuisId",
+                "ProjectId",
+                "Dataleverancier",
+                "HuisIdBSV",
+                "ProjectIdBSV",
+                "Meenemen",
+                "Notities",
             ]
         ],
-        on=['HuisId', 'ProjectId', 'Dataleverancier'],
-        how='left',
+        on=["HuisId", "ProjectId", "Dataleverancier"],
+        how="left",
     )
 
     # Add new columns with pd.NA if they do not already exist in index_df
@@ -399,11 +399,11 @@ def add_metadata_to_index(
 
     # Update existing records
     index_df.set_index(
-        ['HuisId', 'ProjectId', 'Dataleverancier'],
+        ["HuisId", "ProjectId", "Dataleverancier"],
         inplace=True,
     )
     metadata_df.set_index(
-        ['HuisId', 'ProjectId', 'Dataleverancier'],
+        ["HuisId", "ProjectId", "Dataleverancier"],
         inplace=True,
     )
 
@@ -411,7 +411,7 @@ def add_metadata_to_index(
     index_df.reset_index(inplace=True)
 
     # Save the updated index to the parquet file
-    index_df.to_parquet(index_path, engine='pyarrow')
+    index_df.to_parquet(index_path, engine="pyarrow")
 
     return index_df
-    return index_df
+

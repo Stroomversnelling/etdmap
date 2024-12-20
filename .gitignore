@@ -11,12 +11,14 @@ data_summary.csv
 test_output.txt
 *.parquet
 */*.parquet
+*.yaml
 
 # All quarto directories for html exports
 *_files
 
 # gitignore exceptions to above extensions
 !.\data\thresholds.csv
+!.\config_test_template.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
