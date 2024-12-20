@@ -8,10 +8,10 @@ from etdmap.data_model import cumulative_columns
 from etdmap.dataset_validators import dataset_flag_conditions
 
 bsv_metadata_columns = [
-    'HuisId',
+    'HuisIdLeverancier',
     'HuisIdBSV',
     'Meenemen',
-    'ProjectId',
+    'ProjectIdLeverancier',
     'ProjectIdBSV',
     'Notities',
     'Dataleverancier',
@@ -44,7 +44,7 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
         metadata_file (str): The path to the Excel file containing the metadata for a
         data source.
         required_columns (list, optional): A list of column names that must be present in
-            the metadata. Defaults to ['HuisId'].
+            the metadata. Defaults to ['HuisIdLeverancier'].
 
     Returns:
         pd.DataFrame: A DataFrame containing the metadata from the specified sheet.
@@ -53,13 +53,13 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
         Exception: If not all required columns are found in the metadata file.
     """
     if required_columns is None:
-        required_columns = ['HuisId']
+        required_columns = ['HuisIdLeverancier']
     xl = pd.ExcelFile(metadata_file)
     df = xl.parse(sheet_name="Data")
 
     if all(col in df.columns for col in required_columns):
-        # Ensure HuisId is a string
-        df["HuisId"] = df["HuisId"].astype(str)
+        # Ensure HuisIdLeverancier is a string
+        df["HuisIdLeverancier"] = df["HuisIdLeverancier"].astype(str)
         return df
     else:
         logging.error(
@@ -85,14 +85,14 @@ def read_index() -> tuple[pd.DataFrame, str]:
     else:
         index_df = pd.DataFrame(
             columns=[
-                'HuisId',
+                'HuisIdLeverancier',
                 'HuisIdBSV',
                 'Dataleverancier',
             ],
         )
 
-    # Ensure HuisId is a string
-    index_df["HuisId"] = index_df["HuisId"].astype(str)
+    # Ensure HuisIdLeverancier is a string
+    index_df["HuisIdLeverancier"] = index_df["HuisIdLeverancier"].astype(str)
 
     return index_df, index_path
 
@@ -118,7 +118,7 @@ def get_household_id_pairs(
     """
     existing_ids = (
         index_df[index_df['Dataleverancier'] == data_provider]
-        .set_index('HuisId')
+        .set_index('HuisIdLeverancier')
         .to_dict()['HuisIdBSV']
     )
     data_files = list_files_func(data_folder_path)
@@ -156,13 +156,13 @@ def update_index(
 
     index_path = os.path.join(etdmap.options.mapped_folder_path, 'index.parquet')
 
-    # Ensure HuisId is a string in new_entry
-    new_entry["HuisId"] = str(new_entry["HuisId"])
+    # Ensure HuisIdLeverancier is a string in new_entry
+    new_entry["HuisIdLeverancier"] = str(new_entry["HuisIdLeverancier"])
     new_entry["Dataleverancier"] = data_provider
 
-    if new_entry["HuisId"] in index_df["HuisId"].values:
+    if new_entry["HuisIdLeverancier"] in index_df["HuisIdLeverancier"].values:
         index_df.loc[
-            index_df['HuisId'] == new_entry['HuisId'],
+            index_df['HuisIdLeverancier'] == new_entry['HuisIdLeverancier'],
             ['HuisIdBSV', 'Dataleverancier'],
         ] = (new_entry['HuisIdBSV'], data_provider)
     else:
@@ -284,7 +284,7 @@ def add_metadata_to_index(
     data_leverancier=None,
 ) -> pd.DataFrame:
     """
-    Adds metadata columns to the index matching on the HuisId column.
+    Adds metadata columns to the index matching on the HuisIdLeverancier column.
 
     Args:
     index_df (pd.DataFrame):
@@ -307,7 +307,7 @@ def add_metadata_to_index(
         )
 
     def metadata_format(df: pd.DataFrame):
-        df["HuisId"] = df["HuisId"].astype(str)
+        df["HuisIdLeverancier"] = df["HuisIdLeverancier"].astype(str)
         return df
 
     index_path = os.path.join(etdmap.options.mapped_folder_path, 'index.parquet')
@@ -379,8 +379,8 @@ def add_metadata_to_index(
     metadata_df = metadata_df.merge(
         bsv_metadata_filtered_df[
             [
-                "HuisId",
-                "ProjectId",
+                "HuisIdLeverancier",
+                "ProjectIdLeverancier",
                 "Dataleverancier",
                 "HuisIdBSV",
                 "ProjectIdBSV",
@@ -388,7 +388,7 @@ def add_metadata_to_index(
                 "Notities",
             ]
         ],
-        on=["HuisId", "ProjectId", "Dataleverancier"],
+        on=["HuisIdLeverancier", "ProjectIdLeverancier", "Dataleverancier"],
         how="left",
     )
 
@@ -399,11 +399,11 @@ def add_metadata_to_index(
 
     # Update existing records
     index_df.set_index(
-        ["HuisId", "ProjectId", "Dataleverancier"],
+        ["HuisIdLeverancier", "ProjectIdLeverancier", "Dataleverancier"],
         inplace=True,
     )
     metadata_df.set_index(
-        ["HuisId", "ProjectId", "Dataleverancier"],
+        ["HuisIdLeverancier", "ProjectIdLeverancier", "Dataleverancier"],
         inplace=True,
     )
 

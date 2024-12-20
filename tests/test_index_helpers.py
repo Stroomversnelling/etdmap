@@ -11,8 +11,8 @@ def test_read_metadata(tmp_path):
     # Test the function with the valid file fixture
     result = read_metadata(valid_metadata_file)
     assert isinstance(result, pd.DataFrame)
-    assert list(result.columns) == ["HuisId", "OtherColumn"]
-    assert result["HuisId"].dtype == object  # Ensure HuisId is string type
+    assert list(result.columns) == ["HuisIdLeverancier", "OtherColumn"]
+    assert result["HuisIdLeverancier"].dtype == object  # Ensure HuisIdLeverancier is string type
 
     # Test the function with an invalid file
     with pytest.raises(Exception) as excinfo:

@@ -14,7 +14,7 @@ The dataset includes two primary types of variables:
 
 | **Category**     | **Variable Name**             | **Type**   | **Description**                                              |  
 |-------------------|-------------------------------|------------|--------------------------------------------------------------|  
-| **Metadata**      | `ProjectId`                  | String     | Unique identifier for the project assigned by the data provider. |  
+| **Metadata**      | `ProjectIdLeverancier`       | String     | Unique identifier for the project assigned by the data provider. |  
 |                   | `Bouwjaar`                   | Integer    | Construction year of the house.                              |  
 |                   | `WarmteopwekkerCategorie`    | String     | Type of heating system (e.g., hybrid heat pump).             |  
 |                   | `Oppervlakte`                | Integer    | Surface area in square meters.                              |  

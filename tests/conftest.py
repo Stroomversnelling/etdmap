@@ -7,7 +7,7 @@ def valid_metadata_file(tmp_path):
     # Create a valid Excel file with the required columns
     metadata_file = tmp_path / "metadata.xlsx"
     data = {
-        "HuisId": [1, 2, 3],
+        "HuisIdLeverancier": [1, 2, 3],
         "OtherColumn": ["A", "B", "C"],
     }
     df = pd.DataFrame(data)
