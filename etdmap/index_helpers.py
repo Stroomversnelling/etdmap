@@ -7,14 +7,53 @@ import etdmap
 from etdmap.data_model import cumulative_columns
 from etdmap.dataset_validators import dataset_flag_conditions
 
-mapped_folder_path = etdmap.options.mapped_folder_path
-bsv_metadata_file = etdmap.options.bsv_metadata_file
+bsv_metadata_columns = [
+    'HuisId',
+    'HuisIdBSV',
+    'Meenemen',
+    'ProjectId',
+    'ProjectIdBSV',
+    'Notities',
+    'Dataleverancier',
+]
+def get_bsv_metadata():
+    """
+    Reads and returns metadata from the BSV metadata file, ensuring that all required columns are present.
 
+    Returns:
+        DataFrame: A pandas DataFrame containing the BSV metadata with the specified columns.
 
-def read_metadata(
-    metadata_file: str,
-    required_columns=["HuisId"],
-) -> pd.DataFrame:
+    Raises:
+        ValueError: If any of the required columns are missing in the metadata file.
+
+    Note:
+        The function relies on the `read_metadata` utility to read the file and check for required columns.
+        The path to the BSV metadata file is obtained from `etdmap.options.bsv_metadata_file`.
+        The required columns are defined in the `bsv_metadata_columns` list.
+    """
+    return read_metadata(
+        etdmap.options.bsv_metadata_file,
+        required_columns=bsv_metadata_columns,
+    )
+
+def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
+    """
+    Read metadata from an Excel file and check for the presence of required columns.
+
+    Args:
+        metadata_file (str): The path to the Excel file containing the metadata for a
+        data source.
+        required_columns (list, optional): A list of column names that must be present in
+            the metadata. Defaults to ['HuisId'].
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the metadata from the specified sheet.
+
+    Raises:
+        Exception: If not all required columns are found in the metadata file.
+    """
+    if required_columns is None:
+        required_columns = ['HuisId']
     xl = pd.ExcelFile(metadata_file)
     df = xl.parse(sheet_name="Data")
 
@@ -32,31 +71,6 @@ def read_metadata(
             f"{metadata_file}",
         )
 
-
-bsv_metadata_columns = [
-    "HuisId",
-    "HuisIdBSV",
-    "Meenemen",
-    "ProjectId",
-    "ProjectIdBSV",
-    "Notities",
-    "Dataleverancier",
-]
-
-if bsv_metadata_file is not None:
-    bsv_metadata_df = read_metadata(
-        bsv_metadata_file,
-        required_columns=bsv_metadata_columns,
-    )
-else:
-    raise ValueError(
-        f"Invalid file path {bsv_metadata_file}: "
-        "perhaps you forgot to set it as an option. "
-        "You can do this using etdmap.options.bsv_metadata_file"
-        "='your/path/to/file",
-    )
-
-
 def read_index() -> tuple[pd.DataFrame, str]:
     """
     Reads the index parquet file from the specified folder path.
@@ -65,7 +79,7 @@ def read_index() -> tuple[pd.DataFrame, str]:
     tuple: A tuple containing the DataFrame of the index and the path to the
     index file.
     """
-    index_path = os.path.join(mapped_folder_path, "index.parquet")
+    index_path = os.path.join(etdmap.options.mapped_folder_path, 'index.parquet')
     if os.path.exists(index_path):
         index_df = pd.read_parquet(index_path)
     else:
@@ -140,7 +154,7 @@ def update_index(
     pd.DataFrame: The updated index DataFrame.
     """
 
-    index_path = os.path.join(mapped_folder_path, "index.parquet")
+    index_path = os.path.join(etdmap.options.mapped_folder_path, 'index.parquet')
 
     # Ensure HuisId is a string in new_entry
     new_entry["HuisId"] = str(new_entry["HuisId"])
@@ -158,7 +172,7 @@ def update_index(
     # Recalculate or add flag columns
     household_code = new_entry["HuisCode"]
     dataset_file = os.path.join(
-        mapped_folder_path,
+        etdmap.options.mapped_folder_path,
         f"household_{household_code}_table.parquet",
     )
     if os.path.exists(dataset_file):
@@ -200,7 +214,24 @@ def update_index(
 
 
 def update_meta_validators(index_df):
-    cols = ["validate_" + col + "Diff" for col in cumulative_columns]
+    """
+    Updates the index DataFrame with a new column 'validate_cumulative_diff_ok' that indicates whether
+    all cumulative difference columns in the DataFrame are valid.
+
+    Parameters:
+    index_df (pandas.DataFrame): The input DataFrame containing cumulative data and validation columns.
+
+    Returns:
+    pandas.DataFrame: The updated DataFrame with an additional column 'validate_cumulative_diff_ok'.
+
+    Notes:
+    - The function constructs a list of column names based on the global variable `cumulative_columns`.
+    - It checks if all these constructed column names exist in the input DataFrame.
+    - If they do, it creates a new boolean column 'validate_cumulative_diff_ok' where each entry is True
+      if all corresponding row-wise values in the cumulative difference columns are True (indicating validity).
+    - If any of the expected columns are missing, it fills the 'validate_cumulative_diff_ok' column with pd.NA.
+    """
+    cols = ['validate_' + col + 'Diff' for col in cumulative_columns]
 
     if all(col in index_df.columns for col in cols):
         index_df["validate_cumulative_diff_ok"] = index_df[cols].all(axis=1)
@@ -213,8 +244,23 @@ def update_meta_validators(index_df):
 
     return index_df
 
-
 def update_meenemen() -> pd.DataFrame:
+    """
+    Updates the index DataFrame to include information about which households should be included in the "Meenemen" column based on BSV metadata.
+
+    This function performs the following steps:
+    1. Logs an informational message indicating the start of the update process.
+    2. Reads the current index DataFrame and its file path using the `read_index` function.
+    3. Removes any existing 'Meenemen' column from the index DataFrame.
+    4. Retrieves the BSV metadata DataFrame using the `get_bsv_metadata` function.
+    5. Extracts the 'HuisIdBSV' and 'Meenemen' columns from the BSV metadata DataFrame.
+    6. Merges the extracted BSV 'Meenemen' data with the index DataFrame on the 'HuisIdBSV' column.
+    7. Saves the updated index DataFrame back to its original file path in Parquet format using the PyArrow engine.
+    8. Returns the updated index DataFrame.
+
+    Returns:
+        pd.DataFrame: The updated index DataFrame with the new "Meenemen" information included.
+    """
     logging.info(
         'Updating index with which households to include in column "Meenemen"',
     )
@@ -223,7 +269,7 @@ def update_meenemen() -> pd.DataFrame:
 
     index_df.drop(columns=["Meenemen"], inplace=True)
 
-    global bsv_metadata_df
+    bsv_metadata_df = get_bsv_metadata()
 
     bsv_meenemen = bsv_metadata_df[["HuisIdBSV", "Meenemen"]]
     index_df = index_df.merge(bsv_meenemen, on=["HuisIdBSV"])
@@ -231,7 +277,6 @@ def update_meenemen() -> pd.DataFrame:
     index_df.to_parquet(index_path, engine="pyarrow")
 
     return index_df
-
 
 def add_metadata_to_index(
     index_df: pd.DataFrame,
@@ -265,12 +310,12 @@ def add_metadata_to_index(
         df["HuisId"] = df["HuisId"].astype(str)
         return df
 
-    global mapped_folder_path
-    index_path = os.path.join(mapped_folder_path, "index.parquet")
+    index_path = os.path.join(etdmap.options.mapped_folder_path, 'index.parquet')
 
     metadata_df = metadata_format(metadata_df)
 
-    global bsv_metadata_df
+    bsv_metadata_df = get_bsv_metadata()
+
     bsv_metadata_filtered_df = metadata_format(
         bsv_metadata_df[bsv_metadata_df["Dataleverancier"] == data_leverancier].copy(),
     )
@@ -287,7 +332,7 @@ def add_metadata_to_index(
     metadata_df["source"] = "metadata_df"
     bsv_metadata_filtered_df["source"] = "bsv_metadata_df"
 
-    shared_columns_source = shared_columns.tolist() + ["source"]
+    shared_columns_source = [*shared_columns.tolist(), 'source']
 
     concatenated_df = pd.concat(
         [
@@ -369,3 +414,4 @@ def add_metadata_to_index(
     index_df.to_parquet(index_path, engine="pyarrow")
 
     return index_df
+
