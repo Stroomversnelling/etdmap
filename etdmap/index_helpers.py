@@ -86,7 +86,7 @@ def read_index() -> tuple[pd.DataFrame, str]:
         index_df = pd.DataFrame(
             columns=[
                 'HuisId',
-                'HuisCode',
+                'HuisIdBSV',
                 'Dataleverancier',
             ],
         )
@@ -104,7 +104,7 @@ def get_household_id_pairs(
     list_files_func: callable,
 ) -> list:
     """
-    Generates pairs of HuisCode and filenames for new and existing entries.
+    Generates pairs of HuisIdBSV and filenames for new and existing entries.
 
     Args:
     index_df (pd.DataFrame): The index DataFrame.
@@ -114,17 +114,17 @@ def get_household_id_pairs(
     files in the data folder.
 
     Returns:
-    list: A list of tuples containing HuisCode and filenames.
+    list: A list of tuples containing HuisIdBSV and filenames.
     """
     existing_ids = (
         index_df[index_df['Dataleverancier'] == data_provider]
         .set_index('HuisId')
-        .to_dict()['HuisCode']
+        .to_dict()['HuisIdBSV']
     )
     data_files = list_files_func(data_folder_path)
 
     household_id_pairs = []
-    next_id = max(index_df['HuisCode'], default=0) + 1
+    next_id = max(index_df['HuisIdBSV'], default=0) + 1
 
     for huis_id, file in data_files.items():
         if huis_id in existing_ids:
@@ -163,14 +163,14 @@ def update_index(
     if new_entry['HuisId'] in index_df['HuisId'].values:
         index_df.loc[
             index_df['HuisId'] == new_entry['HuisId'],
-            ['HuisCode', 'Dataleverancier'],
-        ] = (new_entry['HuisCode'], data_provider)
+            ['HuisIdBSV', 'Dataleverancier'],
+        ] = (new_entry['HuisIdBSV'], data_provider)
     else:
         new_entry_df = pd.DataFrame([new_entry])
         index_df = pd.concat([index_df, new_entry_df], ignore_index=True)
 
     # Recalculate or add flag columns
-    household_code = new_entry['HuisCode']
+    household_code = new_entry['HuisIdBSV']
     dataset_file = os.path.join(
         etdmap.options.mapped_folder_path,
         f"household_{household_code}_table.parquet",
@@ -187,7 +187,7 @@ def update_index(
                 )
             try:
                 validation_result = condition(df)
-                index_df.loc[index_df['HuisCode'] == household_code, flag] = (
+                index_df.loc[index_df['HuisIdBSV'] == household_code, flag] = (
                     validation_result
                 )
             except Exception as e:
@@ -197,7 +197,7 @@ def update_index(
                     exc_info=True,
                 )
                 index_df.loc[
-                    index_df['HuisCode'] == household_code,
+                    index_df['HuisIdBSV'] == household_code,
                     flag,
                 ] = pd.NA
 
@@ -369,7 +369,7 @@ def add_metadata_to_index(
             metadata_df['Dataleverancier'] = data_leverancier
 
     # Define protected columns and drop them from provider metadata
-    protected_columns = ['HuisCode', 'HuisIdBSV', 'ProjectIdBSV']
+    protected_columns = ['HuisIdBSV', 'ProjectIdBSV']
     metadata_df = metadata_df.drop(
         columns=[col for col in protected_columns if col in metadata_df.columns],
     )
