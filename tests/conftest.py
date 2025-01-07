@@ -15,7 +15,7 @@ def valid_metadata_file(tmp_path):
     data = {}
     num_rows = 5
     # for testing, make sure there is one numerical column
-    data['num_column'] = np.random.randint(1, 100, size=num_rows)
+    data["num_column"] = np.random.randint(1, 100, size=num_rows)
     for column_name in bsv_metadata_columns:
         # Generate random string data
         data[column_name] = [f"{column_name}_val_{i}" for i in range(num_rows)]

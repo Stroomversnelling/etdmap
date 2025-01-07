@@ -13,7 +13,7 @@ def rearrange_model_columns(
         if col in household_df.columns:
             actual_type = household_df[col].dtype
             if actual_type != expected_type:
-                logging.warninging(
+                logging.warning(
                     f"{context}Column '{col}' has type '{actual_type}' "
                     "but expected type is '{expected_type}'",
                 )
@@ -149,7 +149,7 @@ def add_diff_columns(
                 # Return empty DataFrame to drop invalid group
                 return pd.DataFrame()
             else:
-                logging.warninging(
+                logging.warning(
                     f"{context_string}Some cumulative columns did not "
                     f"pass validation ({invalid}). Keeping group/data.",
                 )

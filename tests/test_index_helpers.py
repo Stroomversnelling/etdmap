@@ -5,12 +5,7 @@ import etdmap
 from etdmap.index_helpers import (
     bsv_metadata_columns,
     get_bsv_metadata,
-    get_household_id_pairs,
-    read_index,
     read_metadata,
-    update_index,
-    update_meenemen,
-    update_meta_validators,
 )
 
 
@@ -22,7 +17,7 @@ def test_read_metadata(valid_metadata_file, invalid_metadata_file):
 
     # Test the function with an invalid file
     with pytest.raises(Exception) as excinfo:
-        read_metadata(invalid_metadata_file, required_columns=['TestCol'])
+        read_metadata(invalid_metadata_file, required_columns=["TestCol"])
     assert "Not all required columns" in str(excinfo.value)
 
 
@@ -34,12 +29,13 @@ def test_get_bsv_metadata(valid_metadata_file, invalid_metadata_file):
     assert isinstance(result, pd.DataFrame)
     assert required_columns.issubset(set(result.columns))
 
-    # test if it fails without proper columns 
+    # test if it fails without proper columns
     etdmap.options.bsv_metadata_file = invalid_metadata_file
     with pytest.raises(ValueError) as excinfo:
         get_bsv_metadata()
 
     assert "Not all required columns in" in str(excinfo.value)
+
 
 if __name__ == "__main__":
     # Run pytest for debugging the testing
