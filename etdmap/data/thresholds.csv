@@ -7,22 +7,22 @@ CDR-RH 2 Luchtvochtigheid [%],momentaan,%,10,100,
 CDR-RH 2 Temperatuur [grC],momentaan,graden C,-20,60,
 CDR-RH Temperatuur [grC],momentaan,graden C,-20,60,
 CO2,momentaan,ppm,200,30000,
-CumulativeWaterFlow,cumulatief,m3,0,n/a,
+CumulativeWaterFlow,cumulatief,m3,0,n.a.,
 ElektriciteitNetgebruikHoog,cumulatief,kWh,0,99999,
 ElektriciteitNetgebruikHoogDiff,5-minute,kWh,0,1.5,bij 3x25A
 ElektriciteitNetgebruikLaag,cumulatief,kWh,0,99999,
 ElektriciteitNetgebruikLaagDiff,5-minute,kWh,0,1.5,bij 3x25A
-ElektriciteitsgebruikBoilervat,cumulatief,kWh,0,n/a,
-ElektriciteitsgebruikBoilervatDiff,5-minute,kWh,0,0.320,"bij aansluiting op 1 fase, 16A zekering"
-ElektriciteitsgebruikBooster,cumulatief,kWh,0,n/a,
-ElektriciteitsgebruikBoosterDiff,5-minute,kWh,0,0.320,"bij aansluiting op 1 fase, 16A zekering"
-ElektriciteitsgebruikHuishoudelijk,cumulatief,kWh,0,n/a,
-ElektriciteitsgebruikRadiator,cumulatief,kWh,0,n/a,
-ElektriciteitsgebruikRadiatorDiff,5-minute,kWh,0,0.320,"bij aansluiting op 1 fase, 16A zekering"
-ElektriciteitsgebruikWarmtepomp,cumulatief,kWh,0,n/a,
+ElektriciteitsgebruikBoilervat,cumulatief,kWh,0,n.a.,
+ElektriciteitsgebruikBoilervatDiff,5-minute,kWh,0,0.32,"bij aansluiting op 1 fase, 16A zekering"
+ElektriciteitsgebruikBooster,cumulatief,kWh,0,n.a.,
+ElektriciteitsgebruikBoosterDiff,5-minute,kWh,0,0.32,"bij aansluiting op 1 fase, 16A zekering"
+ElektriciteitsgebruikHuishoudelijk,cumulatief,kWh,0,n.a.,
+ElektriciteitsgebruikRadiator,cumulatief,kWh,0,n.a.,
+ElektriciteitsgebruikRadiatorDiff,5-minute,kWh,0,0.32,"bij aansluiting op 1 fase, 16A zekering"
+ElektriciteitsgebruikWarmtepomp,cumulatief,kWh,0,n.a.,
 ElektriciteitsgebruikWarmtepompDiff,5-minute,kWh,0,0.96,"bij aansluiting op 3 fase, 16A zekering"
-ElektriciteitsgebruikWTW,cumulatief,kWh,0,n/a,
-ElektriciteitsgebruikWTWDiff,5-minute,kWh,0,0.320,"bij aansluiting op 1 fase, 16A zekering"
+ElektriciteitsgebruikWTW,cumulatief,kWh,0,n.a.,
+ElektriciteitsgebruikWTWDiff,5-minute,kWh,0,0.32,"bij aansluiting op 1 fase, 16A zekering"
 ElektriciteitTerugleveringHoog,cumulatief,kWh,0,99999,
 ElektriciteitTerugleveringHoogDiff,5-minute,kWh,0,1.5,bij 3x25A
 ElektriciteitTerugleveringLaag,cumulatief,kWh,0,99999,
@@ -49,5 +49,8 @@ WarmteproductieWarmtepompDiff,5-minute,GJ,0,0.0576,"bij COP = 10, wp+boiler+boos
 WatergebruikWarmTapwater,cumulatief,liter,0,999999,
 WatergebruikWarmTapwaterDiff,5-minute,liter,0,100,regendouche = 20 liter per minuut (van 40 graden)
 Zon-opwekMomentaan,momentaan,kW,-2,11.5,"bij aansluiting op 3 fase, 16A zekering"
-Zon-opwekTotaal,cumulatief,kWh,0,n/a,
+Zon-opwekTotaal,cumulatief,kWh,0,n.a.,
 Zon-opwekTotaalDiff,5-minute,kWh,0,0.96,"bij aansluiting op 3 fase, 16A zekering"
+Compactheid,,,0,n.a.,
+Warmtebehoefte,,,0,n.a.,
+PrimairFossielGebruik,,,0,n.a.,
