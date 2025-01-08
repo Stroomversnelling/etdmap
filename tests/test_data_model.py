@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -13,14 +14,22 @@ from etdmap.data_model import (
 def test_columns_etdmodelcsv():
     """
     Test if all columns in the required_model_columns in the
-    data_model.py are indeed present in the etdmodel.csv in the 
+    data_model.py are indeed present in the etdmodel.csv in the
     data folder.
     Additional columns may exist.
     """
     etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
     columns_etdmodel = set(etdmodel_csv.Variabele.values)
     assert set(required_model_columns).issubset(columns_etdmodel)
-
+    # give warning when more columns are defined in the etdmodel.csv
+    # then are required in etdmap.data_model
+    if columns_etdmodel - set(required_model_columns):
+        logging.warning(
+            "More columns are defined in etdmodel.csv then are",
+            "specified in etdmap.data_model require_columns",
+            "The following columns are found, but not required: ",
+            f"{columns_etdmodel - set(required_model_columns)}"
+            )
 
 def test_thresholdscsv():
     """
@@ -31,8 +40,8 @@ def test_thresholdscsv():
     thresholds.csv
     """
     etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    # n/a is used to specify that it is not applicable 
-    # we want to seperate this value from missing values, 
+    # n/a is used to specify that it is not applicable
+    # we want to seperate this value from missing values,
     # so prevent reading n/a as nan by pandas (default)
     # custom_na_values = ['n/a']
     tresholds_csv = pd.read_csv(
@@ -48,26 +57,20 @@ def test_thresholdscsv():
     assert numeric_cols_etdmodel.issubset(threshold_params)
 
     # check if all columns have numeric min & max values, or are
-    # n/a (not applicable)
+    # n.a. (not applicable)
     def is_numeric_or_na(val):
+        # Note: originally n.a. was spelled n/a in the csv.
+        # these strings are automatically replaced by NAN values
+        # Since we want to compare with missing values (also NAN)
+        # n/a was renamed to n.a.
         str_value_check = str(val).lower() == 'n.a.'
         numeric_check = pd.notna(pd.to_numeric(val, errors='coerce'))
         return numeric_check or str_value_check
 
     check_min = tresholds_csv['Min'].apply(is_numeric_or_na)
     check_max = tresholds_csv['Max'].apply(is_numeric_or_na)
-    print(check_min, check_max)
     assert check_min.all()
     assert check_max.all()
-
-
-def test_thresholds_exist():
-    """
-    Test if all columns in the thresholds.csv have a valid threshold.
-
-    Checks if a threshold is defined, and whether the threshold is
-    numerical (and not nan)
-    """
 
 
 if __name__ == "__main__":
