@@ -1,3 +1,5 @@
+import pandas as pd
+
 required_model_columns = [
     "ProjectIdBSV",
     "ProjectIdLeverancier",
@@ -118,3 +120,13 @@ model_column_type = {
     'Luchtvochtigheid': 'float64',
     'Ventilatiedebiet': 'float64',
 }
+
+def load_thresholds():
+    thresholds_file = files("etdmap.data").joinpath("thresholds.csv")
+    df = pd.read_csv(thresholds_file)
+    return df
+
+def load_etdmodel():
+    etdmodel_file = files("etdmap.data").joinpath("etdmodel.csv")
+    df = pd.read_csv(etdmodel_file)
+    return df
