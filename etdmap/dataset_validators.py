@@ -3,7 +3,7 @@ from pandas import DataFrame
 
 from etdmap.data_model import cumulative_columns
 
-year_allowed_jitter = 18  # approx 5% of the year
+year_allowed_jitter = 18  # approx 5% of the year can be missing
 
 
 def validate_columns(df: DataFrame, columns: list, condition_func) -> bool:

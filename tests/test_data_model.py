@@ -88,12 +88,6 @@ def test_thresholdscsv():
             f"{cumm_columns_thresholds - set(cumulative_columns)}"
             )
 
-def test_cummulative_columns():
-    """
-    Test if cummulative columns in thresholds.csv match
-    the etdmap.data_model cumulative_columns variable.
-    """
-
 
 if __name__ == "__main__":
     # Run pytest for debugging the testing
