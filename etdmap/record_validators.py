@@ -1,11 +1,14 @@
 import logging
-from importlib.resources import files
 from typing import Callable
 
 import pandas as pd
 from pandas import DataFrame, Series
 
-from etdmap.data_model import cumulative_columns
+from etdmap.data_model import (
+    cumulative_columns,
+    load_thresholds,
+    load_thresholds_as_dict,
+)
 
 """
 It contains functions & script that generates a dictionary
@@ -21,19 +24,6 @@ created that can be used to get insight in the data. The columns are:
 - 'validate_combined' (checks for each row if at least one value
     is outside of thresholds) -- so combines the validate + col columns
 """
-def load_thresholds():
-    thresholds_file = files("etdmap.data").joinpath("thresholds.csv")
-    df = pd.read_csv(thresholds_file)
-    return df
-
-
-def load_thresholds_as_dict() -> dict:
-    thresholds_dict = {}
-    for _, row in thresholds_df.iterrows():
-        col = row['Variabele']
-        thresholds_dict[col] = {'Min': row['Min'], 'Max': row['Max']}
-    return thresholds_dict
-
 
 def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
     """Per row, determine if at least one value fall outside of the Thresholds.
