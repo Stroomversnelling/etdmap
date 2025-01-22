@@ -2,42 +2,15 @@ from importlib.resources import files
 
 import pandas as pd
 
-required_model_columns = [
-    "ProjectIdBSV",
-    "ProjectIdLeverancier",
-    "HuisIdBSV",
-    "HuisIdLeverancier",
-    "Weerstation",
-    "Oppervlakte",
-    "Compactheid",
-    "Warmtebehoefte",
-    "PrimairFossielGebruik",
-    "Bouwjaar",
-    "Renovatiejaar",
-    "WoningType",
-    "WoningTypeDetail",
-    "WarmteopwekkerType",
-    "WarmteopwekkerCategorie",
-    "Warmteopwekker",
-    "Ventilatiesysteem",
-    "Kookinstallatie",
-    "PVJaarbundel",
-    "PVMerk",
-    "PVType",
-    "PVAantalPanelen",
-    "PVWattpiekPerPaneel",
-    "EPV",
-    "GasgebruikVoorRenovatie",
-    "ElektriciteitVoorRenovatie",
-    "HuisIdBSV",
-    "HuisIdLeverancier",
+data_analysis_columns = [
     "ReadingDate",
+    "Ventilatiedebiet",
+    "CO2",
     "ElektriciteitNetgebruikHoog",
     "ElektriciteitNetgebruikLaag",
     "ElektriciteitTerugleveringHoog",
     "ElektriciteitTerugleveringLaag",
     "ElektriciteitVermogen",
-    "Gasgebruik",
     "ElektriciteitsgebruikWTW",
     "ElektriciteitsgebruikWarmtepomp",
     "ElektriciteitsgebruikBooster",
@@ -45,14 +18,11 @@ required_model_columns = [
     "ElektriciteitsgebruikHuishoudelijk",
     "TemperatuurWarmTapwater",
     "TemperatuurWoonkamer",
-    "TemperatuurSetpointWoonkamer",
     "WarmteproductieWarmtepomp",
-    "WatergebruikWarmTapwater",
+    "TemperatuurSetpointWoonkamer",
     "Zon-opwekMomentaan",
     "Zon-opwekTotaal",
-    "CO2",
     "Luchtvochtigheid",
-    "Ventilatiedebiet",
 ]
 
 cumulative_columns = [
@@ -66,7 +36,6 @@ cumulative_columns = [
     'ElektriciteitsgebruikBooster',
     'ElektriciteitsgebruikBoilervat',
     'ElektriciteitsgebruikRadiator',
-    # 'ElektriciteitsgebruikHuishoudelijk',
     'WarmteproductieWarmtepomp',
     'WatergebruikWarmTapwater',
     'Zon-opwekTotaal',
@@ -144,6 +113,16 @@ def load_thresholds():
 
 
     return df
+
+
+def load_thresholds_as_dict() -> dict:
+    thresholds_dict = {}
+    thresholds_df = load_thresholds()
+    for _, row in thresholds_df.iterrows():
+        col = row['Variabele']
+        thresholds_dict[col] = {'Min': row['Min'], 'Max': row['Max']}
+    return thresholds_dict
+
 
 def load_etdmodel():
     etdmodel_file = files("etdmap.data").joinpath("etdmodel.csv")

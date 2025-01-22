@@ -6,10 +6,60 @@ import pytest
 
 from etdmap.data_model import (
     cumulative_columns,
-    model_column_type,
-    required_model_columns,
 )
 
+required_model_columns = [
+    "ProjectIdBSV",
+    "ProjectIdLeverancier",
+    "HuisIdBSV",
+    "HuisIdLeverancier",
+    "Weerstation",
+    "Oppervlakte",
+    "Compactheid",
+    "Warmtebehoefte",
+    "PrimairFossielGebruik",
+    "Bouwjaar",
+    "Renovatiejaar",
+    "WoningType",
+    "WoningTypeDetail",
+    "WarmteopwekkerType",
+    "WarmteopwekkerCategorie",
+    "Warmteopwekker",
+    "Ventilatiesysteem",
+    "Kookinstallatie",
+    "PVJaarbundel",
+    "PVMerk",
+    "PVType",
+    "PVAantalPanelen",
+    "PVWattpiekPerPaneel",
+    "EPV",
+    "GasgebruikVoorRenovatie",
+    "ElektriciteitVoorRenovatie",
+    "HuisIdBSV",
+    "HuisIdLeverancier",
+    "ReadingDate",
+    "ElektriciteitNetgebruikHoog",
+    "ElektriciteitNetgebruikLaag",
+    "ElektriciteitTerugleveringHoog",
+    "ElektriciteitTerugleveringLaag",
+    "ElektriciteitVermogen",
+    "Gasgebruik",
+    "ElektriciteitsgebruikWTW",
+    "ElektriciteitsgebruikWarmtepomp",
+    "ElektriciteitsgebruikBooster",
+    "ElektriciteitsgebruikBoilervat",
+    "ElektriciteitsgebruikHuishoudelijk",
+    "TemperatuurWarmTapwater",
+    "TemperatuurWoonkamer",
+    "TemperatuurSetpointWoonkamer",
+    "WarmteproductieWarmtepomp",
+    "WatergebruikWarmTapwater",
+    "Zon-opwekMomentaan",
+    "Zon-opwekTotaal",
+    "CO2",
+    "Luchtvochtigheid",
+    "Ventilatiedebiet",
+]
 
 def test_columns_etdmodelcsv():
     """
@@ -25,19 +75,20 @@ def test_columns_etdmodelcsv():
     # then are required in etdmap.data_model
     if columns_etdmodel - set(required_model_columns):
         logging.warning(
-            "More columns are defined in etdmodel.csv then are",
-            "specified in etdmap.data_model require_columns",
-            "The following columns are found, but not required: ",
+            f"More columns are defined in etdmodel.csv then are"
+            f"specified in etdmap.data_model require_columns"
+            f"The following columns are found, but not required: "
             f"{columns_etdmodel - set(required_model_columns)}"
             )
 
 def test_thresholdscsv():
     """
-    Check if thresholds exist for all numeric columns in datamodel.
+    Check thresholds.csv for columns, numeric values and comulatief.
 
-    The test check if all columns existent in the datamodel that
-    are numeric, also have a numeric (not nan) threshold in the
-    thresholds.csv
+    Check if thresholds exist for all numeric columns in datamodel.
+    Check if all thresholds are numeric (not nan) or n.a. in thresholds.csv
+    Check if the cummulative types match the cumulative_columns from
+    etdmap.data_model
     """
     etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
     # n/a is used to specify that it is not applicable
@@ -71,6 +122,22 @@ def test_thresholdscsv():
     check_max = tresholds_csv['Max'].apply(is_numeric_or_na)
     assert check_min.all()
     assert check_max.all()
+
+    # Check cummulative columns:
+    cumm_columns_thresholds = set(
+        tresholds_csv[tresholds_csv['VariabelType']=='cumulatief'].Variabele
+        )
+    # Check if all cummulative columns in the etdmap.data_model
+    # are also specified in the thresholds.csv
+    assert set(cumulative_columns).issubset(cumm_columns_thresholds)
+    # Notify if more cummulative columns are specified in the thresholds:
+    if cumm_columns_thresholds - set(cumulative_columns):
+        logging.warning(
+            f"More cummulative columns are defined in thresholds.csv"
+            f"then in etdmap.data_model cumulative_columns. "
+            f"The following columns are found, but not required: "
+            f"{cumm_columns_thresholds - set(cumulative_columns)}"
+            )
 
 
 if __name__ == "__main__":
