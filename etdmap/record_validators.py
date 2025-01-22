@@ -8,12 +8,14 @@ from pandas import DataFrame, Series
 from etdmap.data_model import cumulative_columns
 
 """
-Functions to validate if records:
+It contains functions & script that generates a dictionary
+with the names of column and the corresponding validator functions.
+They check for each record individually if the values are:
 - are within the thresholds
 - don't have statistical outliers
 
-Using these functions, you can create new (temp) columns per
-colname that can be used to get insight in the data. The columns are:
+Using these functions, new (temp) columns per colname can be
+created that can be used to get insight in the data. The columns are:
 - 'validate_' + col + 'Diff_outliers' (statistical)
 - 'validate'+ col (thresholds)
 - 'validate_combined' (checks for each row if at least one value
@@ -24,8 +26,6 @@ def load_thresholds():
     df = pd.read_csv(thresholds_file)
     return df
 
-thresholds_df = load_thresholds()
-
 
 def load_thresholds_as_dict() -> dict:
     thresholds_dict = {}
@@ -33,9 +33,6 @@ def load_thresholds_as_dict() -> dict:
         col = row['Variabele']
         thresholds_dict[col] = {'Min': row['Min'], 'Max': row['Max']}
     return thresholds_dict
-
-
-thresholds_dict = load_thresholds_as_dict()
 
 
 def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
@@ -72,20 +69,13 @@ def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
 def get_columns_threshold_validator(cols):
     return lambda df: validate_thresholds_combined(df[cols])
 
-def condition_func_threshold(columns list) -> Callable[[pd.DataFrame], bool]:
+
+def condition_func_threshold(col: str) -> Callable[[pd.DataFrame], bool]:
     """Define condition function for column based on min, max from thresholdscsv.
 
     Args:
         col (str): column name for which the function holds.
     """
-    # keeping with list columns only for uniformity with other
-    # condition functions.
-    if len(columns) != 1:
-        raise ValueError(
-            f"condition threshold only works per 1 column"
-            f"given {columns}")
-    col = columns[0]
-
     if (col in pd.DataFrame.columns) and (col in thresholds_dict):
         min_treshold = thresholds_dict[col]['Min']
         max_treshold = thresholds_dict[col]['Max']
@@ -105,17 +95,6 @@ def condition_func_threshold(columns list) -> Callable[[pd.DataFrame], bool]:
         )
         return None
 
-# def validate_columns(df: DataFrame, columns: list, condition_func) -> Series:
-#     """
-#     Helper function to validate columns with a given condition function.
-#     """
-#     if all(col in df.columns for col in columns):
-#         valid_mask = df[columns].notna().all(axis=1)
-#         condition = pd.Series(pd.NA, dtype='boolean', index=df.index)
-#         condition[valid_mask] = condition_func(df[valid_mask])
-#         return condition
-#     else:
-#         return pd.Series(pd.NA, dtype='boolean', index=df.index)
 
 def validate_column(df: DataFrame, columns: list, condition_func) -> Series:
     """
@@ -151,95 +130,6 @@ def validate_300sec(df: DataFrame) -> Series:
     return result
 
 
-# def validate_elektriciteit_vermogen(df: DataFrame) -> Series:
-#     columns = ['ElektriciteitVermogen']
-
-#     def condition_func(df: pd.DataFrame) -> bool:
-#         return (df['ElektriciteitVermogen'] >= -20000) & (
-#             df['ElektriciteitVermogen'] <= 20000
-#         )
-
-#     return validate_columns(df, columns, condition_func)
-
-
-# def validate_temperatuur_warm_tapwater(df: DataFrame) -> Series:
-#     columns = ['TemperatuurWarmTapwater']
-
-#     def condition_func(df: pd.DataFrame) -> bool:
-#         return (df['TemperatuurWarmTapwater'] >= 30) & (
-#             df['TemperatuurWarmTapwater'] <= 90
-#         )
-
-#     return validate_columns(df, columns, condition_func)
-
-
-# def validate_temperatuur_woonkamer(df: DataFrame) -> Series:
-#     columns = ['TemperatuurWoonkamer']
-
-#     def condition_func(df: pd.DataFrame) -> bool:
-#         return (df['TemperatuurWoonkamer'] >= 5) & (df['TemperatuurWoonkamer'] <= 35)
-
-#     return validate_columns(df, columns, condition_func)
-
-
-# def validate_temperatuur_setpoint_woonkamer(df: DataFrame) -> Series:
-#     columns = ['TemperatuurSetpointWoonkamer']
-
-#     def condition_func(df: pd.DataFrame) -> bool:
-#         return (df['TemperatuurSetpointWoonkamer'] >= 5) & (
-#             df['TemperatuurSetpointWoonkamer'] <= 35
-#         )
-
-#     return validate_columns(df, columns, condition_func)
-
-
-# def validate_zon_opwek_momentaan(df: DataFrame) -> Series:
-#     columns = ['Zon-opwekMomentaan']
-
-#     def condition_func(df: pd.DataFrame) -> bool:
-#         return (df['Zon-opwekMomentaan'] >= 0) & (df['Zon-opwekMomentaan'] <= 20000)
-
-#     return validate_columns(df, columns, condition_func)
-
-
-# def validate_zon_opwek_totaal_diff(df: DataFrame) -> Series:
-#     col = ['Zon-opwekTotaalDiff']
-
-#     def condition_func(df: pd.DataFrame) -> bool:
-#         return (df['Zon-opwekTotaalDiff'] * 12 >= 0) & (
-#             df['Zon-opwekTotaalDiff'] * 12 <= 20000
-#         )
-
-#     return validate_column(df, col, condition_func)
-
-
-# def validate_co2(df: DataFrame) -> Series:
-#     columns = ['CO2']
-
-#     def condition_func(df: pd.DataFrame) -> bool:
-#         return (df['CO2'] >= 250) & (df['CO2'] <= 2500)
-
-#     return validate_columns(df, columns, condition_func)
-
-
-# def validate_luchtvochtigheid(df: DataFrame) -> Series:
-#     columns = ['Luchtvochtigheid']
-
-#     def condition_func(df: pd.DataFrame) -> bool:
-#         return (df['Luchtvochtigheid'] >= 20) & (df['Luchtvochtigheid'] <= 100)
-
-#     return validate_columns(df, columns, condition_func)
-
-
-# def validate_ventilatiedebiet(df: DataFrame) -> Series:
-#     columns = ['Ventilatiedebiet']
-
-#     def condition_func(df: pd.DataFrame) -> bool:
-#         return (df['Ventilatiedebiet'] >= 0) & (df['Ventilatiedebiet'] <= 500)
-
-#     return validate_columns(df, columns, condition_func)
-
-
 def validate_elektriciteitgebruik(df: DataFrame) -> Series:
     columns = [
         'ElektriciteitsgebruikHuishoudelijk',
@@ -268,17 +158,6 @@ def validate_warmteproductie(df: DataFrame) -> Series:
     return validate_column(df, columns, condition_func)
 
 
-# Combine all specific validators into the dictionary
-record_flag_conditions = {
-    'validate_reading_date_uniek': validate_reading_date_uniek,
-    'validate_300sec': validate_300sec,
-    #'validate_zonopwek_totaal_tegen_gebruik': validate_zonopwek_totaal_tegen_gebruik,  # noqa E501
-    'validate_elektriciteitgebruik': validate_elektriciteitgebruik,
-    'validate_warmteproductie': validate_warmteproductie,
-    'validate_thresholds_combined': validate_thresholds_combined,
-}
-
-
 def validate_not_outliers(x: Series):
     x = x[x > 0]
     q1 = x.quantile(0.25)
@@ -289,42 +168,45 @@ def validate_not_outliers(x: Series):
     return ~((x < lower_bound) | (x > upper_bound))
 
 
-# loop to produce cumulative column validators per cumulative column
-# for col in cumulative_columns:
+def create_validate_momentaan(
+        columns_5min_momentaan: list,
+        record_flag_conditions: dict
+        ) -> None:
+    for col in columns_5min_momentaan:
+        def validate_momentaan(df: DataFrame, col=col) -> Series:
+            # Checks thresholds
+            condition_func = condition_func_threshold(col)
+            result = validate_column(df, [col], condition_func)
+            return result
+        record_flag_conditions['validate_' + col] = validate_momentaan
 
-#     def validate_cumulative(df: DataFrame, cum_col=col) -> Series:
-#         df['temp_diff_valid'] = validate_not_outliers(df[cum_col + 'Diff'])
-#         columns = [cum_col + 'Diff', 'temp_diff_valid']
 
-#         def condition_func(df: pd.DataFrame) -> bool:
-#             return (df[cum_col + 'Diff'] >= 0) & (df['temp_diff_valid'])
+def create_validate_comulative(
+        cumulative_columns: list,
+        record_flag_conditions: dict
+        ) -> None:
+    # loop to produce cumulative outlier validators per cumulative column
+    for col in cumulative_columns:
 
-#         result = validate_columns(df, columns, condition_func)
-#         df.drop(columns=['temp_diff_valid'], inplace=True)
-#         return result
+        def validate_cumulative_outliers(df: DataFrame, cum_col=col) -> Series:
+            result = validate_column(df, [cum_col + 'Diff'] , validate_not_outliers)
+            return result
 
-#     record_flag_conditions['validate_' + col + 'Diff_outliers'] = validate_cumulative
+        record_flag_conditions['validate_' + col + 'Diff_outliers'] = validate_cumulative_outliers
 
-# loop to produce validators per column with type momentaan or 5-minute.
-# (including Diff columns)
+thresholds_df = load_thresholds()
+thresholds_dict = load_thresholds_as_dict()
+# Combine all specific validators into the dictionary
+record_flag_conditions = {
+    'validate_reading_date_uniek': validate_reading_date_uniek,
+    'validate_300sec': validate_300sec,
+    #'validate_zonopwek_totaal_tegen_gebruik': validate_zonopwek_totaal_tegen_gebruik,
+    'validate_elektriciteitgebruik': validate_elektriciteitgebruik,
+    'validate_warmteproductie': validate_warmteproductie,
+    'validate_thresholds_combined': validate_thresholds_combined,
+}
 columns_5min_momentaan = thresholds_df[
     thresholds_df['VariabelType'].isin(['5-minute', 'momentaan'])
     ]
-
-for col in columns_5min_momentaan:
-    def validate_cumulative(df: DataFrame, col=[col]) -> Series:
-        # Checks thresholds
-        condition_func = condition_func_threshold(col)
-        result = validate_column(df, col, condition_func)
-        return result
-    record_flag_conditions['validate_' + col] = validate_cumulative
-
-# loop to produce cumulative outlier validators per cumulative column
-for col in cumulative_columns:
-
-    def validate_cumulative_outliers(df: DataFrame, cum_col=col) -> Series:
-        result = validate_column(df, [cum_col + 'Diff'] , validate_not_outliers)
-        return result
-
-    record_flag_conditions['validate_' + col + 'Diff_outliers'] = validate_cumulative_outliers
-
+create_validate_momentaan(columns_5min_momentaan, record_flag_conditions)
+create_validate_comulative(cumulative_columns, record_flag_conditions)
