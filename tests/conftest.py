@@ -1,13 +1,17 @@
+import logging
 import os
 
 import numpy as np
 import pandas as pd
 import pytest
-import logging
+from numpy.random import PCG64, Generator
 
 from etdmap.data_model import cumulative_columns, load_thresholds
 from etdmap.index_helpers import bsv_metadata_columns
 
+
+def pytest_addoption(parser):
+    parser.addoption("--copy-data", action="store_true", help="Copy data to a persistent folder")
 
 @pytest.fixture
 def valid_metadata_file(tmp_path):
@@ -19,7 +23,7 @@ def valid_metadata_file(tmp_path):
     data = {}
     num_rows = 5
     # for testing, make sure there is one numerical column
-    data["num_column"] = np.random.randint(1, 100, size=num_rows)
+    data["num_column"] = np.random.randint(1, 100, size=num_rows,   )
     for column_name in bsv_metadata_columns:
         # Generate random string data
         data[column_name] = [f"{column_name}_val_{i}" for i in range(num_rows)]
@@ -68,7 +72,12 @@ def raw_data_fixture(tmp_path_factory):
     output_dir = tmp_path_factory.mktemp("raw_fixture")
 
     # Metadata index
-    index = []
+    index_raw = []
+    index_bsv = []
+
+    # Explicitly define the bit generator to ensure the algorithm/seed don't change
+    bit_generator = PCG64(seed=42)
+    rng = Generator(bit_generator)
 
     # Generate data for each household
     for project_id in projects:
@@ -76,49 +85,58 @@ def raw_data_fixture(tmp_path_factory):
             # Generate unique HuisIdBSV
             huis_id = (project_id - 1) * num_households_per_project + household_idx
 
+            # Preconstruct the prefixed strings
+            huis_prefixed = f"Huis{huis_id}"
+            project_prefixed = f"Project{project_id}"
+
             # Generate time series
             timestamps = pd.date_range(start=base_date, periods=num_records, freq=time_interval)
             household_data = {
-                "HuisIdBSV": np.full(num_records, huis_id),
-                "ProjectIdBSV": np.full(num_records, project_id),
+                "HuisIdLeverancier": pd.Series([huis_prefixed] * num_records, dtype="string"),
+                "ProjectIdLeverancier": pd.Series([project_prefixed] * num_records, dtype="string"),
                 "ReadingDate": timestamps,
             }
 
             # Generate cumulative column data
             for col in cumulative_columns:
                 diff_col = f"{col}Diff"
-                if diff_col in thresholds["Variable"].values:
-                    min_diff = thresholds.loc[thresholds["Variable"] == diff_col, "Min"].values[0]
-                    max_diff = thresholds.loc[thresholds["Variable"] == diff_col, "Max"].values[0] or default_max_value
+                if diff_col in thresholds["Variabele"].values:
+                    min_diff = thresholds.loc[thresholds["Variabele"] == diff_col, "Min"].values[0]
+                    max_diff = thresholds.loc[thresholds["Variabele"] == diff_col, "Max"].values[0] or default_max_value
 
-                    diffs = np.random.uniform(min_diff, max_diff, size=num_records - 1)
-                    cumulative = np.concatenate(([0], np.cumsum(diffs)))  # Start with 0
+                    diffs = pd.Series(rng.uniform(min_diff, max_diff, size=num_records - 1), dtype="float64")
+                    cumulative = pd.concat([pd.Series([0]), diffs.cumsum()], ignore_index=True)
                     household_data[col] = cumulative
                 else:
                     raise ValueError(f"Cannot generate raw data test fixture. No threshold exists for {diff_col} in `thresholds.csv`")
 
             household_df = pd.DataFrame(household_data)
-            household_df = add_raw_data_test_case(base_date, household_df, huis_id=huis_id, project_id=project_id)
+            household_df = add_raw_data_test_case(base_date, household_df, huis_id_raw=huis_prefixed, project_id_raw=project_prefixed, rng=rng)
 
             file_path = os.path.join(output_dir, f"household_{huis_id}_table.parquet")
             household_df.to_parquet(file_path, index=False)
 
             # Add metadata
-            index.append({"HuisIdBSV": huis_id, "ProjectIdBSV": project_id})
+            index_bsv.append({"HuisIdLeverancier": huis_prefixed, "ProjectIdLeverancier": project_prefixed, "HuisIdBSV": huis_id, "ProjectIdBSV": project_id})
+            index_raw.append({"HuisIdLeverancier": huis_prefixed, "ProjectIdLeverancier": project_prefixed})
 
-    index_df = pd.DataFrame(index)
-    index_file_path = os.path.join(output_dir, "index.parquet")
-    index_df.to_parquet(index_file_path, index=False)
+    index_raw_df = pd.DataFrame(index_raw)
+    index_raw_file_path = os.path.join(output_dir, "index_raw.parquet")
+    index_raw_df.to_parquet(index_raw_file_path, index=False)
+
+    index_bsv_df = pd.DataFrame(index_bsv)
+    index_bsv_file_path = os.path.join(output_dir, "index_bsv.parquet")
+    index_bsv_df.to_parquet(index_bsv_file_path, index=False)
 
     logging.info(f"Fixture generated in directory: {output_dir}")
     return output_dir
 
 
-def add_raw_data_test_case(base_date, household_df, huis_id, project_id, interval = None):
+def add_raw_data_test_case(base_date, household_df, huis_id_raw, project_id_raw, rng, interval = None):
     if interval is None:
         interval = pd.Timedelta(minutes=5)
 
-    if (huis_id == 1) and (project_id == 1):
+    if (huis_id_raw == "Huis1") and (project_id_raw == "Project1"):
         # There is a gap in data but after gap it continues (shift data down 24h)
         # Define conditions
         gap_start = base_date + pd.Timedelta(days=30)
@@ -126,7 +144,7 @@ def add_raw_data_test_case(base_date, household_df, huis_id, project_id, interva
         var = cumulative_columns[0]
         household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length, shift = True)
 
-    elif (huis_id == 2) and (project_id == 1):
+    elif (huis_id_raw == "Huis2") and (project_id_raw == "Project1"):
         # there is a gap in data but after gap it continues with the same starting value (shift data down 24h + copying the last value)
         # Define conditions
         gap_start = base_date + pd.Timedelta(days=60)
@@ -140,7 +158,7 @@ def add_raw_data_test_case(base_date, household_df, huis_id, project_id, interva
         # fill value at gap_end time with the last value before the gap
         household_df.loc[household_df['ReadingDate'] == gap_end, var] = last_value
 
-    elif (huis_id == 3) and (project_id == 1):
+    elif (huis_id_raw == "Huis3") and (project_id_raw == "Project1"):
         # there is a gap in data and after the gap, the meter was reset to 0. Subtract the last value before the gap from all values after the gap.
         # Define conditions
         gap_start = base_date + pd.Timedelta(days=90)
@@ -150,20 +168,20 @@ def add_raw_data_test_case(base_date, household_df, huis_id, project_id, interva
         household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length, shift = True)
         household_df = reset_cumulative_column(household_df=household_df, columns=[var], reset_time=gap_end, check_negative = True)
 
-    elif (huis_id == 4) and (project_id == 1):
+    elif (huis_id_raw == "Huis4") and (project_id_raw == "Project1"):
         # there is no gap in the data but the meter was reset to 0 at some point. Subtract the last value before the reset from all values after the reset.
         meter_reset_date = base_date + pd.Timedelta(days=120)
         var = cumulative_columns[3]
         household_df = reset_cumulative_column(household_df=household_df, columns=[var], reset_time=meter_reset_date, check_negative = True)
 
-    elif (huis_id == 5) and (project_id == 1):
+    elif (huis_id_raw == "Huis5") and (project_id_raw == "Project1"):
         # there is 24 hour gap in the data. Delete 24hrs of data and do not shift it down. There should be a big jump in the value as a result.
         gap_start = base_date + pd.Timedelta(days=150)
         gap_length = pd.Timedelta(hours=24)
         var = cumulative_columns[4]
         household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length, shift = False)
 
-    elif (huis_id in [1,2,3,4,5]) and (project_id == 2):
+    elif (huis_id_raw in ["Huis6","Huis7", "Huis8", "Huis9", "Huis10"]) and (project_id_raw == "Project2"):
         # at the same time for each household there is 24h gap in all data. Delete 24hs of data and do not shift it down. There should be a big jump in the value as a result.
         gap_start = base_date + pd.Timedelta(days=180)
         gap_length = pd.Timedelta(hours=24)
@@ -179,6 +197,17 @@ def add_raw_data_test_case(base_date, household_df, huis_id, project_id, interva
     fifteen_min_var = cumulative_columns[6]
     mask_fifteen_min = (household_df['ReadingDate'].dt.minute % 15 != 0)
     household_df.loc[mask_fifteen_min, fifteen_min_var] = pd.NA
+
+    ## There is a single variable that exceeds the upper limits
+    household_df[cumulative_columns[7]] = household_df[cumulative_columns[7]]*2
+
+    ## There is a single variable that is negative (some of the time)
+    # Define the probability of flipping a value to negative (e.g., 0.1 means 10% chance)
+    flip_probability = 0.1
+    # Create a boolean mask with True where we want to flip the values to negative
+    mask = rng.random(size=household_df.shape[0]) < flip_probability
+    # Apply the mask to flip some of the values in the specified column to their negatives
+    household_df.loc[mask, cumulative_columns[8]] *= -1
 
     return household_df
 
@@ -252,8 +281,8 @@ def reset_cumulative_column(household_df, columns, reset_time, check_negative = 
         pd.DataFrame: Modified DataFrame with reset cumulative values.
     """
     for col in columns:
-        reset_value = household_df.loc[household_df['ReadingDate'] == reset_time, col].values[0]
-        if reset_value.isna():
+        reset_value = pd.Series(household_df.loc[household_df['ReadingDate'] == reset_time, col].values).iloc[0]
+        if pd.isna(reset_value):
             raise ValueError(f"No data available at reset time {reset_time} for column: {col}")
         mask_reset = household_df['ReadingDate'] > reset_time
         household_df.loc[mask_reset, col] -= reset_value

@@ -1,3 +1,5 @@
+from importlib.resources import files
+
 import pandas as pd
 
 required_model_columns = [
@@ -123,10 +125,47 @@ model_column_type = {
 
 def load_thresholds():
     thresholds_file = files("etdmap.data").joinpath("thresholds.csv")
-    df = pd.read_csv(thresholds_file)
+
+    dtype_dict = {
+        "Variabele": "string",
+        "VariabelType": "string",
+        "Eenheid": "string",
+        "Min": "float",
+        "Max": "float",
+        "Toelichting": "string"
+    }
+
+    df = pd.read_csv(
+        thresholds_file,
+        dtype=dtype_dict,
+        na_values=["n.a.", "NA", "N/A", ""],  # Specify values to be treated as NA
+        keep_default_na=True  # Keep pandas' default NA values
+    )
+
+
     return df
 
 def load_etdmodel():
     etdmodel_file = files("etdmap.data").joinpath("etdmodel.csv")
-    df = pd.read_csv(etdmodel_file)
+
+    dtype_dict = {
+        "Entiteit": "string",
+        "Variabele": "string",
+        "Key": "string",
+        "Type variabele": "string",
+        "Vereist": "string",
+        "Resolutie": "string",
+        "Wie vult?": "string",
+        "Bron": "string",
+        "Definitie": "string",
+        "AVG gevoelig": "string"
+    }
+
+    df = pd.read_csv(
+        etdmodel_file,
+        dtype=dtype_dict,
+        na_values=["n.a.", "NA", "N/A", ""],  # Specify values to be treated as NA
+        keep_default_na=True  # Keep pandas' default NA values
+    )
+
     return df
