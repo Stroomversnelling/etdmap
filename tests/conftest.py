@@ -1,9 +1,9 @@
+import logging
 import os
 
 import numpy as np
 import pandas as pd
 import pytest
-import logging
 
 from etdmap.data_model import cumulative_columns, load_thresholds
 from etdmap.index_helpers import bsv_metadata_columns
@@ -19,7 +19,12 @@ def valid_metadata_file(tmp_path):
     data = {}
     num_rows = 5
     # for testing, make sure there is one numerical column
-    data["num_column"] = np.random.randint(1, 100, size=num_rows)
+    data["num_column"] = np.random.randint(-100, 100, size=num_rows)
+    data["num_column"][0] = -2 # ensure negative & decending values
+    data["num_column"][1] = -30
+    data["num_column_cumm"] = np.random.randint(0, 10, size=num_rows).sort()
+    data["num_column_diff"] = np.random.randint(0, 10, size=num_rows).sort()
+
     for column_name in bsv_metadata_columns:
         # Generate random string data
         data[column_name] = [f"{column_name}_val_{i}" for i in range(num_rows)]
