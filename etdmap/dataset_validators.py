@@ -40,7 +40,8 @@ def validate_columns(df: DataFrame, columns: list, condition_func) -> bool:
         if valid_mask.any():
             condition = pd.Series(pd.NA, dtype="boolean", index=df.index)
             condition[valid_mask] = condition_func(df[valid_mask])
-            return condition.all(skipna=True)
+            # note need typecast to bool because returns np.True_/np.False_ otherwise
+            return bool(condition.all(skipna=True))
         else:
             return pd.NA
     else:
@@ -162,7 +163,7 @@ thresholds_df = load_thresholds()
 thresholds_dict = load_thresholds_as_dict()
 comulative_columns_treholds = thresholds_df[
     thresholds_df['VariabelType']=='cumulatief']
-
+print(comulative_columns_treholds.columns)
 # dictionary with validators.
 # Each key/value pair defines the new column name with
 # the corresponding validator function.
@@ -175,21 +176,25 @@ dataset_flag_conditions = {
     "validate_no_readingdate_gap": validate_no_readingdate_gap,
 }
 
+column_diff = set(comulative_columns_treholds['Variabele'].values) \
+        - set(cumulative_columns)
+if column_diff:
+    logging.warning(
+        f'More comulative_columns found in thesholds.csv'
+        f'then used in validation. For validation only the'
+        f'columns from data_model.cumulative_columns are used.'
+        f'missing: {list(column_diff)}'
+        )
+
 for col in cumulative_columns:
     if col not in thresholds_dict:
         logging.warning(
             f"Column name: {col} found in data_model.comulative_columns"
             f"that is not present in the thresholds.csv"
             )
-    column_diff = set(comulative_columns_treholds['Variabele'].values) \
-        - set(cumulative_columns)
-    if column_diff:
-        logging.warning(
-            f'More comulative_columns found in thesholds.csv'
-            f'then used in validation. For validation only the'
-            f'columns from data_model.cumulative_columns are used.'
-            f'missing: {list(column_diff)}'
-            )
+    # temp
+    if "Variabele" not in comulative_columns_treholds.columns:
+        raise KeyError(f"Column 'Variabele' is missing present: {comulative_columns_treholds.columns}. Full df: {comulative_columns_treholds} ")
 
     dataset_flag_conditions["validate_" + col] = \
         create_validate_func_col(col, thresholds_dict)

@@ -23,7 +23,8 @@ def valid_metadata_file(tmp_path):
     data = {}
     num_rows = 5
     # for testing, make sure there is one numerical column
-    data["num_column"] = np.random.randint(1, 100, size=num_rows,   )
+    data["num_column"] = np.random.randint(1, 100, size=num_rows)
+    data["num_column"].sort()
     for column_name in bsv_metadata_columns:
         # Generate random string data
         data[column_name] = [f"{column_name}_val_{i}" for i in range(num_rows)]
@@ -65,7 +66,7 @@ def raw_data_fixture(tmp_path_factory):
     projects = [1, 2]
     num_records = 105120  # 1 year of data at 5-minute intervals
     base_date = pd.Timestamp("2023-01-01")
-    time_interval = "5T"  # 5-minute intervals
+    time_interval = "5min"  # 5-minute intervals
     default_max_value = 1  # Default max value if not provided in thresholds
 
     # Output directory (temporary directory for the test session)

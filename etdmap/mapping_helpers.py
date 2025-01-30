@@ -1,6 +1,9 @@
 import logging
+
 import pandas as pd
-from etdmap.data_model import model_column_order, model_column_type, cumulative_columns
+
+from etdmap.data_model import cumulative_columns, model_column_order, model_column_type
+
 
 def rearrange_model_columns(
     household_df: pd.DataFrame,
@@ -43,12 +46,12 @@ def rearrange_model_columns(
 # Check for any gaps greater than one hour
 # Check if at least 90% of the values are not NA
 def validate_cumulative_variables(
-    group: pd.DataFrame,
-    timedelta=pd.Timedelta(hours=1),
-    available=0.9,
-    allow_all_missing=True,
-    context='',
-) -> bool:
+                group: pd.DataFrame,
+                timedelta=pd.Timedelta(hours=1),
+                available=0.9,
+                allow_all_missing=True,
+                context='',
+            ) -> bool:
     if not context == '':
         context = context + ': '
     result = {
@@ -285,11 +288,11 @@ def add_diff_columns(
 
 def fill_down_infrequent_devices(
     df,
-    columns=[
+    columns=(
         'ElektriciteitsgebruikBoilervat',
         'ElektriciteitsgebruikRadiator',
         'ElektriciteitsgebruikBooster',
-    ],
+    )
 ):
     # This function is potentially problematic if the data source or
     # devices are misbehaving as the imputation will not be run on it.
