@@ -192,9 +192,6 @@ for col in cumulative_columns:
             f"Column name: {col} found in data_model.comulative_columns"
             f"that is not present in the thresholds.csv"
             )
-    # temp
-    if "Variabele" not in comulative_columns_treholds.columns:
-        raise KeyError(f"Column 'Variabele' is missing present: {comulative_columns_treholds.columns}. Full df: {comulative_columns_treholds} ")
 
     dataset_flag_conditions["validate_" + col] = \
         create_validate_func_col(col, thresholds_dict)
