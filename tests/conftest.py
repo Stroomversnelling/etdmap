@@ -86,8 +86,8 @@ def raw_data_fixture(tmp_path_factory):
             huis_id = (project_id - 1) * num_households_per_project + household_idx
 
             # Preconstruct the prefixed strings
-            huis_prefixed = f"Huis{huis_id}"
-            project_prefixed = f"Project{project_id}"
+            huis_prefixed = f"Huis{huis_id:02}"
+            project_prefixed = f"Project{project_id:02}"
 
             # Generate time series
             timestamps = pd.date_range(start=base_date, periods=num_records, freq=time_interval)
@@ -203,7 +203,7 @@ def add_raw_data_test_case(base_date, household_df, huis_id_raw, project_id_raw,
 
     ## There is a single variable that is negative (some of the time)
     # Define the probability of flipping a value to negative (e.g., 0.1 means 10% chance)
-    flip_probability = 0.1
+    flip_probability = 0.005
     # Create a boolean mask with True where we want to flip the values to negative
     mask = rng.random(size=household_df.shape[0]) < flip_probability
     # Apply the mask to flip some of the values in the specified column to their negatives
