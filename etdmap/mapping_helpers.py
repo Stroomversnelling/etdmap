@@ -288,7 +288,7 @@ def add_diff_columns(
                 group[col + 'Diff'] = group[col].diff().round(10)
                 group.loc[group.index[0], col + 'Diff'] = 0
 
-                if any(group[col + 'Diff'] < 0):
+                if (group[col + 'Diff'] < 0).any(skipna=True):
                     logging.error(
                         f"{context_string}Removed zeros but "
                         f"diff still has negative values! Check data and "
