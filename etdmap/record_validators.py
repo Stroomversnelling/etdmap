@@ -53,15 +53,15 @@ def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
         }
     )
 
-    valid_masks = ge_masks & le_masks
-    valid_combined = valid_masks.any(axis=1)
+    valid_masks = (ge_masks & le_masks).fillna(True)
+    valid_combined = valid_masks.all(axis=1)
 
     # All relevant columns have NA values (set to pd.NA)
     all_na_rows = df[columns].isna().all(axis=1)
     valid_combined[all_na_rows] = pd.NA
 
-    # Replace any NaN with pd.NA explicitly
-    valid_combined = valid_combined.where(pd.notna(valid_combined), pd.NA)
+    # Replace any NaN with pd.NA explicitly - Need to check if no edge cases are missed - will delete this later
+    # valid_combined = valid_combined.where(pd.notna(valid_combined), pd.NA)
 
     return valid_combined
 
@@ -98,7 +98,7 @@ def validate_columns(df: DataFrame, columns: list, condition_func) -> Series:
     if all(col in df.columns for col in columns):
         valid_mask = df[columns].notna().all(axis=1)
         condition = pd.Series(pd.NA, dtype='boolean', index=df.index)
-        condition[valid_mask] = condition_func(df[valid_mask])
+        condition[valid_mask] = condition_func(df.loc[valid_mask, columns])
         return condition
     else:
         logging.warning(
@@ -153,7 +153,23 @@ def validate_warmteproductie(df: DataFrame) -> Series:
     return validate_columns(df, columns, condition_func)
 
 
-def validate_not_outliers(x: Series):
+def validate_not_outliers(x: pd.DataFrame):
+    if not isinstance(x, pd.DataFrame) or len(x.columns) > 1:
+        raise ValueError("Input must be a pandas DataFrame with one column.")
+
+    # Convert DataFrame to Series
+    x = x.iloc[:, 0]
+
+    if not pd.api.types.is_numeric_dtype(x):
+        unique_values = x.dropna().unique()
+
+        non_numeric_values = unique_values[~unique_values.apply(pd.api.types.is_number)]
+
+        raise TypeError(
+            f"Trying to validate outliers for a non-numerical type in Series: {x.dtype}. "
+            f"Non-numeric values found: {', '.join(map(str, non_numeric_values))}"
+        )
+
     x = x[x > 0]
     q1 = x.quantile(0.25)
     q3 = x.quantile(0.75)
@@ -176,16 +192,21 @@ def create_validate_momentaan(
         record_flag_conditions['validate_' + col] = validate_momentaan
 
 
-def create_validate_comulative(
+def create_validate_cumulative(
         cumulative_columns: list,
         record_flag_conditions: dict
         ) -> None:
     # loop to produce cumulative outlier validators per cumulative column
     for col in cumulative_columns:
-
+        logging.info(f"Creating {col} outliers check")
         def validate_cumulative_outliers(df: DataFrame, cum_col=col) -> Series:
-            result = validate_columns(df, [cum_col + 'Diff'] , validate_not_outliers)
-            return result
+            logging.info(f"Checking {cum_col} outliers")
+            try:
+                result = validate_columns(df, [cum_col + 'Diff'], validate_not_outliers)
+                return result
+            except Exception as e:
+                logging.error(f"Error in {cum_col} outliers check")
+                raise Exception(f"Error in {cum_col} outliers check: {e!s}")  # noqa: B904
 
         record_flag_conditions['validate_' + col + 'Diff_outliers'] = validate_cumulative_outliers
 
@@ -206,4 +227,4 @@ columns_5min_momentaan = thresholds_df[
     ]['Variabele']
 
 create_validate_momentaan(columns_5min_momentaan, record_flag_conditions)
-create_validate_comulative(cumulative_columns, record_flag_conditions)
+create_validate_cumulative(cumulative_columns, record_flag_conditions)

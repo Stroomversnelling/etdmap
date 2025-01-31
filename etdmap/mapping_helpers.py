@@ -18,8 +18,28 @@ def rearrange_model_columns(
             if actual_type != expected_type:
                 logging.warning(
                     f"{context}Column '{col}' has type '{actual_type}' "
-                    f"but expected type is '{expected_type}'",
+                    f"but expected type is '{expected_type}'. Coercing type."
                 )
+
+                # Coerce type and ensure any failures are pd.NA
+                try:
+                    if pd.api.types.is_numeric_dtype(expected_type):
+                        household_df[col] = pd.to_numeric(household_df[col], errors='coerce').astype(expected_type)
+                    elif expected_type == 'boolean':
+                        household_df[col] = household_df[col].astype('boolean')
+                    elif expected_type == 'string':
+                        household_df[col] = household_df[col].astype('string')
+                    elif expected_type == 'category':
+                        household_df[col] = household_df[col].astype('category')
+                    elif expected_type == 'datetime64[ns]':
+                        household_df[col] = pd.to_datetime(household_df[col], errors='coerce')
+
+                    household_df[col] = household_df[col].where(pd.notna(household_df[col]), pd.NA)
+
+                except Exception as e:
+                    logging.error(f"{context}Failed to coerce column '{col}' type: {e}")
+                    raise ValueError(f"{context}Failed to coerce column '{col}' type: {e!s}")  # noqa: B904
+
     if add_columns:
         household_df = household_df.reindex(
             columns=model_column_order
@@ -82,9 +102,18 @@ def validate_cumulative_variables(
                 )
                 result['max_delta_allowed'] = False
 
+            # Find decreasing cumulative values in the column
             filtered_group['negative_diff'] = (
                 round(filtered_group[[col]].diff(), 10) < 0
             )
+
+            # Ensure only the first row can have NA (from diff()), but no other rows should
+            if filtered_group['negative_diff'].isna().sum() > 1:
+                raise ValueError(f"Unexpected NA values found in 'negative_diff' for column '{col}'")
+
+            # Explicitly fill only the first row with False (since it always gets NA)
+            if not filtered_group.empty:
+                filtered_group.iloc[0, filtered_group.columns.get_loc('negative_diff')] = False
 
             if any(filtered_group['negative_diff']):
                 reading_dates = filtered_group[filtered_group['negative_diff']][
