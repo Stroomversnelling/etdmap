@@ -114,16 +114,15 @@ def load_thresholds():
 
     return df
 
-
 def load_thresholds_as_dict() -> dict:
     thresholds_dict = {}
     thresholds_df = load_thresholds()
     for _, row in thresholds_df.iterrows():
         col = row['Variabele']
+        thresholds_dict[col] = {}
         thresholds_dict[col]['Min'] = row['Min']
         thresholds_dict[col]['Max'] = row['Max']
     return thresholds_dict
-
 
 def load_etdmodel():
     etdmodel_file = files("etdmap.data").joinpath("etdmodel.csv")

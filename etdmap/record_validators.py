@@ -37,10 +37,20 @@ def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
     columns = [col for col in df.columns if col in thresholds_dict]
 
     ge_masks = pd.DataFrame(
-        {col: (df[col] >= thresholds_dict[col]['Min']) | (pd.isna(thresholds_dict[col]['Min'])) for col in columns},
+        {
+            col: (df[col] >= thresholds_dict[col]['Min'])
+            if pd.notna(thresholds_dict[col]['Min'])
+            else pd.Series(True, index=df.index)
+            for col in columns
+        }
     )
     le_masks = pd.DataFrame(
-        {col: df[col] <= thresholds_dict[col]['Max'] | (pd.isna(thresholds_dict[col]['Max'])) for col in columns},
+        {
+            col: df[col] <= thresholds_dict[col]['Max']
+            if pd.notna(thresholds_dict[col]['Max'])
+            else pd.Series(True, index=df.index)
+            for col in columns
+        }
     )
 
     valid_masks = ge_masks & le_masks
