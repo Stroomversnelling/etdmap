@@ -6,15 +6,13 @@ from etdmap.index_helpers import read_metadata
 
 
 def test_validate_columns(valid_metadata_file):
-    """Test validate_columns with a valid condition function."""
+    """Basic test for validate_columns with a valid condition function."""
     def condition_func(df):
         return df["num_column"] > 0
 
     test_df = read_metadata(valid_metadata_file)
     result = validate_columns(test_df, ["num_column"], condition_func)
-    # note need to use == instead of is because function returns
-    # a np.True_ object.
-    assert bool(result) is True
+    assert result is True
 
 def test_dataset_flag_conditions():
     """Test keys and values in dataset_flag_conditions.
@@ -41,8 +39,9 @@ def test_dataset_flag_conditions():
     )
     assert all(check in dataset_flag_conditions for check in special_checks)
 
-    # check if each value is a function
+    # check if each value in dict is a function
     assert all(callable(value) for value in dataset_flag_conditions.values())
+
 
 if __name__ == "__main__":
     # Run pytest for debugging the testing
