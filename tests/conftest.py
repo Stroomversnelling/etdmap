@@ -132,7 +132,10 @@ def raw_data_fixture(tmp_path_factory):
     logging.info(f"Fixture generated in directory: {output_dir}")
     return output_dir
 
-
+# cases to add:
+#    mixed data types in a single column - are they reported and coerced correctly?
+#    drifting clocks - are they detected and corrected?
+#    less records than expected - are they reported?
 def add_raw_data_test_case(base_date, household_df, huis_id_raw, project_id_raw, rng, interval = None):
     if interval is None:
         interval = pd.Timedelta(minutes=5)
