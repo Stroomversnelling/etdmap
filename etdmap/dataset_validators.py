@@ -199,7 +199,7 @@ for col in cumulative_columns:
             f"Column name: {col} found in data_model.cumulative_columns "
             f"that is not present in the `thresholds.csv`."
             )
-    # temp
+
 
     dataset_flag_conditions["validate_" + col] = \
         create_validate_func_col(col, thresholds_dict)
