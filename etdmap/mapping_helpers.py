@@ -18,7 +18,7 @@ def rearrange_model_columns(
             if actual_type != expected_type:
                 logging.warning(
                     f"{context}Column '{col}' has type '{actual_type}' "
-                    "but expected type is '{expected_type}'",
+                    f"but expected type is '{expected_type}'",
                 )
     if add_columns:
         household_df = household_df.reindex(
@@ -158,113 +158,113 @@ def add_diff_columns(
                 )
 
         for col in cumulative_columns:
-            if col in group.columns:
-                logging.info(f"Calculating diff for {col}")
-                group[col + 'Diff'] = group[col].diff().round(10)
-                group.loc[group.index[0], col + 'Diff'] = 0
-
-                if not valid_result['no_negative_diff']:
-                    filtered_group = group[['ReadingDate', col]].dropna()
-                    filtered_group[col + 'Diff_no_gap'] = (
-                        filtered_group[col].diff().round(10)
-                    )
-
-                    reading_dates = filtered_group[
-                        filtered_group[col + 'Diff_no_gap'] < 0
-                    ]['ReadingDate']
-
-                    # recalculate = False
-
-                    for rd in reading_dates:
-                        gap = filtered_group[(filtered_group['ReadingDate'] == rd)][
-                            col + 'Diff_no_gap'
-                        ].to_list()[0]
-                        next_value_row = filtered_group[
-                            (filtered_group['ReadingDate'] > rd)
-                            & (filtered_group[col + 'Diff_no_gap'] != 0)
-                        ].head(1)
-
-                        if not next_value_row.empty:
-                            next_value = next_value_row[col + 'Diff_no_gap'].iloc[0]
-                            next_value_date = next_value_row['ReadingDate'].iloc[0]
-                            if next_value >= -1 * gap:
-                                logging.info(
-                                    f"{context_string}Removing unexpected "
-                                    f"zeros from '{col}' between {rd} and "
-                                    f"{next_value_date}",
-                                )
-                                group.loc[
-                                    (group['ReadingDate'] >= rd)
-                                    & (group['ReadingDate'] < next_value_date),
-                                    col,
-                                ] = pd.NA
-                                # recalculate = True
-                            elif next_value < 0:
-                                logging.error(
-                                    f"{context_string}Two negative diffs "
-                                    f"one after the other between {rd} and "
-                                    f"{next_value_date}. Will remove all "
-                                    f"these values for {col}.",
-                                )
-                                group.loc[
-                                    (group['ReadingDate'] >= rd)
-                                    & (group['ReadingDate'] < next_value_date),
-                                    col,
-                                ] = pd.NA
-                                # recalculate = True
-                            else:
-                                if (
-                                    group.loc[
-                                        group['ReadingDate'] == rd,
-                                        col + 'Diff',
-                                    ].iloc[0]
-                                    < 0
-                                ):
-                                    logging.info(
-                                        f"{context_string}Negative gap jump "
-                                        f"at {rd}. Removing single cumulative "
-                                        'value.',
-                                    )
-                                    group.loc[
-                                        group['ReadingDate'] == rd,
-                                        col,
-                                    ] = pd.NA
-                                    # recalculate = True
-                                else:
-                                    logging.info(
-                                        f"{context_string}Negative gap jump "
-                                        f"at {rd}. Diff is not negative, not "
-                                        'removing any values.',
-                                    )
-                        else:
-                            # recalculate = True
-                            group.loc[(group['ReadingDate'] >= rd), col] = pd.NA
-                            logging.error(
-                                f"{context_string}Removing all values in "
-                                f"'{col}' after date '{rd}' as there are "
-                                f"no subsequent increases after the negative "
-                                f"diff.",
-                            )
-
-                    logging.info(
-                        f"{context_string}Re-calculating diff for "
-                        f"{col} after corrections.",
-                    )
-                    group[col + 'Diff'] = group[col].diff().round(10)
-                    group.loc[group.index[0], col + 'Diff'] = 0
-
-                    if any(group[col + 'Diff'] < 0):
-                        logging.error(
-                            f"{context_string}Removed zeros but "
-                            f"diff still has negative values! Check data and "
-                            f"consider removing.",
-                        )
-
-            else:
+            if col not in group.columns:
                 logging.warning(
                     f"{context_string}Cumulative column '{col}' not found. "
                     'No Diff column created.',
                 )
+                continue
+
+            logging.info(f"Calculating diff for {col}")
+            group[col + 'Diff'] = group[col].diff().round(10)
+            group.loc[group.index[0], col + 'Diff'] = 0
+
+            if not valid_result['no_negative_diff']:
+                filtered_group = group[['ReadingDate', col]].dropna()
+                filtered_group[col + 'Diff_no_gap'] = (
+                    filtered_group[col].diff().round(10)
+                )
+
+                reading_dates = filtered_group[
+                    filtered_group[col + 'Diff_no_gap'] < 0
+                ]['ReadingDate']
+
+                # recalculate = False
+
+                for rd in reading_dates:
+                    gap = filtered_group[(filtered_group['ReadingDate'] == rd)][
+                        col + 'Diff_no_gap'
+                    ].to_list()[0]
+                    next_value_row = filtered_group[
+                        (filtered_group['ReadingDate'] > rd)
+                        & (filtered_group[col + 'Diff_no_gap'] != 0)
+                    ].head(1)
+
+                    if not next_value_row.empty:
+                        next_value = next_value_row[col + 'Diff_no_gap'].iloc[0]
+                        next_value_date = next_value_row['ReadingDate'].iloc[0]
+                        if next_value >= -1 * gap:
+                            logging.info(
+                                f"{context_string}Removing unexpected "
+                                f"zeros from '{col}' between {rd} and "
+                                f"{next_value_date}",
+                            )
+                            group.loc[
+                                (group['ReadingDate'] >= rd)
+                                & (group['ReadingDate'] < next_value_date),
+                                col,
+                            ] = pd.NA
+                            # recalculate = True
+                        elif next_value < 0:
+                            logging.error(
+                                f"{context_string}Two negative diffs "
+                                f"one after the other between {rd} and "
+                                f"{next_value_date}. Will remove all "
+                                f"these values for {col}.",
+                            )
+                            group.loc[
+                                (group['ReadingDate'] >= rd)
+                                & (group['ReadingDate'] < next_value_date),
+                                col,
+                            ] = pd.NA
+                            # recalculate = True
+                        else:
+                            if (
+                                group.loc[
+                                    group['ReadingDate'] == rd,
+                                    col + 'Diff',
+                                ].iloc[0]
+                                < 0
+                            ):
+                                logging.info(
+                                    f"{context_string}Negative gap jump "
+                                    f"at {rd}. Removing single cumulative "
+                                    'value.',
+                                )
+                                group.loc[
+                                    group['ReadingDate'] == rd,
+                                    col,
+                                ] = pd.NA
+                                # recalculate = True
+                            else:
+                                logging.info(
+                                    f"{context_string}Negative gap jump "
+                                    f"at {rd}. Diff is not negative, not "
+                                    'removing any values.',
+                                )
+                    else:
+                        # recalculate = True
+                        group.loc[(group['ReadingDate'] >= rd), col] = pd.NA
+                        logging.error(
+                            f"{context_string}Removing all values in "
+                            f"'{col}' after date '{rd}' as there are "
+                            f"no subsequent increases after the negative "
+                            f"diff.",
+                        )
+
+                logging.info(
+                    f"{context_string}Re-calculating diff for "
+                    f"{col} after corrections.",
+                )
+                group[col + 'Diff'] = group[col].diff().round(10)
+                group.loc[group.index[0], col + 'Diff'] = 0
+
+                if any(group[col + 'Diff'] < 0):
+                    logging.error(
+                        f"{context_string}Removed zeros but "
+                        f"diff still has negative values! Check data and "
+                        f"consider removing.",
+                    )
 
         return group
 

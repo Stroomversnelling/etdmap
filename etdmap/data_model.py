@@ -99,8 +99,8 @@ def load_thresholds():
         "Variabele": "string",
         "VariabelType": "string",
         "Eenheid": "string",
-        "Min": "float",
-        "Max": "float",
+        "Min": "Float64",
+        "Max": "Float64",
         "Toelichting": "string"
     }
 
@@ -120,7 +120,8 @@ def load_thresholds_as_dict() -> dict:
     thresholds_df = load_thresholds()
     for _, row in thresholds_df.iterrows():
         col = row['Variabele']
-        thresholds_dict[col] = {'Min': row['Min'], 'Max': row['Max']}
+        thresholds_dict[col]['Min'] = row['Min']
+        thresholds_dict[col]['Max'] = row['Max']
     return thresholds_dict
 
 

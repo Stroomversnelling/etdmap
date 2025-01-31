@@ -17,12 +17,12 @@ They check for each record individually if the values are:
 - are within the thresholds
 - don't have statistical outliers
 
-Using these functions, new (temp) columns per colname can be
+Using these functions, new boolean columns can be
 created that can be used to get insight in the data. The columns are:
-- 'validate_' + col + 'Diff_outliers' (statistical)
-- 'validate'+ col (thresholds)
-- 'validate_combined' (checks for each row if at least one value
-    is outside of thresholds) -- so combines the validate + col columns
+- 'validate_' + col + 'Diff_outliers' (statistical for cumulative columns)
+- 'validate'+ col (thresholds for both cumulative and diff/delta columns)
+- 'validate_combined' (checks for each row if any value
+    is outside of thresholds)
 """
 
 def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
@@ -37,10 +37,10 @@ def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
     columns = [col for col in df.columns if col in thresholds_dict]
 
     ge_masks = pd.DataFrame(
-        {col: df[col] >= thresholds_dict[col]['Min'] for col in columns},
+        {col: (df[col] >= thresholds_dict[col]['Min']) | (pd.isna(thresholds_dict[col]['Min'])) for col in columns},
     )
     le_masks = pd.DataFrame(
-        {col: df[col] <= thresholds_dict[col]['Max'] for col in columns},
+        {col: df[col] <= thresholds_dict[col]['Max'] | (pd.isna(thresholds_dict[col]['Max'])) for col in columns},
     )
 
     valid_masks = ge_masks & le_masks
@@ -66,27 +66,22 @@ def condition_func_threshold(col: str) -> Callable[[pd.DataFrame], bool]:
     Args:
         col (str): column name for which the function holds.
     """
-    if (col in pd.DataFrame.columns) and (col in thresholds_dict):
-        min_treshold = thresholds_dict[col]['Min']
-        max_treshold = thresholds_dict[col]['Max']
-        # Note: This can be problematic if values can be higher/lower than 999999
-        min_treshold_conv = min_treshold if min_treshold != 'n.a.' else -999999
-        max_treshold_conv = max_treshold if max_treshold != 'n.a.' else 999999
-
+    if (col in thresholds_dict):
         def condition_func(df: pd.DataFrame) -> bool:
-            return (df[col] >= min_treshold_conv) & (
-                df[col] <= max_treshold_conv
-            )
+            return (
+                    (df[col] >= thresholds_dict[col]['Min']) | pd.isna(thresholds_dict[col]['Min'])
+                ) & (
+                    (df[col] <= thresholds_dict[col]['Max']) | pd.isna(thresholds_dict[col]['Max'])
+                )
         return condition_func
     else:
-        logging.warning(
-            f"Either no column named {col} in df, "
-            f"or no valid threshold: {min_treshold, max_treshold}"
+        logging.error(
+            f"Cannot generate function: no column named {col} in the thresholds dictionary"
         )
         return None
 
 
-def validate_column(df: DataFrame, columns: list, condition_func) -> Series:
+def validate_columns(df: DataFrame, columns: list, condition_func) -> Series:
     """
     Helper function to validate columns with a given condition function.
     """
@@ -97,7 +92,7 @@ def validate_column(df: DataFrame, columns: list, condition_func) -> Series:
         return condition
     else:
         logging.warning(
-            f"trying to validate columns {columns}, but at least one is not in the DataFrame."
+            f"Cannot validate columns {columns}: At least one is not available in the DataFrame."
         )
         return pd.Series(pd.NA, dtype='boolean', index=df.index)
 
@@ -115,7 +110,7 @@ def validate_300sec(df: DataFrame) -> Series:
     def condition_func(df):
         return df['ReadingDateDiff'] == 300
 
-    result = validate_column(df, column, condition_func)
+    result = validate_columns(df, column, condition_func)
     df.drop(columns=['ReadingDateDiff'], inplace=True)
     return result
 
@@ -136,7 +131,7 @@ def validate_elektriciteitgebruik(df: DataFrame) -> Series:
             + df['ElektriciteitNetgebruikLaag']
         )
 
-    return validate_column(df, columns, condition_func)
+    return validate_columns(df, columns, condition_func)
 
 
 def validate_warmteproductie(df: DataFrame) -> Series:
@@ -145,7 +140,7 @@ def validate_warmteproductie(df: DataFrame) -> Series:
     def condition_func(df: pd.DataFrame) -> bool:
         return df['WarmteproductieWarmtepomp'] >= df['WarmteproductieWarmTapwater']
 
-    return validate_column(df, columns, condition_func)
+    return validate_columns(df, columns, condition_func)
 
 
 def validate_not_outliers(x: Series):
@@ -166,7 +161,7 @@ def create_validate_momentaan(
         def validate_momentaan(df: DataFrame, col=col) -> Series:
             # Checks thresholds
             condition_func = condition_func_threshold(col)
-            result = validate_column(df, [col], condition_func)
+            result = validate_columns(df, [col], condition_func)
             return result
         record_flag_conditions['validate_' + col] = validate_momentaan
 
@@ -179,7 +174,7 @@ def create_validate_comulative(
     for col in cumulative_columns:
 
         def validate_cumulative_outliers(df: DataFrame, cum_col=col) -> Series:
-            result = validate_column(df, [cum_col + 'Diff'] , validate_not_outliers)
+            result = validate_columns(df, [cum_col + 'Diff'] , validate_not_outliers)
             return result
 
         record_flag_conditions['validate_' + col + 'Diff_outliers'] = validate_cumulative_outliers
@@ -195,8 +190,10 @@ record_flag_conditions = {
     'validate_warmteproductie': validate_warmteproductie,
     'validate_thresholds_combined': validate_thresholds_combined,
 }
+
 columns_5min_momentaan = thresholds_df[
     thresholds_df['VariabelType'].isin(['5-minute', 'momentaan'])
-    ]
+    ]['Variabele']
+
 create_validate_momentaan(columns_5min_momentaan, record_flag_conditions)
 create_validate_comulative(cumulative_columns, record_flag_conditions)

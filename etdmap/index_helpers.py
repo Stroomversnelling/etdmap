@@ -102,8 +102,14 @@ def read_index() -> tuple[pd.DataFrame, str]:
             ],
         )
 
+    if "HuisId" in index_df.columns:
+        index_df.rename(columns={"HuisId": "HuisIdLeverancier"}, inplace=True)
+    if "ProjectId" in index_df.columns:
+        index_df.rename(columns={"ProjectId": "ProjectIdLeverancier"}, inplace=True)
+
     # Ensure HuisIdLeverancier is a string
     index_df["HuisIdLeverancier"] = index_df["HuisIdLeverancier"].astype(str)
+    index_df["ProjectIdLeverancier"] = index_df["ProjectIdLeverancier"].astype(str)
 
     return index_df, index_path
 
@@ -169,6 +175,7 @@ def update_index(
 
     # Ensure HuisIdLeverancier is a string in new_entry
     new_entry["HuisIdLeverancier"] = str(new_entry["HuisIdLeverancier"])
+    new_entry["ProjectIdLeverancier"] = str(new_entry["Project  IdLeverancier"])
     new_entry["Dataleverancier"] = data_provider
 
     if new_entry["HuisIdLeverancier"] in index_df["HuisIdLeverancier"].values:
@@ -305,7 +312,7 @@ def add_metadata_to_index(
     metadata_df (pd.DataFrame):
         The metadata DataFrame to be added to the index.
     data_leverancier (str):
-        The data supplier name, if not present in metadata_df.
+        The data supplier name (required).
 
     Returns:
     pd.DataFrame: The updated index DataFrame.

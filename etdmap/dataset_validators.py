@@ -161,9 +161,15 @@ def create_validate_func_outliers_neg_cum(
 year_allowed_jitter = 18  # approx 5% of the year can be missing
 thresholds_df = load_thresholds()
 thresholds_dict = load_thresholds_as_dict()
-comulative_columns_treholds = thresholds_df[
+
+if "Variabele" not in thresholds_df.columns:
+    raise KeyError(f"Column 'Variabele' is missing in thresholds data frame: {thresholds_df.columns}. Full df: {thresholds_df} ")
+
+cumulative_columns_thresholds = thresholds_df[
     thresholds_df['VariabelType']=='cumulatief']
-print(comulative_columns_treholds.columns)
+
+# print(cumulative_columns_threholds.columns)
+
 # dictionary with validators.
 # Each key/value pair defines the new column name with
 # the corresponding validator function.
@@ -176,25 +182,24 @@ dataset_flag_conditions = {
     "validate_no_readingdate_gap": validate_no_readingdate_gap,
 }
 
-column_diff = set(comulative_columns_treholds['Variabele'].values) \
+column_diff = set(cumulative_columns_thresholds['Variabele'].values) \
         - set(cumulative_columns)
+
 if column_diff:
-    logging.warning(
-        f'More comulative_columns found in thesholds.csv'
-        f'then used in validation. For validation only the'
-        f'columns from data_model.cumulative_columns are used.'
-        f'missing: {list(column_diff)}'
+    logging.info(
+        f'More comulative_columns found in thesholds.csv '
+        f'then used in validation. For validation only the '
+        f'columns from `data_model.cumulative_columns` are used. '
+        f'Missing: {list(column_diff)}'
         )
 
 for col in cumulative_columns:
     if col not in thresholds_dict:
         logging.warning(
-            f"Column name: {col} found in data_model.comulative_columns"
-            f"that is not present in the thresholds.csv"
+            f"Column name: {col} found in data_model.cumulative_columns "
+            f"that is not present in the `thresholds.csv`."
             )
     # temp
-    if "Variabele" not in comulative_columns_treholds.columns:
-        raise KeyError(f"Column 'Variabele' is missing present: {comulative_columns_treholds.columns}. Full df: {comulative_columns_treholds} ")
 
     dataset_flag_conditions["validate_" + col] = \
         create_validate_func_col(col, thresholds_dict)
