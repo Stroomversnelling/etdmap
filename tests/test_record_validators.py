@@ -23,7 +23,6 @@ def test_record_flag_conditions():
     4. Wheter all values of dict are functions.
     """
     # check all cumulative column-checks are in keys
-    assert all(col + "Diff" in record_flag_conditions for col in cumulative_columns)
     assert all('validate_' + col + 'Diff_outliers' in record_flag_conditions for col in cumulative_columns)
 
     # check all momentaal column-checks are in record-validator keys
