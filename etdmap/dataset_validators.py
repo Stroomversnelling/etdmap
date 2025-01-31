@@ -162,9 +162,6 @@ year_allowed_jitter = 18  # approx 5% of the year can be missing
 thresholds_df = load_thresholds()
 thresholds_dict = load_thresholds_as_dict()
 
-if "Variabele" not in thresholds_df.columns:
-    raise KeyError(f"Column 'Variabele' is missing in thresholds data frame: {thresholds_df.columns}. Full df: {thresholds_df} ")
-
 cumulative_columns_thresholds = thresholds_df[
     thresholds_df['VariabelType']=='cumulatief']
 
