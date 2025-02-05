@@ -17,6 +17,15 @@ bsv_metadata_columns = [
     "Dataleverancier",
 ]
 
+metadata_dtypes = {
+    "HuisIdLeverancier": str,
+    "HuisIdBSV": int,
+    "Meenemen": bool,
+    "ProjectIdLeverancier": str,
+    "ProjectIdBSV": int,
+    "Notities": str,
+    "Dataleverancier": str,
+}
 
 def get_bsv_metadata():
     """
@@ -58,7 +67,7 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
     if required_columns is None:
         required_columns = ["HuisIdLeverancier"]
     if metadata_file is not None:
-        xl = pd.ExcelFile(metadata_file)
+        xl = pd.ExcelFile(metadata_file, dtype=metadata_dtypes)
     else:
         raise ValueError(
             f"invalid file path: {metadata_file} "
@@ -67,9 +76,7 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
         )
     df = xl.parse(sheet_name="Data")
 
-    if all(col in df.columns for col in required_columns):
-        # Ensure HuisIdLeverancier is a string
-        df["HuisIdLeverancier"] = df["HuisIdLeverancier"].astype(str)
+    if all(col in df.columns for col in required_columns): 
         return df
     else:
         logging.error(
@@ -109,8 +116,9 @@ def read_index() -> tuple[pd.DataFrame, str]:
     if "ProjectId" in index_df.columns:
         index_df.rename(columns={"ProjectId": "ProjectIdLeverancier"}, inplace=True)
 
-    index_df["HuisIdLeverancier"] = index_df["HuisIdLeverancier"].astype(str)
-    index_df["ProjectIdLeverancier"] = index_df["ProjectIdLeverancier"].astype(str)
+    for col, data_type in metadata_dtypes.items():
+        if col in index_df.columns:
+            index_df[col] = index_df[col].astype(data_type)
 
     return index_df, index_path
 
@@ -142,14 +150,17 @@ def get_household_id_pairs(
     data_files = list_files_func(data_folder_path)
 
     household_id_pairs = []
-    next_id = max(index_df["HuisIdBSV"], default=0) + 1
+    next_id = int(max(index_df["HuisIdBSV"], default=0) + 1)
 
     for huis_id, file in data_files.items():
         if huis_id in existing_ids:
-            household_id_pairs.append((existing_ids[huis_id], file))
+            x = (int(existing_ids[huis_id]), file)
         else:
-            household_id_pairs.append((next_id, file))
+            x = (next_id, file)
             next_id += 1
+
+        household_id_pairs.append(x)
+        logging.info(f"Household id pair: {x}")
 
     return household_id_pairs
 
