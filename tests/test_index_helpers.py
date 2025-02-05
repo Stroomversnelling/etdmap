@@ -147,19 +147,23 @@ def _run_mapping_of_etd_fixtures(raw_data_fixture: str, limit_houses:int=20) -> 
     etdmap.index_helpers.add_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
 
 
-def test_creation_validation_columns(raw_data_fixture, request):
+def test_creation_validation_columns_index_data_files(raw_data_fixture, request):
     """
     Functional test of dataset_validators.dataset_flag_conditions.
 
-    Checks if:
-    1. Appropirate columns are created
+    
+    0. Runs the creation of the household parquet files (a selection) and index.parquet
+    Then Checks if:
+    1. Appropirate columns are created in datafiles (record_validators) and index file (dataset validators)
     2. If True/False values are found as expected.
     """
+    ### 0: Create files ###
     # limit houses:
-    limit_houses=5
+    limit_houses=3
     # generate the mapped household parquet files & index file
     _run_mapping_of_etd_fixtures(raw_data_fixture, limit_houses)
 
+    ### 1: Test household.parquet creation ###
     # Test if all household files are created
     folder_path = etdmap.options.mapped_folder_path
     files = os.listdir(folder_path)
@@ -169,24 +173,31 @@ def test_creation_validation_columns(raw_data_fixture, request):
     assert len(files) == limit_houses, f"Expected 5 files, but found {len(files)}"
 
     # check for 1 file if it contains all the right columns
-    df_hh = pd.read_parquet(files[0])
-    # columns that should be added by dataset_validators
-    assert all("validate_" + col in df_hh.columns for col in cumulative_columns)
-    assert all("validate_" + col + "Diff" in df_hh.columns for col in cumulative_columns)
+    df_hh = pd.read_parquet(os.path.join(folder_path, files[0]))
     # columns that should be added by record_validators
+    assert all("validate_" + col + "Diff" in df_hh.columns for col in cumulative_columns)
     assert all('validate_' + col + 'Diff_outliers' in df_hh.columns for col in cumulative_columns)
     assert all('validate_' + col in df_hh.columns for col in columns_5min_momentaan)
 
-    # special_checks = (
-    #     "validate_monitoring_data_counts",
-    #     "validate_energiegebruik_warmteopwekker",
-    #     "validate_approximately_one_year_of_records",
-    #     "validate_columns_exist",
-    #     "validate_no_readingdate_gap"
-    # )
-    # assert all(check in dataset_flag_conditions for check in special_checks)
+    # Check the index.parquet file
+    df_index = pd.read_parquet(os.path.join(folder_path, 'index.parquet'))
+    # Columns that should be added to index.parquet
+    # as defined in dataset_validors.py (and applied in the index_helpers.py)
+    special_checks = (
+        "validate_monitoring_data_counts",
+        "validate_energiegebruik_warmteopwekker",
+        "validate_approximately_one_year_of_records",
+        "validate_columns_exist",
+        "validate_no_readingdate_gap"
+    )
+    assert all(check in df_index.columns for check in special_checks)
+    assert all('validate_' + col in df_index.columns for col in cumulative_columns)
+    assert all('validate_' + col + 'Diff' in df_index.columns for col in cumulative_columns)
+    # check for columns with 'validate' if it contains bool or NA datatypes
+    validate_cols = df_index.filter(like='validate')
 
-    # check for 1 file if the new columns contain the right datatypes
+    # Check if all values in these columns are either bool or pd.NA
+    assert validate_cols.apply(lambda col: col.dropna().map(type).isin([bool]).all()).all()
 
     # check for 1 household file if the values are correct.
 
