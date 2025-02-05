@@ -86,7 +86,7 @@ def validate_cumulative_variables(
             # Check for gaps greater than specified timedelta after first value
             filtered_group = group[['ReadingDate', col]]
             filtered_group = group[['ReadingDate', col]].dropna()
-            filtered_group['ReadingDateDiff'] = filtered_group['ReadingDate'].diff()  # noqa E501
+            filtered_group['ReadingDateDiff'] = filtered_group['ReadingDate'].diff()
             if (filtered_group['ReadingDateDiff'] > timedelta).any():
                 max_delta = filtered_group['ReadingDateDiff'].max()
                 max_gap_start = filtered_group.loc[
@@ -219,9 +219,15 @@ def add_diff_columns(
                         & (filtered_group[col + 'Diff_no_gap'] != 0)
                     ].head(1)
 
+                    # There is another meter reading after the negative dip
+                    # This code block addresses different cases
                     if not next_value_row.empty:
+                        # We want to know what the next meter reading value and the next date is
                         next_value = next_value_row[col + 'Diff_no_gap'].iloc[0]
                         next_value_date = next_value_row['ReadingDate'].iloc[0]
+
+                        # If the meter simply jumps back up to the last value before the negative dip (or above) then we assume there is one bad value to remove
+                        # This cases does not consider time, so may miss edge cases, for example that it did not jump back up but rather so much time passed that the next reading is much higher - this may be fixed in the future but requires assumption about rate of growth
                         if next_value >= -1 * gap:
                             logging.info(
                                 f"{context_string}Removing unexpected "
@@ -234,6 +240,8 @@ def add_diff_columns(
                                 col,
                             ] = pd.NA
                             # recalculate = True
+
+                        # After the negative dip, the meter dips down again (still broken)
                         elif next_value < 0:
                             logging.error(
                                 f"{context_string}Two negative diffs "
@@ -247,32 +255,53 @@ def add_diff_columns(
                                 col,
                             ] = pd.NA
                             # recalculate = True
+
+                        # The meter has values but they are non-negative and not larger than the negative dip
+                        # we consider the meter to have been reset to the value it dipped to
+                        # In this case we sacrifice one value because we cannot calculate a diff from it (it will be negative)
+
+                        # It would be better to save all 'sacrificed' value reading dates in a list and then only mark the recalculated diff as <NA>
+                        # It is only one value so leaving like this for now
                         else:
-                            if (
-                                group.loc[
+
+                            # In the case where we know the colDiff is NA, we actualy don't have to delete the original meter reading
+                            # This happens when there is a pause/missing data before the negative dip so it does not impact our diff calculation
+                            if (group.loc[
                                     group['ReadingDate'] == rd,
                                     col + 'Diff',
-                                ].iloc[0]
-                                < 0
-                            ):
+                                ].isna().all()):
                                 logging.info(
-                                    f"{context_string}Negative gap jump "
-                                    f"at {rd}. Removing single cumulative "
-                                    'value.',
-                                )
-                                group.loc[
-                                    group['ReadingDate'] == rd,
-                                    col,
-                                ] = pd.NA
-                                # recalculate = True
+                                        f"{context_string}Negative gap jump "
+                                        f"at {rd}. Diff is NA, not "
+                                        'removing any values.',
+                                    )
+
+                            # When there are negative diffs calculated we in fact do remove the original value from the column
+                            # so that no negative diff may be calculated
                             else:
-                                logging.info(
-                                    f"{context_string}Negative gap jump "
-                                    f"at {rd}. Diff is not negative, not "
-                                    'removing any values.',
-                                )
+                                diff_belowzero = group.loc[
+                                    (group['ReadingDate'] == rd) & (group[col + 'Diff'] < 0),
+                                    col + 'Diff'
+                                ]
+                                if len(diff_belowzero) > 0:
+                                    group.loc[
+                                        group['ReadingDate'] == rd,
+                                        col,] = pd.NA
+                                    logging.info(
+                                        f"{context_string}Negative gap jump "
+                                        f"at {rd}. Removing single cumulative "
+                                        'value.',
+                                    )
+
+                                # Handling where all values are
+                                else:
+                                    logging.error(
+                                        f"{context_string}Negative gap jump "
+                                        f"at {rd}. Diff is not negative, and "
+                                        'not <NA>. Check for errors, e.g duplicate reading dates!'
+                                    )
                     else:
-                        # recalculate = True
+                        # The meter has had negative dip and after that there were no subsequent increases so we choose to ignore all other values from an apparently broken meter
                         group.loc[(group['ReadingDate'] >= rd), col] = pd.NA
                         logging.error(
                             f"{context_string}Removing all values in "
