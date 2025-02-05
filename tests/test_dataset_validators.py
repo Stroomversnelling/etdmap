@@ -31,7 +31,7 @@ def test_dataset_flag_conditions():
     assert all("validate_" + col + "Diff" in dataset_flag_conditions for col in cumulative_columns)
 
     special_checks = (
-        "validate_monitoring_data_counts", 
+        "validate_monitoring_data_counts",
         "validate_energiegebruik_warmteopwekker", 
         "validate_approximately_one_year_of_records",
         "validate_columns_exist",

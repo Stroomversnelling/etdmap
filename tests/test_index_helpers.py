@@ -8,14 +8,16 @@ import yaml
 
 import etdmap
 import etdmap.index_helpers as index_helpers
+import etdmap.mapping_helpers
 import etdmap.mapping_helpers as mapping
+from etdmap.data_model import cumulative_columns
 from etdmap.dataset_validators import dataset_flag_conditions
 from etdmap.index_helpers import (
     bsv_metadata_columns,
     get_bsv_metadata,
     read_metadata,
 )
-from etdmap.record_validators import record_flag_conditions
+from etdmap.record_validators import columns_5min_momentaan, record_flag_conditions
 
 
 def test_read_metadata(valid_metadata_file, invalid_metadata_file):
@@ -91,19 +93,24 @@ def _process_data_fixture_file(huis_code, file_name, etd_test_fixture_path, mapp
         "HuisIdBSV": huis_code
     }
 
-
-def test_creation_validation_columns(raw_data_fixture, request):
+def _run_mapping_of_etd_fixtures(raw_data_fixture: str, limit_houses:int=20) -> None:
     """
-    Functional test of dataset_validators.dataset_flag_conditions.
+    Generate the mapping of the etd_fixtures.
 
-    Checks if:
-    1. Appropirate columns are created
-    2. If True/False values are found as expected.
+    Calls the necessary functions in mapping_helpers
+    and index_helpers to generate the household_i_table.parquet
+    files.
+
+    Also calls the validator functions of the record_validators
+    and dataset_validators.py creating the additional columns.
+
+    Setup:
+    Before running this, ensure the index_bsv.parquet is copied from
+    the 01 Raw data/etd_test_fixtures folder and renamed to index_bsv
+    in your mapping folder (specified in your config_test.yaml)
+    The path to the metadata file should also be specified there and refers
+    to the etd_bsv_metadata file in the 01 Raw data/etd_test_fixtures folder.
     """
-
-    # copy_to_persistent = request.config.getoption("--copy-data")
-
-    # Paths:
     def load_config(config_path):
         with open(config_path, 'r') as file:
             return yaml.safe_load(file)
@@ -113,40 +120,23 @@ def test_creation_validation_columns(raw_data_fixture, request):
         config = load_config(test_config_path)
 
     etdmap.options.mapped_folder_path = Path(config['etdmap_configuration']['mapped_folder_path'])
-    # fixture_path = etdmap.options['etd_test_fixture_parquet_folder_path']
     fixture_metadata_file = Path(config['etdmap_configuration']['bsv_metadata_file'])
     etdmap.options.bsv_metadata_file = fixture_metadata_file
 
-    # if copy_to_persistent:
-    #     print(f"Copy to persistent data folder: {copy_to_persistent}")
-    #     # Path to the persistent directory
-    #     persistent_dir = os.path.join(os.getcwd(), "persistent_output")
-
-    #     # Ensure the persistent directory exists
-    #     os.makedirs(persistent_dir, exist_ok=True)
-
-    #     # Create a subdirectory in the persistent directory with the same name as the temporary directory
-    #     persistent_subdir = os.path.join(persistent_dir, raw_data_fixture.name)
-    #     os.makedirs(persistent_subdir, exist_ok=True)
-
-    log_file = "data_fixture_processing.log"
-    if os.path.exists(log_file):
-        os.remove(log_file)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
-    )
-
-    logging.info("Starting")
     index_df, index_path = index_helpers.read_index()
-    # add data provider for test data:
-    # index_df.loc[:, "Dataleverancier"] = 'etdmap'
+    if 'Dataleverancier' not in index_df.columns:
+        index_df.loc[:, 'Dataleverancier'] = 'etdmap'
     household_id_pairs = index_helpers.get_household_id_pairs(
         index_df, raw_data_fixture, data_provider="etdmap", list_files_func=_list_files_data_fixture
     )
 
+    # limit nmbr of files/households
+    count = 0
     for huis_code, file_name in household_id_pairs:
+        if count >= limit_houses:
+            break
+        else:
+            count += 1
         logging.info(f"Starting {file_name}")
         new_entry = _process_data_fixture_file(
             huis_code, file_name, raw_data_fixture, etdmap.options.mapped_folder_path
@@ -156,6 +146,49 @@ def test_creation_validation_columns(raw_data_fixture, request):
     metadata_df = read_metadata(fixture_metadata_file)
     etdmap.index_helpers.add_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
 
+
+def test_creation_validation_columns(raw_data_fixture, request):
+    """
+    Functional test of dataset_validators.dataset_flag_conditions.
+
+    Checks if:
+    1. Appropirate columns are created
+    2. If True/False values are found as expected.
+    """
+    # limit houses:
+    limit_houses=5
+    # generate the mapped household parquet files & index file
+    _run_mapping_of_etd_fixtures(raw_data_fixture, limit_houses)
+
+    # Test if all household files are created
+    folder_path = etdmap.options.mapped_folder_path
+    files = os.listdir(folder_path)
+    files = [f for f in files if (
+        os.path.isfile(os.path.join(folder_path, f)) and \
+            ('household' in f))]
+    assert len(files) == limit_houses, f"Expected 5 files, but found {len(files)}"
+
+    # check for 1 file if it contains all the right columns
+    df_hh = pd.read_parquet(files[0])
+    # columns that should be added by dataset_validators
+    assert all("validate_" + col in df_hh.columns for col in cumulative_columns)
+    assert all("validate_" + col + "Diff" in df_hh.columns for col in cumulative_columns)
+    # columns that should be added by record_validators
+    assert all('validate_' + col + 'Diff_outliers' in df_hh.columns for col in cumulative_columns)
+    assert all('validate_' + col in df_hh.columns for col in columns_5min_momentaan)
+
+    # special_checks = (
+    #     "validate_monitoring_data_counts",
+    #     "validate_energiegebruik_warmteopwekker",
+    #     "validate_approximately_one_year_of_records",
+    #     "validate_columns_exist",
+    #     "validate_no_readingdate_gap"
+    # )
+    # assert all(check in dataset_flag_conditions for check in special_checks)
+
+    # check for 1 file if the new columns contain the right datatypes
+
+    # check for 1 household file if the values are correct.
 
 if __name__ == "__main__":
     # Run pytest for debugging the testing
