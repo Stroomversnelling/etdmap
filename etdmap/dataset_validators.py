@@ -197,10 +197,15 @@ for col in cumulative_columns:
             f"that is not present in the `thresholds.csv`."
             )
 
-
+    # These validators will be added only to the index.parquet file
+    # because they validate the complete file, not each column/row
     dataset_flag_conditions["validate_" + col] = \
         create_validate_func_col(col, thresholds_dict)
 
+    # note that the househol.parquet files also contain a column 
+    # "validate_" + col + "Diff", but these are from the 
+    # record_validators (from validate + col in record_validators)
+    # plus the col_Diff from the theshold file. 
     dataset_flag_conditions["validate_" + col + "Diff"] = (
         create_validate_func_outliers_neg_cum(col)
     )
