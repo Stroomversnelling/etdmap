@@ -67,14 +67,14 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
     if required_columns is None:
         required_columns = ["HuisIdLeverancier"]
     if metadata_file is not None:
-        xl = pd.ExcelFile(metadata_file, dtype=metadata_dtypes)
+        xl = pd.ExcelFile(metadata_file)
     else:
         raise ValueError(
             f"invalid file path: {metadata_file} "
             "perhaps you forgot to set the option. You can "
             "do this with etdmap.options.bsv_metadata_file = 'your/path",
         )
-    df = xl.parse(sheet_name="Data")
+    df = xl.parse(sheet_name="Data", dtype=metadata_dtypes)
 
     if all(col in df.columns for col in required_columns): 
         return df
@@ -384,11 +384,11 @@ def add_metadata_to_index(
     inconsistent_combinations = grouped_df[grouped_df["count"] != 3]
 
     if not inconsistent_combinations.empty:
-        logging.warning(
+        logging.error(
             "The following combinations of shared column values are "
             "inconsistent across the datasets:",
         )
-        logging.warning(inconsistent_combinations)
+        logging.error(inconsistent_combinations)
 
     index_df.drop(columns=["source"], inplace=True)
     metadata_df.drop(columns=["source"], inplace=True)
