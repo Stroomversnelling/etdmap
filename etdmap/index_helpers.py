@@ -17,14 +17,15 @@ bsv_metadata_columns = [
     "Dataleverancier",
 ]
 
+# all nullable pandas series types
 metadata_dtypes = {
-    "HuisIdLeverancier": str,
-    "HuisIdBSV": int,
-    "Meenemen": bool,
-    "ProjectIdLeverancier": str,
-    "ProjectIdBSV": int,
-    "Notities": str,
-    "Dataleverancier": str,
+    "HuisIdLeverancier": pd.StringDtype(),
+    "HuisIdBSV": pd.Int64Dtype(),
+    "Meenemen": pd.BooleanDtype(),
+    "ProjectIdLeverancier": pd.StringDtype(),
+    "ProjectIdBSV": pd.Int64Dtype(),
+    "Notities": pd.StringDtype(),
+    "Dataleverancier": pd.StringDtype(),
 }
 
 def get_bsv_metadata():
@@ -74,7 +75,8 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
             "perhaps you forgot to set the option. You can "
             "do this with etdmap.options.bsv_metadata_file = 'your/path",
         )
-    df = xl.parse(sheet_name="Data", dtype=metadata_dtypes)
+    df = xl.parse(sheet_name="Data")
+    df = set_metadata_dtypes(metadata_df = df)
 
     if all(col in df.columns for col in required_columns): 
         return df
@@ -116,9 +118,8 @@ def read_index() -> tuple[pd.DataFrame, str]:
     if "ProjectId" in index_df.columns:
         index_df.rename(columns={"ProjectId": "ProjectIdLeverancier"}, inplace=True)
 
-    for col, data_type in metadata_dtypes.items():
-        if col in index_df.columns:
-            index_df[col] = index_df[col].astype(data_type)
+    index_df = set_metadata_dtypes(metadata_df=index_df, strict=True)
+
 
     return index_df, index_path
 
@@ -183,8 +184,6 @@ def update_index(
     pd.DataFrame: The updated index DataFrame.
     """
 
-    index_path = os.path.join(etdmap.options.mapped_folder_path, "index.parquet")
-
     # Ensure HuisIdLeverancier is a string in new_entry
     new_entry["HuisIdLeverancier"] = str(new_entry["HuisIdLeverancier"])
     if "ProjectIdLeverancier" in new_entry:
@@ -213,7 +212,7 @@ def update_index(
             if flag not in index_df.columns:
                 index_df[flag] = pd.Series(
                     pd.NA,
-                    dtype="boolean",
+                    dtype="boolean", # "bool" is the standard non-nullable Boolean type (backed by NumPy), while "boolean" is pandas' nullable Boolean extension type (pd.BooleanDtype) that supports NA values.
                     index=index_df.index,
                 )
             try:
@@ -239,7 +238,7 @@ def update_index(
 
     index_df = update_meta_validators(index_df)
 
-    index_df.to_parquet(index_path, engine="pyarrow")
+    save_index_to_parquet(index_df=index_df)
 
     return index_df
 
@@ -306,7 +305,7 @@ def update_meenemen() -> pd.DataFrame:
     bsv_meenemen = bsv_metadata_df[["HuisIdBSV", "Meenemen"]]
     index_df = index_df.merge(bsv_meenemen, on=["HuisIdBSV"])
 
-    index_df.to_parquet(index_path, engine="pyarrow")
+    save_index_to_parquet(index_df=index_df)
 
     return index_df
 
@@ -342,8 +341,6 @@ def add_metadata_to_index(
     def metadata_format(df: pd.DataFrame):
         df["HuisIdLeverancier"] = df["HuisIdLeverancier"].astype(str)
         return df
-
-    index_path = os.path.join(etdmap.options.mapped_folder_path, "index.parquet")
 
     metadata_df = metadata_format(metadata_df)
 
@@ -443,6 +440,53 @@ def add_metadata_to_index(
     index_df.reset_index(inplace=True)
 
     # Save the updated index to the parquet file
-    index_df.to_parquet(index_path, engine="pyarrow")
+    save_index_to_parquet(index_df=index_df)
 
     return index_df
+
+def save_index_to_parquet(index_df: pd.DataFrame) -> None:
+    """
+    Save the index DataFrame to a Parquet file.
+    Parameters:
+        index_df (pd.DataFrame): The DataFrame containing the index data.
+    Returns:
+        None
+    """
+
+    index_path = os.path.join(etdmap.options.mapped_folder_path, "index.parquet")
+
+    index_df = set_metadata_dtypes(metadata_df=index_df, strict=True)
+
+    index_df.to_parquet(index_path, engine="pyarrow")
+
+    return None
+
+def set_metadata_dtypes(metadata_df: pd.DataFrame, strict: bool = False) -> pd.DataFrame:
+    """
+    Set the data types of columns in the index or metdata DataFrame based on metadata_dtypes.
+    Parameters:
+        metadata_df (pd.DataFrame): The DataFrame containing the metadata.
+        strict (bool): If True, raises an error if a column specified in metadata_dtypes is not found in the DataFrame. Default is False.
+    Returns:
+        pd.DataFrame: The DataFrame with updated column data types.
+    """
+
+    for col, data_type in metadata_dtypes.items():
+        if col in metadata_df.columns:
+            metadata_df[col] = metadata_df[col].astype(data_type)
+        else:
+            if strict:
+                print(f"Column {col} not found in DataFrame columns.")  # Debugging line to check for missing columns.
+                raise ValueError(f"Column {col} is specified in metadata_dtypes but not present in the index_df to be saved.")  # Raise an error if a column is missing.
+
+    return metadata_df
+
+
+
+
+
+
+
+
+
+
