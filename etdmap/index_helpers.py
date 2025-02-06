@@ -417,13 +417,12 @@ def add_metadata_to_index(
                 "Dataleverancier",
                 "HuisIdBSV",
                 "ProjectIdBSV",
-                "Meenemen",
-                "Notities",
             ]
         ],
         on=["HuisIdLeverancier", "ProjectIdLeverancier", "Dataleverancier"],
         how="left",
     )
+
 
     # Add new columns with pd.NA if they do not already exist in index_df
     for column in metadata_df.columns:

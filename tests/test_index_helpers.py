@@ -11,7 +11,6 @@ import etdmap.index_helpers as index_helpers
 import etdmap.mapping_helpers
 import etdmap.mapping_helpers as mapping
 from etdmap.data_model import cumulative_columns
-from etdmap.dataset_validators import dataset_flag_conditions
 from etdmap.index_helpers import (
     bsv_metadata_columns,
     get_bsv_metadata,
@@ -151,7 +150,6 @@ def test_creation_validation_columns_index_data_files(raw_data_fixture, request)
     """
     Functional test of dataset_validators.dataset_flag_conditions.
 
-    
     0. Runs the creation of the household parquet files (a selection) and index.parquet
     Then Checks if:
     1. Appropirate columns are created in datafiles (record_validators) and index file (dataset validators)
@@ -159,7 +157,7 @@ def test_creation_validation_columns_index_data_files(raw_data_fixture, request)
     """
     ### 0: Create files ###
     # limit houses:
-    limit_houses=3
+    limit_houses=10
     # generate the mapped household parquet files & index file
     _run_mapping_of_etd_fixtures(raw_data_fixture, limit_houses)
 
@@ -190,6 +188,12 @@ def test_creation_validation_columns_index_data_files(raw_data_fixture, request)
         "validate_columns_exist",
         "validate_no_readingdate_gap"
     )
+
+    standard_columns = (
+        "Meenemen",
+        "Notities"
+    )
+    assert all(check in df_index.columns for check in standard_columns)
     assert all(check in df_index.columns for check in special_checks)
     assert all('validate_' + col in df_index.columns for col in cumulative_columns)
     assert all('validate_' + col + 'Diff' in df_index.columns for col in cumulative_columns)
@@ -200,6 +204,7 @@ def test_creation_validation_columns_index_data_files(raw_data_fixture, request)
     assert validate_cols.apply(lambda col: col.dropna().map(type).isin([bool]).all()).all()
 
     # check for 1 household file if the values are correct.
+    # When we have files.
 
 if __name__ == "__main__":
     # Run pytest for debugging the testing
