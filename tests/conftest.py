@@ -7,7 +7,7 @@ import pytest
 from numpy.random import PCG64, Generator
 
 from etdmap.data_model import cumulative_columns, load_thresholds
-from etdmap.index_helpers import bsv_metadata_columns
+from etdmap.index_helpers import bsv_metadata_columns, metadata_dtypes
 
 
 def pytest_addoption(parser):
@@ -21,15 +21,21 @@ def valid_metadata_file(tmp_path):
     metadata_file = tmp_path / "metadata.xlsx"
 
     data = {}
-    num_rows = 5
-    # for testing, make sure there is one numerical column
-    data["num_column"] = np.random.randint(1, 100, size=num_rows)
-    data["num_column"].sort()
-    for column_name in bsv_metadata_columns:
-        # Generate random string data
-        data[column_name] = [f"{column_name}_val_{i}" for i in range(num_rows)]
 
+    data = {
+        "HuisIdLeverancier": ["A123", "B456", "C789"],
+        "HuisIdBSV": [101, 202, None],  # One missing value for demonstration
+        "Meenemen": [True, False, True],
+        "ProjectIdLeverancier": ["P001", "P002", "P003"],
+        "ProjectIdBSV": [1, 2, 3],
+        "Notities": ["First note", None, "Final note"],  # One missing value
+        "Dataleverancier": ["CompanyX", "CompanyY", "CompanyZ"],
+    }
+
+    data["num_column"] = np.random.randint(1, 100, size=3)
+    data["num_column"].sort()
     df = pd.DataFrame(data)
+
     df.to_excel(metadata_file, sheet_name="Data", index=False)
     return str(metadata_file)
 

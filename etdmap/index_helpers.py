@@ -10,11 +10,11 @@ from etdmap.dataset_validators import dataset_flag_conditions
 bsv_metadata_columns = [
     "HuisIdLeverancier",
     "HuisIdBSV",
-    "Meenemen",
     "ProjectIdLeverancier",
     "ProjectIdBSV",
-    "Notities",
     "Dataleverancier",
+    "Meenemen",
+    "Notities",
 ]
 
 # all nullable pandas series types
@@ -104,13 +104,7 @@ def read_index() -> tuple[pd.DataFrame, str]:
         index_df = pd.read_parquet(index_path)
     else:
         index_df = pd.DataFrame(
-            columns=[
-                "HuisIdLeverancier",
-                "ProjectIdLeverancier",
-                "HuisIdBSV",
-                "ProjectIdBSV",
-                "HuisCode",
-                "Dataleverancier"]
+            columns=bsv_metadata_columns
         )
 
     if "HuisId" in index_df.columns:
@@ -404,7 +398,6 @@ def add_metadata_to_index(
         columns=[col for col in protected_columns if col in metadata_df.columns],
     )
 
-    # add Meenemen, Notities, and protected_columns using data from
     # # bsv_metadata_df (do not change bsv_metadata_df)
     metadata_df = metadata_df.merge(
         bsv_metadata_filtered_df[
@@ -480,13 +473,3 @@ def set_metadata_dtypes(metadata_df: pd.DataFrame, strict: bool = False) -> pd.D
                 raise ValueError(f"Column {col} is specified in metadata_dtypes but not present in the index_df to be saved.")  # Raise an error if a column is missing.
 
     return metadata_df
-
-
-
-
-
-
-
-
-
-

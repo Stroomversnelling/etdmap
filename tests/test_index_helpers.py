@@ -23,7 +23,7 @@ def test_read_metadata(valid_metadata_file, invalid_metadata_file):
     # Test the function with the valid file fixture
     result = read_metadata(valid_metadata_file)
     assert isinstance(result, pd.DataFrame)
-    assert list(result.columns) == ["num_column", *bsv_metadata_columns]
+    assert set(result.columns) == set(["num_column", *bsv_metadata_columns])
 
     # Test the function with an invalid file
     with pytest.raises(Exception) as excinfo:
@@ -142,7 +142,8 @@ def _run_mapping_of_etd_fixtures(raw_data_fixture: str, limit_houses:int=20) -> 
         )
         index_df = etdmap.index_helpers.update_index(index_df, new_entry, data_provider="etdmap")
 
-    metadata_df = read_metadata(fixture_metadata_file)
+    metadata_file_path = Path(config['etdmap_configuration']['metadata_xlsx_file'])
+    metadata_df = read_metadata(metadata_file_path)
     etdmap.index_helpers.add_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
 
 
@@ -168,7 +169,8 @@ def test_creation_validation_columns_index_data_files(raw_data_fixture, request)
     files = [f for f in files if (
         os.path.isfile(os.path.join(folder_path, f)) and \
             ('household' in f))]
-    assert len(files) == limit_houses, f"Expected 5 files, but found {len(files)}"
+    assert len(files) == limit_houses, f"Expected {limit_houses} files, but found {len(files)} \
+        perhaps forgot to delete files in mapping directory at start of test."
 
     # check for 1 file if it contains all the right columns
     df_hh = pd.read_parquet(os.path.join(folder_path, files[0]))
