@@ -144,7 +144,7 @@ def _run_mapping_of_etd_fixtures(raw_data_fixture: str, limit_houses:int=20) -> 
 
     metadata_file_path = Path(config['etdmap_configuration']['metadata_xlsx_file'])
     metadata_df = read_metadata(metadata_file_path)
-    etdmap.index_helpers.add_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
+    etdmap.index_helpers.add_supplier_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
 
 
 def test_creation_validation_columns_index_data_files(raw_data_fixture, request):

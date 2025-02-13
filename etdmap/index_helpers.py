@@ -304,7 +304,7 @@ def update_meenemen() -> pd.DataFrame:
     return index_df
 
 
-def add_metadata_to_index(
+def add_supplier_metadata_to_index(
     index_df: pd.DataFrame,
     metadata_df: pd.DataFrame,
     data_leverancier=None,
