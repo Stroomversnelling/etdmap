@@ -394,7 +394,8 @@ def add_supplier_metadata_to_index(
         inplace=True,
     )
 
-    index_df.update(metadata_df.loc[:, allowed_supplier_metadata_columns])
+    columns_for_update = metadata_df.columns.intersection(allowed_supplier_metadata_columns)
+    index_df.update(metadata_df.loc[:, columns_for_update])
     index_df.reset_index(inplace=True)
 
     # Save the updated index to the parquet file
