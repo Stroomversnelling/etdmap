@@ -4,7 +4,10 @@ import os
 import pandas as pd
 
 import etdmap
-from etdmap.data_model import cumulative_columns
+from etdmap.data_model import (
+    allowed_supplier_metadata_columns,
+    cumulative_columns,
+)
 from etdmap.dataset_validators import dataset_flag_conditions
 
 bsv_metadata_columns = [
@@ -391,7 +394,7 @@ def add_supplier_metadata_to_index(
         inplace=True,
     )
 
-    index_df.update(metadata_df) # .loc[:, allowed_supplier_metadata_columns]
+    index_df.update(metadata_df.loc[:, allowed_supplier_metadata_columns])
     index_df.reset_index(inplace=True)
 
     # Save the updated index to the parquet file

@@ -92,6 +92,17 @@ model_column_type = {
     'Ventilatiedebiet': 'Float64',
 }
 
+
+allowed_supplier_metadata_columns = [
+    "ProjectIdLeverancier", "HuisIdLeverancier", "Weerstation", "Oppervlakte", "PlatOfZadelDak",
+    "Compactheid", "Warmtebehoefte", "PrimairFossielGebruik", "Bouwjaar", "Renovatiejaar",
+    "WoningType", "WoningTypeDetail", "WarmteopwekkerType", "WarmteopwekkerCategorie", 
+    "Warmteopwekker", "Ventilatiesysteem", "Kookinstallatie", "PVJaarbundel", "PVMerk", 
+    "PVType", "PVAantalPanelen", "PVWattpiekPerPaneel", "EPV", "GasgebruikVoorRenovatie", 
+    "ElektriciteitVoorRenovatie"
+]
+
+
 def load_thresholds():
     thresholds_file = files("etdmap.data").joinpath("thresholds.csv")
 
