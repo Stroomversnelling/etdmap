@@ -87,7 +87,7 @@ def _process_data_fixture_file(huis_code, file_name, etd_test_fixture_path, mapp
 
     return {
         "HuisIdLeverancier": f'Huis{int(file_name.replace("household_", "").replace("_table.parquet", "")):02}',
-        # "ProjectIdLeverancier": 3,
+        # "ProjectId": 3,
         "HuisCode": huis_code,
         "HuisIdBSV": huis_code
     }
@@ -142,7 +142,7 @@ def _run_mapping_of_etd_fixtures(raw_data_fixture: str, limit_houses:int=20) -> 
         )
         index_df = etdmap.index_helpers.update_index(index_df, new_entry, data_provider="etdmap")
 
-    metadata_file_path = Path(config['etdmap_configuration']['metadata_xlsx_file'])
+    metadata_file_path = Path(config['etdmap_configuration']['supplier_metadata_xlsx_file'])
     metadata_df = read_metadata(metadata_file_path)
     etdmap.index_helpers.add_supplier_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
 

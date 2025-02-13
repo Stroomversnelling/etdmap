@@ -347,44 +347,6 @@ def add_supplier_metadata_to_index(
     # Shared columns
     shared_columns = metadata_df.columns.intersection(bsv_metadata_columns).intersection(index_df.columns)
 
-    # Check that the combination values of shared columns is the
-    # same across the three datasets: index_df, metadata_df, and
-    # bsv_metadata_df and add a warning if not
-    index_df.reset_index(inplace=True)
-
-    index_df["source"] = "index_df"
-    metadata_df["source"] = "metadata_df"
-    bsv_metadata_filtered_df["source"] = "bsv_metadata_df"
-
-    shared_columns_source = [*shared_columns.tolist(), "source"]
-
-    concatenated_df = pd.concat(
-        [
-            index_df[index_df["Dataleverancier"] == data_leverancier][
-                shared_columns_source
-            ],
-            metadata_df[shared_columns_source],
-            bsv_metadata_filtered_df[shared_columns_source],
-        ],
-    )
-    grouped_df = (
-        concatenated_df.groupby(shared_columns.tolist())
-        .size()
-        .reset_index(name="count")
-    )
-    inconsistent_combinations = grouped_df[grouped_df["count"] != 3]
-
-    if not inconsistent_combinations.empty:
-        logging.error(
-            "The following combinations of shared column values are "
-            "inconsistent across the datasets:",
-        )
-        logging.error(inconsistent_combinations)
-
-    index_df.drop(columns=["source"], inplace=True)
-    metadata_df.drop(columns=["source"], inplace=True)
-    bsv_metadata_filtered_df.drop(columns=["source"], inplace=True)
-
     # Make sure data supplier is defined
     if "Dataleverancier" not in metadata_df.columns:
         if data_leverancier is None:
@@ -421,20 +383,20 @@ def add_supplier_metadata_to_index(
 
     # Update existing records
     index_df.set_index(
-        ["HuisIdLeverancier", "ProjectIdLeverancier", "Dataleverancier"],
+        ["HuisIdLeverancier", "Dataleverancier"],
         inplace=True,
     )
     metadata_df.set_index(
-        ["HuisIdLeverancier", "ProjectIdLeverancier", "Dataleverancier"],
+        ["HuisIdLeverancier", "Dataleverancier"],
         inplace=True,
     )
 
-    index_df.update(metadata_df)
+    index_df.update(metadata_df) # .loc[:, allowed_supplier_metadata_columns]
     index_df.reset_index(inplace=True)
 
     # Save the updated index to the parquet file
     save_index_to_parquet(index_df=index_df)
-
+    
     return index_df
 
 def save_index_to_parquet(index_df: pd.DataFrame) -> None:
