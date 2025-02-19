@@ -306,6 +306,7 @@ def update_meenemen() -> pd.DataFrame:
     columns_for_update = bsv_metadata_df.columns.intersection(allowed_supplier_metadata_columns)
 
     index_df.update(bsv_metadata_df.loc[:, columns_for_update])
+    index_df.reset_index(inplace=True)
     save_index_to_parquet(index_df=index_df)
 
     return index_df

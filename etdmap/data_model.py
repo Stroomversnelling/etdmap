@@ -99,7 +99,7 @@ allowed_supplier_metadata_columns = [
     "WoningType", "WoningTypeDetail", "WarmteopwekkerType", "WarmteopwekkerCategorie", 
     "Warmteopwekker", "Ventilatiesysteem", "Kookinstallatie", "PVJaarbundel", "PVMerk", 
     "PVType", "PVAantalPanelen", "PVWattpiekPerPaneel", "EPV", "GasgebruikVoorRenovatie", 
-    "ElektriciteitVoorRenovatie"
+    "ElektriciteitVoorRenovatie", "Meenemen", "ProjectIdBSV"
 ]
 
 
