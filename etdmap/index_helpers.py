@@ -295,13 +295,17 @@ def update_meenemen() -> pd.DataFrame:
 
     index_df, index_path = read_index()
 
-    index_df.drop(columns=["Meenemen"], inplace=True)
+    # index_df.drop(columns=["Meenemen"], inplace=True)
 
     bsv_metadata_df = get_bsv_metadata()
 
-    bsv_meenemen = bsv_metadata_df[["HuisIdBSV", "Meenemen"]]
-    index_df = index_df.merge(bsv_meenemen, on=["HuisIdBSV"])
+    # bsv_meenemen = bsv_metadata_df[["HuisIdBSV", "Meenemen"]]
+    # index_df = index_df.merge(bsv_meenemen, on=["HuisIdBSV"])
+    bsv_metadata_df.set_index("HuisIdBSV", inplace=True)
+    index_df.set_index('HuisIdBSV', inplace=True)
+    columns_for_update = bsv_metadata_df.columns.intersection(allowed_supplier_metadata_columns)
 
+    index_df.update(bsv_metadata_df.loc[:, columns_for_update])
     save_index_to_parquet(index_df=index_df)
 
     return index_df
