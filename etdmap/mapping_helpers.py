@@ -1,8 +1,10 @@
 import logging
+from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
 
 from etdmap.data_model import cumulative_columns, model_column_order, model_column_type
+from etdmap.index_helpers import get_mapped_data, read_index
 
 
 def rearrange_model_columns(
@@ -607,3 +609,172 @@ def ensure_intervals(
         merged_df = merge_left(df)
         return merged_df
 
+def collect_mapped_data_stats(huis_id_bsv):
+    """
+    Collect statistics for each column in the DataFrame corresponding to a specific HuisIdBSV.
+
+    This function retrieves data for a given `huis_id_bsv`, processes it, and collects summary statistics
+    for each column. It logs errors if any issues occur during processing.
+
+    Parameters
+    ----------
+    huis_id_bsv : str or int
+        The identifier for the household to process.
+
+    Returns
+    -------
+    list of dict
+        A list of dictionaries, where each dictionary contains summary statistics for a column in the DataFrame.
+        Each dictionary has keys 'column_name', 'mean', 'std', 'min', and 'max'.
+
+    Notes
+    -----
+    - The function uses `get_mapped_data` to retrieve the data for the given `huis_id_bsv`.
+    - It logs errors if there are issues retrieving or processing the data.
+    """
+    logging.info(f"Processing stats from columns where HuisIdBSV = {huis_id_bsv}")
+    file_summary_data = []
+    try:
+        df = get_mapped_data(huis_id_bsv)
+        for column in df.columns:
+            column_data = df[column]
+            file_summary_data.append(
+                collect_column_stats(huis_id_bsv, column_data)
+            )
+    except Exception as e:
+        logging.error(f"Failed to process stats from columns where HuisIdBSV = {huis_id_bsv}: {str(e)}", exc_info=True)
+
+    return file_summary_data
+
+def collect_column_stats(identifier, column_data):
+    """
+    Collect summary statistics for a given column of data.
+
+    Parameters
+    ----------
+    identifier : str or int
+        The identifier for the dataset.
+    column_data : pd.Series
+        The data in the column to analyze.
+
+    Returns
+    -------
+    dict
+        A dictionary containing summary statistics for the column. The keys are:
+            - 'Identifier': The identifier for the dataset.
+            - 'column': The name of the column.
+            - 'type': The data type of the column.
+            - 'count': The number of non-null values in the column.
+            - 'missing': The number of missing values in the column.
+            - 'errors': The number of errors (NA) in the column.
+            - 'min': The minimum value in the column, if applicable.
+            - 'max': The maximum value in the column, if applicable.
+            - 'mean': The mean value in the column, if applicable.
+            - 'median': The median value in the column, if applicable.
+            - 'iqr': The interquartile range (IQR) of the column, if applicable.
+            - 'quantile_25': The 25th percentile value in the column, if applicable.
+            - 'quantile_75': The 75th percentile value in the column, if applicable.
+            - 'top5': A dictionary with the top 5 most frequent values and their counts, if applicable.
+
+    Notes
+    -----
+    - This function handles different data types (numeric, boolean, datetime, object) and computes relevant statistics accordingly.
+    - At the moment there is no effective difference between missing and errors.
+    """
+    dtype = column_data.dtype
+    n_values = column_data.count()
+    n_missing = column_data.isnull().sum()
+    n_errors = column_data.isna().sum()
+
+    # Initialize statistics variables
+    _min, _max, _mean, _median, _iqr, quantile_25, quantile_75, top5 = (
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+
+    if not column_data.isna().all():
+        if pd.api.types.is_bool_dtype(column_data):
+            _mean = column_data.mean()
+        elif pd.api.types.is_numeric_dtype(column_data):
+            _min = column_data.min()
+            _max = column_data.max()
+            _mean = column_data.mean()
+            _median = column_data.median()
+            quantile_25 = column_data.quantile(0.25)
+            quantile_75 = column_data.quantile(0.75)
+            _iqr = quantile_75 - quantile_25
+        elif pd.api.types.is_datetime64_any_dtype(column_data):
+            _min = column_data.min()
+            _max = column_data.max()
+        if pd.api.types.is_object_dtype(column_data):
+            top5 = column_data.value_counts().head(5).to_dict()
+
+    return {
+        "Identifier": identifier,
+        "column": column_data.name,
+        "type": dtype,
+        "count": n_values,
+        "missing": n_missing,
+        "errors": n_errors,
+        "min": _min,
+        "max": _max,
+        "mean": _mean,
+        "median": _median,
+        "iqr": _iqr,
+        "quantile_25": quantile_25,
+        "quantile_75": quantile_75,
+        "top5": top5,
+    }
+
+def get_mapped_data_stats(multi=True, max_workers=1):
+    """
+    Collect and aggregate statistics for all columns in the DataFrame corresponding to each HuisIdBSV.
+
+    Parameters
+    ----------
+    multi : bool, optional
+        If True, use multiprocessing to collect stats. Default is True.
+    max_workers : int, optional
+        The maximum number of workers to use for multiprocessing. Default is 1.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the aggregated statistics for each column in the DataFrame corresponding to each HuisIdBSV.
+        Each row represents a column from a specific HuisIdBSV and contains summary statistics.
+
+    Notes
+    -----
+    - The function uses `read_index` to retrieve the index of households.
+    - It logs errors if there are issues retrieving or processing the data.
+    """
+    summary_data = []
+    try:
+        index_df, _ = read_index()
+
+        if multi:
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                results = executor.map(collect_mapped_data_stats, index_df["HuisIdBSV"])
+                summary_data = [item for sublist in results for item in sublist]
+        else:
+            for huis_id in index_df["HuisIdBSV"]:
+                logging.info(f"Collecting stats for HuisIdBSV = {huis_id}")
+                result = collect_mapped_data_stats(huis_id)
+                summary_data.extend(result)
+
+        data_summary = pd.DataFrame(summary_data)
+
+        data_summary = data_summary.rename(columns={"Identifier": "HuisIdBSV"})
+
+        data_summary = pd.merge(data_summary, index_df, how="left", on="HuisIdBSV")
+
+        return data_summary
+
+    except Exception as e:
+        logging.error(f"Failed to complete the main process: {str(e)}", exc_info=True)

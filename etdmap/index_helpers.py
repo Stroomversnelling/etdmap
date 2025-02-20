@@ -405,7 +405,7 @@ def add_supplier_metadata_to_index(
 
     # Save the updated index to the parquet file
     save_index_to_parquet(index_df=index_df)
-    
+
     return index_df
 
 def save_index_to_parquet(index_df: pd.DataFrame) -> None:
@@ -428,11 +428,18 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
 def set_metadata_dtypes(metadata_df: pd.DataFrame, strict: bool = False) -> pd.DataFrame:
     """
     Set the data types of columns in the index or metdata DataFrame based on metadata_dtypes.
-    Parameters:
-        metadata_df (pd.DataFrame): The DataFrame containing the metadata.
-        strict (bool): If True, raises an error if a column specified in metadata_dtypes is not found in the DataFrame. Default is False.
-    Returns:
-        pd.DataFrame: The DataFrame with updated column data types.
+
+    Parameters
+    ----------
+    metadata_df : pandas.DataFrame
+        The DataFrame containing the metadata.
+    strict : bool, optional
+        If True, raises an error if a column specified in metadata_dtypes is not found in the DataFrame. Default is False.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The DataFrame with updated column data types.
     """
 
     for col, data_type in metadata_dtypes.items():
@@ -444,3 +451,48 @@ def set_metadata_dtypes(metadata_df: pd.DataFrame, strict: bool = False) -> pd.D
                 raise ValueError(f"Column {col} is specified in metadata_dtypes but not present in the index_df to be saved.")  # Raise an error if a column is missing.
 
     return metadata_df
+
+def get_mapped_file_path(huis_id_bsv: int) -> str:
+    """
+    Generates the file path for the mapped household data based on the BSV household ID.
+
+    Parameters
+    ----------
+    huis_id_bsv : int
+        The BSV household ID.
+
+    Returns
+    -------
+    str
+        The full file path to the mapped household data in Parquet format.
+    """
+
+    file_name = f"household_{huis_id_bsv}_table.parquet"
+    file_path = os.path.join(etdmap.options.mapped_folder_path, file_name)
+    return file_path
+
+def get_mapped_data(huis_id_bsv: int) -> pd.DataFrame:
+    """
+    Retrieves the mapped household data for a given BSV household ID from the Parquet file.
+
+    Parameters
+    ----------
+    huis_id_bsv : int
+        The BSV household ID.
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame containing the household data.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the specified file does not exist at the expected path.
+    """
+
+    file_path = get_mapped_file_path(huis_id_bsv)
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"The file for HuisIdBSV {huis_id_bsv} does not exist at {file_path}.")
+    household_df = pd.read_parquet(file_path)
+    return household_df
