@@ -148,11 +148,40 @@ There are various validators available. There are two major categories:
 
 ## Guidance for suppliers of data and for data preparation
 
-### General Considerations
+### Prepping raw data
 
-#### Validation of all columns
+Use the `Vereist` (`required`) column in the data model in order to check if your metadata and your raw data from device readings are complete and correct. These are the currently required columns (as of 20 Feb 2025):
 
-One should check the stats for each raw data column using the `collection_column_stats()` function to ensure that the data meets expected statistical properties. The statistics include:
+| Entiteit      | Variabele                       | Key         | Definitie                                                                                                                          | Type variabele | Vereist     | Resolutie    | Wie vult?       | Bron                                  | AVG gevoelig |
+|---------------|---------------------------------|-------------|------------------------------------------------------------------------------------------------------------------------------------|----------------|-------------|--------------|-----------------|---------------------------------------|--------------|
+| Metadata      | ProjectIdLeverancier            | nee         | code toegekend door dataleverancier                                                                                                | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | ja           |
+| Metadata      | HuisIdLeverancier               | ja          | code toegekend door dataleverancier                                                                                                | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | ja           |
+| Metadata      | Weerstation                     | nee         | dichtstbijzijnde KNMI weerstation                                                                                                  | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | nee          |
+| Metadata      | Oppervlakte                     | nee         | Ag, oftewel m2 gebruiksoppervlak                                                                                                   | integer        | ja          | vaste waarde | Dataleverancier | BAG / EP-online / Energielabel / Vabi | nee          |
+| Metadata      | Compactheid                     | nee         | Als/Ag, oftewel m2 verliesoppervlak / m2 gebruiksoppervlak                                                                         | number         | ja          | vaste waarde | Dataleverancier | EP-online / Energielabel              | nee          |
+| Metadata      | Warmtebehoefte                  | nee         | kWh_th/m2/jr, volgens NTA8800                                                                                                      | number         | ja          | vaste waarde | Dataleverancier | EP-online / Energielabel              | nee          |
+| Metadata      | PrimairFossielGebruik           | nee         | kWh/m2/jr, volgens NTA8800                                                                                                         | number         | ja          | vaste waarde | Dataleverancier | EP-online / Energielabel              | nee          |
+| Metadata      | Bouwjaar                        | nee         | Oorspronkelijk bouwjaar                                                                                                            | integer        | ja          | vaste waarde | Dataleverancier | BAG/Vabi                              | nee          |
+| Metadata      | Renovatiejaar                   | nee         | Jaar van renovatie                                                                                                                 | integer        | ja          | vaste waarde | Dataleverancier | Vabi                                  | nee          |
+| Metadata      | WoningType                      | nee         | Wat voor woningbouw is het? Kiezen uit: EGW, MGW                                                                                   | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | nee          |
+| Metadata      | WarmteopwekkerCategorie         | nee         | Hoe wordt verwarmd? Kiezen uit: Hybride warmtepomp, Lucht-water warmtepomp, Water-water warmtepomp, Lucht-lucht warmtepomp, Anders | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | nee          |
+| Metadata      | Warmteopwekker                  | nee         | Hoe wordt verwarmd? Kiezen uit: Collectief, Individueel                                                                            | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | nee          |
+| Metadata      | Ventilatiesysteem               | nee         | Hoe wordt geventileerd? Kiezen uit: Natuurlijke ventilatie, Type C, Type D, Type E                                                 | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | nee          |
+| Metadata      | Kookinstallatie                 | nee         | Hoe wordt gekookt? Kiezen uit: Gas, Inductie, Anders                                                                               | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | nee          |
+| Metadata      | EPV                             | nee         | Wordt EPV geïnd? Kiezen uit: EPV 1.0, EPV 2.0 Basis, EPV 2.0 Hoogwaardig, Nee, Niet bekend                                         | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | nee          |
+| Prestatiedata | HuisIdLeverancier               | ja          | code toegekend door dataleverancier                                                                                                | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | ja           |
+| Prestatiedata | ReadingDate                     | nee         | Format: YYYY-MM-DD HH:MM:SS                                                                                                        | date           | ja          | 5 minuten    | Dataleverancier | Gateway / Portal                      | ja           |
+| Prestatiedata | ElektriciteitNetgebruikHoog     | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Slimme meter                          | ja           |
+| Prestatiedata | ElektriciteitNetgebruikLaag     | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Slimme meter                          | ja           |
+| Prestatiedata | ElektriciteitTerugleveringHoog  | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Slimme meter                          | ja           |
+| Prestatiedata | ElektriciteitTerugleveringLaag  | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Slimme meter                          | ja           |
+| Prestatiedata | ElektriciteitsgebruikWarmtepomp | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Gateway / Portal                      | ja           |
+| Prestatiedata | Zon-opwekTotaal                 | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Gateway / Portal                      | ja           |
+
+
+#### Validation of columns
+
+One should check the stats for each raw data column using the `collect_column_stats()` function to ensure that the data meets expected statistical properties. The statistics include:
 
    - 'Identifier': The identifier for the dataset.
    - 'column': The name of the column.
@@ -173,150 +202,79 @@ This helps to validate whether or not a particular household/unit has sufficient
 #### Validation of cumulative columns
 
 The `etdmap` package provides helpers in `mapping_helpers.py` to enable the processing and validation of columns. 
-Cumulative columns are processsed and also validated using the `add_diff_columns()` function. It produces a `diff`, a variable with the incremental increase in the cumulative variable and expects cumulative variables to monotonically increase. In other words, they should and never decrease.
+Cumulative columns are processsed and also validated using the `add_diff_columns()` function. It produces a `diff`, a variable with the incremental increase in the cumulative variable and expects cumulative variables to monotonically increase. In other words, they should and never decrease. This assumption might be incorrect in cases where meter readings naturally decrease and in those cases, custom logic may need to be written.
 
 By default, `add_diff_columns()` relies on the function `validate_cumulative_variables()` to ensure that cumulative variables meet specific conditions:
-- These are 90% available data
-- Max gap 1 hour of missing data
-- No "unexpected" zero values in cumulative data or decreasing cumulative values
+- 90% available data
+- Max gap of 1 hour of consecutive missing data
+- No "unexpected" zero values in cumulative data
+- No decreasing cumulative values
 
-To customize this behaviour, one may write a custom wrapper function or new function with different checks and pass it to `add_diff_columns()` using the `validate_func` parameter. If this validation is not correctly implemented, problems may not be reported. If `drop_unvalidated` is `True` then function may drop valid data or keep invalid data. By default, `drop_unvalidated` is `False`: data which does not pass these tests is kept but problems are reported in the log. 
+The `validate_cumulative_variables` function checks for logical consistency in cumulative variables but may not cover all edge cases or handle complex data scenarios effectively. To customize this validation behaviour, one may write a custom wrapper function or new function with different checks and pass it to `add_diff_columns()` using the `validate_func` parameter. If this validation is not correctly implemented, problems may not be reported. If `drop_unvalidated` is `True` then function may drop valid data or keep invalid data. By default, `drop_unvalidated` is `False`: data which does not pass these tests is kept but problems are reported in the log. 
 
-It is important to manually check the logs when adding new datasets. In addition, one should check the stats for each mapped column using the `get_mapped_data_stats()` function to ensure that the data meets the expected statistical properties.
+_It is important to manually check the logs when adding new datasets. In addition, one should check the stats for each mapped column using the `get_mapped_data_stats()` function to ensure that the data meets the expected statistical properties._
 
-When dealing with cumulative columns, the function assumes that negative differences indicate erroneous data and attempts to correct it. This assumption might be incorrect in cases where meter readings naturally decrease.
+#### Filling data values for devices which report infrequently
 
-2. **Handling Missing Data**:
-   - The `fill_down_infrequent_devices()` function uses forward fill followed by backward fill to impute missing values for specified columns. This approach may not be suitable if the device reports irregularly or if there are underlying issues with data collection.
-   - Forward and backward filling might introduce inaccuracies, especially if the data source is misbehaving.
+Sometimes devices are simply not reporting because they are inactive.  In order to ensure the column is not seen as mostly 'missing' data and rather as an unchanging value, the `fill_down_infrequent_devices()` function uses forward fill followed by backward fill to impute missing values for specified columns. 
 
-3. **Time Series Consistency**:
-   - The `ensure_intervals` function attempts to ensure a consistent time series by adding missing intervals or removing excess records. However, this process can lead to incorrect data if the raw data does not naturally fit into the expected frequency.
-   - If the raw data has more frequent readings than specified, additional processing (such as downsampling) is required before applying `ensure_intervals`.
+_This approach may not be suitable if devices if there are underlying issues with the device data, which would be amplified or ignored, especially if the data source is misbehaving. We recommend visually inspecting these columns / data before applying the function._
 
-4. **Column Rearrangement**:
-   - The `rearrange_model_columns` function ensures that the DataFrame columns are in a specific order, which is crucial for model compatibility but may not account for new or unexpected columns.
+#### Time Series Consistency
 
-5. **Cumulative Variable Validation**:
-   - The `validate_cumulative_variables` function checks for logical consistency in cumulative variables but may not cover all edge cases or handle complex data scenarios effectively.
+At the moment, custom logic has been used for each data source to ensure the data provided is available with a fixed interval (typically 5 minutes). _Example logic has been added to the file `mapping_clock_helpers.py`. It is alpha quality/pseudo code and should not be used at the moment. This should be tested and available to use in a subsequent release._
 
-### Specific Function Limitations and Issues
+After the data has fixed (5 min) interval, the `ensure_intervals()` function attempts to ensure a consistent time series by adding missing intervals and removing excess records for the same moment. This process can lead to incorrect data if the raw data does not naturally fit into the expected frequency.
 
-#### `calculate_diff`
+### Specific function notes
 
-1. **Negative Differences**:
+#### `add_diff_columns()`
+
+1. **Negative differences**:
    - Assumes that negative differences in cumulative columns are erroneous and attempts to correct them by setting values to `pd.NA`. This assumption might not hold true if the meter readings naturally decrease or if there are legitimate zero jumps.
    
-2. **Validation Checks**:
-   - Relies on the `valid_result` dictionary for validation checks. If this dictionary is not correctly populated, the function may incorrectly drop valid data or retain invalid data.
-
-3. **Error Handling**:
+2. **Error handling**:
    - Logs errors when it encounters negative differences after corrections but does not address underlying issues in the data collection process.
 
-4. **Handling of Gaps**:
-   - When there are gaps in the data (missing intermediate readings), the function may incorrectly assume that a subsequent non-negative value indicates a reset or correction rather than an actual reading.
-
-5. **Time Dependency**:
+3. **Handling of large gaps without rates of change**:
    - Does not consider the time elapsed between readings, which can lead to incorrect assumptions about the nature of the data.
+   - When there are larger gaps in the `diff` data (missing intermediate readings), the function may incorrectly assume that the next available reading is a continuation of the meter reading when perhaps a meter reset has taken place and no cumulative values have been collected for some time (bringing the reading back to the original reading level). If there is a suspicion of these errors, custom logic will need to be added and some assumption about the rate of change in the cumulative variable.
 
-6. **Edge Cases**:
+4. **Known edge cases**:
    - Edge cases where multiple negative dips occur consecutively or where there is a significant pause in data collection are not fully addressed.
 
-7. **Logging and Diagnostics**:
-   - Logs information about its operations but does not provide detailed diagnostics for each step, which can make debugging difficult.
-
-#### `fill_down_infrequent_devices`
+#### `fill_down_infrequent_devices()`
 
 1. **Imputation Strategy**:
    - Uses forward fill followed by backward fill to impute missing values, which can lead to inaccuracies if the device reports irregularly or if there are underlying issues with data collection.
    
-2. **Assumption of Continuity**:
+2. **Assumption of continuity**:
    - Assumes that missing values should be filled based on the last available reading, which might not be appropriate for devices that report infrequently or have non-continuous usage patterns.
 
-3. **Final Filling with Zeroes**:
-   - Fills remaining `NaN` values with zeroes, which can introduce inaccuracies if the device is expected to have zero consumption only during specific times.
+3. **Final filling with zeroes**:
+   - Fills column with zeros if all values are NA. This assumption may not be correct if the device simply was not reporting.
 
-4. **Column Specificity**:
-   - Only processes specified columns and does not handle other columns that might also require similar treatment.
+4. **Column specificity**:
+   - Processes specified variables by default: `ElektriciteitsgebruikBoilervat`, `ElektriciteitsgebruikRadiator`, `ElektriciteitsgebruikBooster`. Can handle other columns if passed as an argument. Some datasets may require different processing.
 
-5. **Logging and Feedback**:
-   - Logs information about its operations but does not provide detailed diagnostics or feedback on the extent of imputation performed.
+#### `ensure_intervals()`
 
-#### `ensure_intervals`
-
-1. **Frequency Assumption**:
-   - Assumes a fixed frequency for the time series data (e.g., 5-minute intervals). If the raw data does not naturally fit into this frequency, additional processing is required.
+1. **Frequency assumption**:
+   - Assumes a fixed frequency for the time series data (e.g., 5-minute intervals) and the only check it does is for the number of expected records. If the raw data does not naturally fit into this frequency the errors may occur as additional pre-processing is required.
    
-2. **Data Source Issues**:
+2. **Data source issues**:
    - Does not handle cases where the data source is misbehaving, such as reporting data at irregular intervals or with incorrect timestamps.
 
-3. **Adding vs. Removing Records**:
-   - Adds missing records to ensure consistent intervals but does not verify the correctness of these added records.
+3. **Adding vs. removing records**:
+   - Adds missing records to ensure consistent intervals but does not verify the correctness of these retained records where removed. It will report inconsistency with respect to the number of records expected.
    
-4. **Excess Records**:
+4. **Excess records**:
    - Attempts to reduce excess records by performing a left merge, which might lead to data loss if the excess records contain valid information.
 
-5. **Logging and Diagnostics**:
-   - Logs information about its operations but does not provide detailed diagnostics on why certain records are added or removed.
+#### `rearrange_model_columns()`
 
-#### `rearrange_model_columns`
-
-1. **Column Order**:
-   - Ensures that the DataFrame columns are in a specific order, which is crucial for model compatibility.
-   
-2. **Missing Columns**:
-   - If any expected column is missing, it may raise an error or leave gaps, affecting downstream processes.
-   
-3. **Additional Columns**:
-   - Does not handle additional columns that might be present but not required by the model, potentially leading to inconsistencies.
-
-4. **Logging and Diagnostics**:
-   - Lacks detailed logging about which columns were rearranged or if any columns were missing, making it difficult to diagnose issues.
-
-5. **Flexibility**:
-   - Not flexible enough to handle dynamic column names or changes in the expected column order without manual intervention.
-
-#### `validate_cumulative_variables`
-
-1. **Logical Consistency**:
-   - Checks for logical consistency in cumulative variables but may not cover all edge cases or handle complex data scenarios effectively.
-   
-2. **Assumptions**:
-   - Assumes that cumulative variables should always increase over time, which might not be true if the meter readings are reset or have other anomalies.
-   
-3. **Error Handling**:
-   - Logs errors when inconsistencies are found but does not provide detailed diagnostics on why these inconsistencies occur.
-
-4. **Column Specificity**:
-   - Only processes specified cumulative columns and does not handle other potential cumulative variables that might require similar treatment.
-
-5. **Logging and Diagnostics**:
-   - Logs information about its operations but does not provide detailed diagnostics or feedback on the extent of validation performed.
-
-### Summary of Limitations and Issues
-
-1. **Data Assumptions**: Functions assume specific patterns in the data (e.g., negative differences indicate errors) that may not always hold true.
-   
-2. **Imputation Methods**: Forward fill and backward fill methods used by `fill_down_infrequent_devices` can introduce inaccuracies if the device reports irregularly.
-
-3. **Time Series Consistency**: The `ensure_intervals` function assumes a fixed frequency and may not handle data from devices with variable reporting intervals effectively.
-
-4. **Error Handling**: Functions log errors but do not provide detailed diagnostics, making it challenging to identify and address underlying issues in the data collection process.
-
-5. **Column Specificity**: Functions are designed for specific columns and may require additional logic or modifications to handle other columns consistently.
-
-6. **Data Source Issues**: The functions do not address issues with the data source itself (e.g., misreporting, irregular intervals), which can lead to inaccurate results if not addressed separately.
-
-7. **Logging and Feedback**: Functions log information about their operations but do not provide detailed diagnostics or feedback on the extent of changes made to the dataset.
-
-8. **Column Order**:
-   - The `rearrange_model_columns` function ensures a specific column order but may raise errors or leave gaps if any expected columns are missing.
-   
-9. **Cumulative Variable Validation**:
-   - The `validate_cumulative_variables` function checks for logical consistency in cumulative variables but may not handle all edge cases effectively.
-
-By being aware of these limitations and issues, users can better understand the potential impact of using these functions on their data and take appropriate measures to mitigate any adverse effects.
-
+1. **Column order**:
+   - Ensures that the DataFrame columns are in a specific order with additional columns left at the end/right of the dataset.
 
 
 

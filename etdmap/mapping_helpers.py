@@ -519,7 +519,7 @@ def ensure_intervals(
     freq='5min',
 ) -> pd.DataFrame:
     """
-    Ensure that the DataFrame has a consistent number of records and expected time intervals. 
+    Ensure that the DataFrame has a consistent number of records and expected time intervals.
     It will add missing intervals or remove excess records to ensure consistency.
 
     This function checks if the input DataFrame has the expected number of records
