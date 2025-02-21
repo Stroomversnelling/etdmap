@@ -16,7 +16,11 @@ requires-python = ">= 3.9"
 dependencies = [
     "pandas>=2.2",
     "pyarrow",
-    "numpy"
+    "numpy",
+    "sphinx",
+    "numpydoc",
+    "myst-parser",
+    "sphinx-rtd-theme",
 ]
 keywords = ["stroomversnelling", "energietransitie", "warmtepomp"]
 

@@ -12,16 +12,16 @@ The dataset includes two primary types of variables:
 
 ### Examples of Variables  
 
-| **Category**     | **Variable Name**             | **Type**   | **Description**                                              |  
-|-------------------|-------------------------------|------------|--------------------------------------------------------------|  
-| **Metadata**      | `ProjectIdLeverancier`       | String     | Unique identifier for the project assigned by the data provider. |  
-|                   | `Bouwjaar`                   | Integer    | Construction year of the house.                              |  
-|                   | `WarmteopwekkerCategorie`    | String     | Type of heating system (e.g., hybrid heat pump).             |  
-|                   | `Oppervlakte`                | Integer    | Surface area in square meters.                              |  
-| **Performance**   | `ReadingDate`                | Date       | Timestamp of the reading (Format: YYYY-MM-DD HH:MM:SS).     |  
-|                   | `ElektriciteitNetgebruikHoog`| Number     | Electricity consumption at high tariff (kWh, cumulative).   |  
-|                   | `TemperatuurWoonkamer`       | Number     | Current living room temperature in degrees Celsius.         |  
-|                   | `Zon-opwekTotaal`            | Number     | Total solar energy generated (kWh, cumulative).             |  
+| **Category**     | **Variable Name**             | **Type**   | **Description**                                              |
+| ---------------- | ----------------------------- | ---------- | ------------------------------------------------------------ |
+| **Metadata**     | `ProjectIdLeverancier`        | String     | Unique identifier for the project assigned by the data provider. |
+|                  | `Bouwjaar`                    | Integer    | Construction year of the house.                              |
+|                  | `WarmteopwekkerCategorie`     | String     | Type of heating system (e.g., hybrid heat pump).             |
+|                  | `Oppervlakte`                 | Integer    | Surface area in square meters.                               |
+| **Performance**  | `ReadingDate`                 | Date       | Timestamp of the reading (Format: YYYY-MM-DD HH:MM:SS).      |
+|                  | `ElektriciteitNetgebruikHoog` | Number     | Electricity consumption at high tariff (kWh, cumulative).    |
+|                  | `TemperatuurWoonkamer`        | Number     | Current living room temperature in degrees Celsius.          |
+|                  | `Zon-opwekTotaal`             | Number     | Total solar energy generated (kWh, cumulative).              |
 
 This categorization ensures the dataset is comprehensive for energy-related policy and planning while maintaining clarity for data contributors and users.
 
@@ -73,7 +73,6 @@ From `data_model.py`:
 
 ```python
 from etdmap.record_validators import load_thresholds
-
 thresholds_df = load_thresholds()
 ```
 
@@ -92,48 +91,49 @@ from etdmap.data_model import cumulative_columns, model_column_order, model_colu
 From `index_helpers.py`:
 
 1. `read_index()`: 
-   - Purpose: Reads the current index file.
-   - Description: Loads the existing index from a parquet file or creates a new one if it doesn't exist.
+   - **Purpose**: Reads the current index file.
+   - **Description**: Loads the existing index from a parquet file or creates a new one if it doesn't exist.
 
 2. `get_household_id_pairs()`: 
-   - Purpose: Generates pairs of HuisIdBSV and filenames in order to maintain unique ids in the dataset.
-   - Description: Creates a list of tuples containing HuisIdBSV and corresponding filenames for new and existing entries.
+   - **Purpose**: Generates pairs of HuisIdBSV and filenames in order to maintain unique ids in the dataset.
+   - **Description**: Creates a list of tuples containing HuisIdBSV and corresponding filenames for new and existing entries.
 
 3. `update_index()`: 
-   - Purpose: Updates the index with new entries.
-   - Description: Adds new entries to the index and recalculates or adds flag columns for dataset validators.
+   - **Purpose**: Updates the index with new entries.
+   - **Description**: Adds new entries to the index and recalculates or adds flag columns for dataset validators.
 
 4. `add_supplier_metadata_to_index()`: 
-   - Purpose: Adds metadata columns to the index.
-   - Description: Updates the index with additional metadata from the supplier, matching on the HuisIdLeverancier column.
+   - **Purpose**: Adds metadata columns to the index.
+   - **Description**: Updates the index with additional metadata from the supplier, matching on the HuisIdLeverancier column.
 
 ### Mapping raw data to the model specification
 
 From `mapping_helpers.py`:
 
 1. `rearrange_model_columns()`: 
-   - Purpose: Ensures all required columns are present and in the correct order.
-   - Description: Adds missing columns, fills them with NA values, and arranges columns according to the model specification.
+   - **Purpose**: Ensures all required columns are present and in the correct order.
+   - **Description**: Adds missing columns, fills them with NA values, and arranges columns according to the model specification.
 
 2. `add_diff_columns()`: 
-   - Purpose: Calculates difference columns for cumulative variables.
-   - Description: Computes the difference between consecutive readings for cumulative variables and adds these as new columns.
+   - **Purpose**: Calculates difference columns for cumulative variables.
+   - **Description**: Computes the difference between consecutive readings for cumulative variables and adds these as new columns.
 
 3. `ensure_intervals()`: 
-   - Purpose: Ensures consistent time intervals in the data. Defaults are `date_column = 'ReadingDate', freq='5min'`
-   - Description: Adds missing timestamps to ensure a consistent time series, typically with 5-minute or 15-minute intervals.
+   - **Purpose**: Ensures consistent time intervals in the data. Defaults are `date_column = 'ReadingDate', freq='5min'`
+   - **Description**: Adds missing timestamps to ensure a consistent time series, typically with 5-minute or 15-minute intervals.
 
 4. `fill_down_infrequent_devices()`: 
-   - Purpose: Fills gaps in infrequently updated device data. At the moment, this defaults to: 'ElektriciteitsgebruikBoilervat', 'ElektriciteitsgebruikRadiator', 'ElektriciteitsgebruikBooster'. This can be changed based on data source requirements.
-   - Description: For certain columns that update infrequently, this function fills down the last known value.
+   - **Purpose**: Fills gaps in infrequently updated device data. At the moment, this defaults to: 'ElektriciteitsgebruikBoilervat', 'ElektriciteitsgebruikRadiator', 'ElektriciteitsgebruikBooster'. This can be changed based on data source requirements.
+   - **Description**: For certain columns that update infrequently, this function fills down the last known value.
 
 5. `validate_cumulative_variables()`:
-   - Purpose: Validates cumulative variables in a DataFrame for various quality checks.
-   - Description:
-       - Time gap check: Ensures there are no gaps in readings greater than a specified time delta (default is 1 hour).
-       - Negative difference check: Verifies that cumulative values are not decreasing over time.
-       - Unexpected zero check: Identifies and flags unexpected zero values in cumulative readings.
-       - Data availability check: Ensures that at least a specified percentage of values (default 90%) are not NA.
+   - **Purpose**: Validates cumulative variables in a DataFrame for various quality checks.
+   - **Description**:
+
+   - *Time gap check*: Ensures there are no gaps in readings greater than a specified time delta (default is 1 hour).
+   - *Negative difference check*: Verifies that cumulative values are not decreasing over time.
+   - *Unexpected zero check*: Identifies and flags unexpected zero values in cumulative readings.
+   - *Data availability check*: Ensures that at least a specified percentage of values (default 90%) are not NA.
 
 ### Alignment of clocks from different devices and merging data (ALPHA - untested code)
 
@@ -153,7 +153,7 @@ There are various validators available. There are two major categories:
 Use the `Vereist` (`required`) column in the data model in order to check if your metadata and your raw data from device readings are complete and correct. These are the currently required columns (as of 20 Feb 2025):
 
 | Entiteit      | Variabele                       | Key         | Definitie                                                                                                                          | Type variabele | Vereist     | Resolutie    | Wie vult?       | Bron                                  | AVG gevoelig |
-|---------------|---------------------------------|-------------|------------------------------------------------------------------------------------------------------------------------------------|----------------|-------------|--------------|-----------------|---------------------------------------|--------------|
+| ------------- | ------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------- | ----------- | ------------ | --------------- | ------------------------------------- | ------------ |
 | Metadata      | ProjectIdLeverancier            | nee         | code toegekend door dataleverancier                                                                                                | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | ja           |
 | Metadata      | HuisIdLeverancier               | ja          | code toegekend door dataleverancier                                                                                                | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | ja           |
 | Metadata      | Weerstation                     | nee         | dichtstbijzijnde KNMI weerstation                                                                                                  | string         | ja          | vaste waarde | Dataleverancier | Dataleverancier                       | nee          |
@@ -177,7 +177,6 @@ Use the `Vereist` (`required`) column in the data model in order to check if you
 | Prestatiedata | ElektriciteitTerugleveringLaag  | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Slimme meter                          | ja           |
 | Prestatiedata | ElektriciteitsgebruikWarmtepomp | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Gateway / Portal                      | ja           |
 | Prestatiedata | Zon-opwekTotaal                 | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Gateway / Portal                      | ja           |
-
 
 #### Validation of columns
 

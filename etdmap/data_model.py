@@ -96,14 +96,22 @@ model_column_type = {
 allowed_supplier_metadata_columns = [
     "ProjectIdLeverancier", "HuisIdLeverancier", "Weerstation", "Oppervlakte", "PlatOfZadelDak",
     "Compactheid", "Warmtebehoefte", "PrimairFossielGebruik", "Bouwjaar", "Renovatiejaar",
-    "WoningType", "WoningTypeDetail", "WarmteopwekkerType", "WarmteopwekkerCategorie", 
-    "Warmteopwekker", "Ventilatiesysteem", "Kookinstallatie", "PVJaarbundel", "PVMerk", 
-    "PVType", "PVAantalPanelen", "PVWattpiekPerPaneel", "EPV", "GasgebruikVoorRenovatie", 
+    "WoningType", "WoningTypeDetail", "WarmteopwekkerType", "WarmteopwekkerCategorie",
+    "Warmteopwekker", "Ventilatiesysteem", "Kookinstallatie", "PVJaarbundel", "PVMerk",
+    "PVType", "PVAantalPanelen", "PVWattpiekPerPaneel", "EPV", "GasgebruikVoorRenovatie",
     "ElektriciteitVoorRenovatie", "Meenemen", "ProjectIdBSV"
 ]
 
 
 def load_thresholds():
+    """
+    Load thresholds from a CSV file.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame containing the thresholds data.
+    """
     thresholds_file = files("etdmap.data").joinpath("thresholds.csv")
 
     dtype_dict = {
@@ -122,10 +130,17 @@ def load_thresholds():
         keep_default_na=True  # Keep pandas' default NA values
     )
 
-
     return df
 
 def load_thresholds_as_dict() -> dict:
+    """
+    Load thresholds from the package thresholds CSV file and convert to a dictionary.
+
+    Returns
+    -------
+    dict
+        A dictionary containing the thresholds data.
+    """
     thresholds_dict = {}
     thresholds_df = load_thresholds()
     for _, row in thresholds_df.iterrows():
@@ -136,6 +151,14 @@ def load_thresholds_as_dict() -> dict:
     return thresholds_dict
 
 def load_etdmodel():
+    """
+    Load ETD model from the package ETD model definition CSV file.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame containing the ETD model data.
+    """
     etdmodel_file = files("etdmap.data").joinpath("etdmodel.csv")
 
     dtype_dict = {

@@ -35,16 +35,21 @@ def get_bsv_metadata():
     """
     Reads and returns metadata from the BSV metadata file, ensuring that all required columns are present.
 
-    Returns:
-        DataFrame: A pandas DataFrame containing the BSV metadata with the specified columns.
+    Returns
+    -------
+    DataFrame
+        A pandas DataFrame containing the BSV metadata with the specified columns.
 
-    Raises:
-        ValueError: If any of the required columns are missing in the metadata file.
+    Raises
+    ------
+    ValueError
+        If any of the required columns are missing in the metadata file.
 
-    Note:
-        The function relies on the `read_metadata` utility to read the file and check for required columns.
-        The path to the BSV metadata file is obtained from `etdmap.options.bsv_metadata_file`.
-        The required columns are defined in the `bsv_metadata_columns` list.
+    Notes
+    -----
+    - The function relies on the `read_metadata` utility to read the file and check for required columns.
+    - The path to the BSV metadata file is obtained from `etdmap.options.bsv_metadata_file`.
+    - The required columns are defined in the `bsv_metadata_columns` list.
     """
     return read_metadata(
         etdmap.options.bsv_metadata_file,
@@ -56,17 +61,22 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
     """
     Read metadata from an Excel file and check for the presence of required columns.
 
-    Args:
-        metadata_file (str): The path to the Excel file containing the metadata for a
-        data source.
-        required_columns (list, optional): A list of column names that must be present in
-            the metadata. Defaults to ['HuisIdLeverancier'].
+    Parameters
+    ----------
+    metadata_file : str
+        The path to the Excel file containing the metadata for a data source.
+    required_columns : list, optional
+        A list of column names that must be present in the metadata. Defaults to ['HuisIdLeverancier'].
 
-    Returns:
-        pd.DataFrame: A DataFrame containing the metadata from the specified sheet.
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the metadata from the specified sheet.
 
-    Raises:
-        Exception: If not all required columns are found in the metadata file.
+    Raises
+    ------
+    Exception
+        If not all required columns are found in the metadata file.
     """
     if required_columns is None:
         required_columns = ["HuisIdLeverancier"]
@@ -98,10 +108,14 @@ def read_index() -> tuple[pd.DataFrame, str]:
     """
     Reads the index parquet file from the specified folder path.
 
-    Returns:
-    tuple: A tuple containing the DataFrame of the index and the path to the
-    index file.
+    Returns
+    -------
+    tuple
+        A tuple containing:
+            - DataFrame: The DataFrame of the index.
+            - str: The path to the index file.
     """
+
     index_path = os.path.join(etdmap.options.mapped_folder_path, "index.parquet")
     if os.path.exists(index_path):
         index_df = pd.read_parquet(index_path)
@@ -127,18 +141,23 @@ def get_household_id_pairs(
     data_provider: str,
     list_files_func: callable,
 ) -> list:
-    """
-    Generates pairs of HuisIdBSV and filenames for new and existing entries.
+    """Generates pairs of HuisIdBSV and filenames for new and existing entries.
 
-    Args:
-    index_df (pd.DataFrame): The index DataFrame.
-    data_folder_path (str): The path to the folder containing data files.
-    data_provider (str): The name of the data provider.
-    list_files_func (callable): A function to get a dictionary of id and the
-    files in the data folder.
+    Parameters
+    ----------
+    index_df : pd.DataFrame
+        The index DataFrame.
+    data_folder_path : str
+        The path to the folder containing data files.
+    data_provider : str
+        The name of the data provider.
+    list_files_func : callable
+        A function to get a dictionary of id and the files in the data folder.
 
-    Returns:
-    list: A list of tuples containing HuisIdBSV and filenames.
+    Returns
+    -------
+    list
+        A list of tuples containing HuisIdBSV and filenames.
     """
     existing_ids = (
         index_df[index_df["Dataleverancier"] == data_provider]
@@ -168,17 +187,21 @@ def update_index(
     new_entry: dict,
     data_provider: str,
 ) -> pd.DataFrame:
-    """
-    Updates the index with new entries and recalculates or adds flag columns
-    for dataset validators.
+    """Update the index with new entries and recalculate or add flag columns for dataset validators.
 
-    Args:
-    index_df (pd.DataFrame): The index DataFrame.
-    new_entry (dict): The new entry to be added or updated in the index.
-    data_provider (str): The name of the data provider.
+    Parameters
+    ----------
+    index_df : pd.DataFrame
+        The index DataFrame.
+    new_entry : dict
+        The new entry to be added or updated in the index.
+    data_provider : str
+        The name of the data provider.
 
-    Returns:
-    pd.DataFrame: The updated index DataFrame.
+    Returns
+    -------
+    pd.DataFrame
+        The updated index DataFrame.
     """
 
     # Ensure HuisIdLeverancier is a string in new_entry
@@ -245,13 +268,16 @@ def update_meta_validators(index_df):
     Updates the index DataFrame with a new column 'validate_cumulative_diff_ok' that indicates whether
     all cumulative difference columns in the DataFrame are valid.
 
-    Parameters:
+    Parameters
+    ----------
     index_df (pandas.DataFrame): The input DataFrame containing cumulative data and validation columns.
 
-    Returns:
+    Returns
+    -------
     pandas.DataFrame: The updated DataFrame with an additional column 'validate_cumulative_diff_ok'.
 
-    Notes:
+    Notes
+    -----
     - The function constructs a list of column names based on the global variable `cumulative_columns`.
     - It checks if all these constructed column names exist in the input DataFrame.
     - If they do, it creates a new boolean column 'validate_cumulative_diff_ok' where each entry is True
@@ -273,8 +299,7 @@ def update_meta_validators(index_df):
 
 
 def update_meenemen() -> pd.DataFrame:
-    """
-    Updates the index DataFrame to include information about which households should be included in the "Meenemen" column based on BSV metadata.
+    """Updates the index DataFrame to include information about which households should be included in the "Meenemen" column based on BSV metadata.
 
     This function performs the following steps:
     1. Logs an informational message indicating the start of the update process.
@@ -286,7 +311,8 @@ def update_meenemen() -> pd.DataFrame:
     7. Saves the updated index DataFrame back to its original file path in Parquet format using the PyArrow engine.
     8. Returns the updated index DataFrame.
 
-    Returns:
+    Returns
+    -------
         pd.DataFrame: The updated index DataFrame with the new "Meenemen" information included.
     """
     logging.info(
@@ -317,19 +343,22 @@ def add_supplier_metadata_to_index(
     metadata_df: pd.DataFrame,
     data_leverancier=None,
 ) -> pd.DataFrame:
-    """
-    Adds metadata columns to the index matching on the HuisIdLeverancier column.
+    """Adds metadata columns to the index matching on the HuisIdLeverancier column.
 
-    Args:
-    index_df (pd.DataFrame):
+    Parameters
+    ----------
+    index_df : pd.DataFrame
         The index DataFrame.
-    metadata_df (pd.DataFrame):
+    metadata_df : pd.DataFrame
         The metadata DataFrame to be added to the index.
-    data_leverancier (str):
+    data_leverancier : str, optional
         The data supplier name (required).
 
-    Returns:
-    pd.DataFrame: The updated index DataFrame.
+    Returns
+    -------
+    pd.DataFrame
+        The updated index DataFrame.
+
     """
 
     if "level_0" in index_df.columns:
@@ -411,10 +440,19 @@ def add_supplier_metadata_to_index(
 def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     """
     Save the index DataFrame to a Parquet file.
-    Parameters:
-        index_df (pd.DataFrame): The DataFrame containing the index data.
-    Returns:
-        None
+
+    Parameters
+    ----------
+    index_df : pd.DataFrame
+        The DataFrame containing the index data.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    This function saves the provided DataFrame to a Parquet file.
     """
 
     index_path = os.path.join(etdmap.options.mapped_folder_path, "index.parquet")

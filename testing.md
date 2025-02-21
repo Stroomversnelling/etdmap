@@ -1,8 +1,9 @@
 # Test development in VSCode (configuration)
-We have developed tests mostly using VSCode. These files can be added to the .vscode folder to setup the test environment.
+We have developed tests mostly using VSCode. These files can be added to the `.vscode` folder to setup the test environment.
 
-Example of settings.json to be able to run individual tests (and generate the test data fixture) in the VSCode debug tab for test development
-``` json
+Example of `settings.json` to be able to run individual tests (and generate the test data fixture) in the VSCode debug tab for test development:
+
+```json
 {
     "python.testing.pytestArgs": [
         "tests"
@@ -12,8 +13,9 @@ Example of settings.json to be able to run individual tests (and generate the te
 }
 ```
 
-Example of launch.json to be able to run individual tests (and generate the test data fixture) in the VSCode debug tab for test development
-``` json
+Example of `launch.json` to be able to run individual tests (and generate the test data fixture) in the VSCode debug tab for test development:
+
+```json
 {
     "version": "0.2.0",
     "configurations": [

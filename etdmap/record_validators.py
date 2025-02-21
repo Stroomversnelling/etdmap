@@ -26,13 +26,18 @@ created that can be used to get insight in the data. The columns are:
 """
 
 def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
-    """Per row, determine if at least one value fall outside of the Thresholds.
+    """
+    Per row, determine if at least one value fall outside of the Thresholds.
 
-    Args:
-        df (pd.DataFrame): Dataframe with columns to be checked.
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataframe with columns to be checked.
 
-    Returns:
-        pd.Series: Booleans, True when at least one value is outside bounds.
+    Returns
+    -------
+    pd.Series
+        Booleans, True when at least one value is outside bounds.
     """
     columns = [col for col in df.columns if col in thresholds_dict]
 
@@ -67,14 +72,35 @@ def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
 
 
 def get_columns_threshold_validator(cols):
+    """
+    Get a validator function for thresholds of specified columns.
+
+    Parameters
+    ----------
+    cols : list
+        List of column names to validate.
+
+    Returns
+    -------
+    function
+        A function that validates thresholds for the specified columns.
+    """
     return lambda df: validate_thresholds_combined(df[cols])
 
 
 def condition_func_threshold(col: str) -> Callable[[pd.DataFrame], bool]:
-    """Define condition function for column based on min, max from thresholdscsv.
+    """
+    Define condition function for column based on min, max from thresholdscsv.
 
-    Args:
-        col (str): column name for which the function holds.
+    Parameters
+    ----------
+    col : str
+        Column name for which the function holds.
+
+    Returns
+    -------
+    function or None
+        Condition function for the specified column, or None if the column is not in the thresholds dictionary.
     """
     if (col in thresholds_dict):
         def condition_func(df: pd.DataFrame) -> bool:
@@ -94,6 +120,20 @@ def condition_func_threshold(col: str) -> Callable[[pd.DataFrame], bool]:
 def validate_columns(df: DataFrame, columns: list, condition_func) -> Series:
     """
     Helper function to validate columns with a given condition function.
+
+    Parameters
+    ----------
+    df : DataFrame
+        The DataFrame containing the columns to validate.
+    columns : list
+        List of column names to validate.
+    condition_func : function
+        The condition function to apply for validation.
+
+    Returns
+    -------
+    Series
+        A boolean Series indicating which rows meet the condition.
     """
     if all(col in df.columns for col in columns):
         valid_mask = df[columns].notna().all(axis=1)
@@ -108,11 +148,37 @@ def validate_columns(df: DataFrame, columns: list, condition_func) -> Series:
 
 
 def validate_reading_date_uniek(df: DataFrame) -> Series:
+    """
+    Validate that ReadingDate column has only unique values.
+
+    Parameters
+    ----------
+    df : DataFrame
+        The DataFrame to validate.
+
+    Returns
+    -------
+    Series
+        A boolean Series indicating which rows have unique ReadingDate values.
+    """
     # df['ReadingDate'] should only have unique values
     return ~df.duplicated(subset=['ReadingDate'])
 
 
 def validate_300sec(df: DataFrame) -> Series:
+    """
+    Validate that the time difference between consecutive ReadingDate values is 300 seconds.
+
+    Parameters
+    ----------
+    df : DataFrame
+        The DataFrame to validate.
+
+    Returns
+    -------
+    Series
+        A boolean Series indicating which rows have a 300-second difference from the previous row.
+    """
     df = df.sort_values('ReadingDate')
     df['ReadingDateDiff'] = df['ReadingDate'].diff().dt.total_seconds().abs()
     column = ['ReadingDateDiff']
@@ -126,6 +192,20 @@ def validate_300sec(df: DataFrame) -> Series:
 
 
 def validate_elektriciteitgebruik(df: DataFrame) -> Series:
+    """
+    Validate that ElektriciteitsgebruikHuishoudelijk is less than or equal to the sum of Zon-opwekTotaal,
+    ElektriciteitNetgebruikHoog, and ElektriciteitNetgebruikLaag.
+
+    Parameters
+    ----------
+    df : DataFrame
+        The DataFrame to validate.
+
+    Returns
+    -------
+    Series
+        A boolean Series indicating which rows meet the condition.
+    """
     columns = [
         'ElektriciteitsgebruikHuishoudelijk',
         'Zon-opwekTotaal',
@@ -145,6 +225,19 @@ def validate_elektriciteitgebruik(df: DataFrame) -> Series:
 
 
 def validate_warmteproductie(df: DataFrame) -> Series:
+    """
+    Validate that WarmteproductieWarmtepomp is greater than or equal to WarmteproductieWarmTapwater.
+
+    Parameters
+    ----------
+    df : DataFrame
+        The DataFrame to validate.
+
+    Returns
+    -------
+    Series
+        A boolean Series indicating which rows meet the condition.
+    """
     columns = ['WarmteproductieWarmtepomp', 'WarmteproductieWarmTapwater']
 
     def condition_func(df: pd.DataFrame) -> bool:
@@ -154,6 +247,26 @@ def validate_warmteproductie(df: DataFrame) -> Series:
 
 
 def validate_not_outliers(x: pd.DataFrame):
+    """
+    Validate that values in the DataFrame are not outliers.
+
+    Parameters
+    ----------
+    x : pd.DataFrame
+        A DataFrame with one column to check for outliers.
+
+    Returns
+    -------
+    Series
+        A boolean Series indicating which values are not outliers.
+
+    Raises
+    ------
+    ValueError
+        If the input is not a DataFrame with one column.
+    TypeError
+        If the column contains non-numeric values.
+    """
     if not isinstance(x, pd.DataFrame) or len(x.columns) > 1:
         raise ValueError("Input must be a pandas DataFrame with one column.")
 
@@ -183,6 +296,20 @@ def create_validate_momentaan(
         columns_5min_momentaan: list,
         record_flag_conditions: dict
         ) -> None:
+    """
+    Create validation functions for momentary columns and add them to the record_flag_conditions dictionary.
+
+    Parameters
+    ----------
+    columns_5min_momentaan : list
+        List of column names for momentary data.
+    record_flag_conditions : dict
+        Dictionary to store the validation functions.
+
+    Returns
+    -------
+    None
+    """
     for col in columns_5min_momentaan:
         def validate_momentaan(df: DataFrame, col=col) -> Series:
             # Checks thresholds
@@ -196,6 +323,20 @@ def create_validate_cumulative(
         cumulative_columns: list,
         record_flag_conditions: dict
         ) -> None:
+    """
+    Create validation functions for cumulative columns and add them to the record_flag_conditions dictionary.
+
+    Parameters
+    ----------
+    cumulative_columns : list
+        List of column names for cumulative data.
+    record_flag_conditions : dict
+        Dictionary to store the validation functions.
+
+    Returns
+    -------
+    None
+    """
     # loop to produce cumulative outlier validators per cumulative column
     for col in cumulative_columns:
         logging.info(f"Creating {col} outliers check")
