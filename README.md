@@ -3,6 +3,13 @@ __"Energietransitie Dataset" mapping package__
 
 This package provides the required data model and helpers to map raw data to the `Energietransitie dataset` (ETD). The ETD is a model defining important variables for energy in the built environment, which are used to inform policy and planning decisions in the Netherlands. 
 
+## Citation
+
+If you use this package or any code in this package or refer to output, please use the following citations for attribution:
+
+_Witkamp, Dickinson, Izeboud (2024). etdmap: A Python package for mapping raw data to the Energietransitie Dataset (ETD) model._
+
+
 ## The data model
 
 The dataset includes two primary types of variables:  
