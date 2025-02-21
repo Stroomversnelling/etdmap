@@ -34,7 +34,12 @@ This categorization ensures the dataset is comprehensive for energy-related poli
 
 See the section on data processing and mapping to learn more about how to access this metadata in a python script.
 
-## Installation
+There are two levels of data ultimately used:
+
+- data for a connected unit in the built environment, such as a household or, perhaps in the future, a charging point, and
+- project level data, an aggregated collection of network connected units.
+
+## Installation and quick start
 
 _Note: If only using ETD datasets for analysis, one would use the `etdanalyze` and `etdtranform` packages and install their requirements, which will automatically install `etdmap`._
 
@@ -46,9 +51,30 @@ cd etdmap
 pip install .
 ```
 
+### Configuration
+
+In some cases, you may be using this package on its own and may have to configure some options:
+
+```python
+import etdmap
+
+# Required:
+etdmap.options.mapped_folder = 'mapped_folder_path' # path to folder where mapped files are stored
+etdmap.options.bsv_metadata_file = 'filepath_to_excel_with_bsv_metdata' # path to Excel sheet maintained with BSV/ETD metdata (not supplier metadata)
+
+
+etdmap.options.aggregate_folder = 'aggregate_folder_path' # path to folder where aggregated files are stored
+```
+
+Note that the first time that the mapping of raw files is done, there will be a new index generated or an old index will be updated. The BSV metadata file is an Excel sheet where the auto-generated ids can then be _manually_ mapped to additional metadata variables such as the internal `ProjectIdBSV` that assigns households to specific projects and the `Meenemen` boolean variable that indicates `True` for household/units that should be included in analysis vs. `False` for datasets that may need to be excluded. Some reasons to exclude a household may be:
+
+- By request from the data supplier
+- Due to missing data that could skew analyses or is insufficient
+- Misbehaving devices and poor quality data
+
 ### Developing and contributing
 
-If you would like to contribute to the package code, we would create an environment and install it in editable mode:
+If you would like to contribute to the package code, you can create an environment and install it in editable mode:
 
 ```bash	
 git clone https://github.com/Stroomversnelling/etdmap.git
@@ -58,7 +84,7 @@ source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
 pip install -e .
 ```
 
-## Data processing and mapping
+## Overview
 
 `etdmap` is a package that provides data mapping functionalities for energy-related datasets. It includes functions to map and transform data according to specific schemas, ensuring consistency across different sources. It also includes some utility variables like `cumulative_columns`, which can be used.
 
@@ -70,13 +96,14 @@ _Note: This API is relatively stable but subject to change as it is still under 
 
 From `data_model.py`:
 
-1. `load_thresholds()`: 
-   - Purpose: Loads predefined thresholds for data validation. These include thresholds for cumulative (annual) values as well as those for 5 minute intervals and instantaneous meassurements.
-   - Description: Reads a CSV file into a Pandas dataframe containing threshold values for various variables used in data validation.
+1. `load_etdmodel()`: 
+   - **Purpose**: Loads the ETD model specification.
+   - **Description**: Reads a CSV file into a Pandas dataframe that defines the structure and requirements of the ETD model.
 
-2. `load_etdmodel()`: 
-   - Purpose: Loads the ETD model specification.
-   - Description: Reads a CSV file into a Pandas dataframe that defines the structure and requirements of the ETD model.
+2. `load_thresholds()`: 
+   - **Purpose**: Loads predefined thresholds for data validation. These include thresholds for cumulative (annual) values as well as those for 5 minute intervals and instantaneous meassurements.
+   - **Description**: Reads a CSV file into a Pandas dataframe containing threshold values for various variables used in data validation.
+
 
 ```python
 from etdmap.record_validators import load_thresholds
@@ -91,9 +118,9 @@ These are defined in `data_model.py`:
 from etdmap.data_model import cumulative_columns, model_column_order, model_column_type
 ```
 
-### Managing the dataset index
+### Managing the mapped data files
 
-`index_helpers.py` contains the functions used to manage metadata and add files to the index. It also has functions for managing household, project metadata, and BSV metdata.
+`index_helpers.py` contains the functions used to manage metadata and add files to the mapped data file index. It also has functions for managing household, project metadata, and BSV metdata.
 
 From `index_helpers.py`:
 
@@ -142,7 +169,7 @@ From `mapping_helpers.py`:
    - *Unexpected zero check*: Identifies and flags unexpected zero values in cumulative readings.
    - *Data availability check*: Ensures that at least a specified percentage of values (default 90%) are not NA.
 
-### Alignment of clocks from different devices and merging data (ALPHA - untested code)
+### Alignment of clocks from different devices and merging data (ALPHA - example code only)
 
 There are functions in `mapping_clock_helpers.py` that are setup to help align clocks from multiple devices and address situations where readings are spaced out in different intervals during the mapping process.
 
