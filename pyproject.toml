@@ -7,7 +7,9 @@ name = "etdmap"
 version = "0.1.0"
 description = "Mapping helper functions for EnergieTransitieDataset."
 readme = "README.md"
-authors = [{ name = "Nicolas Dickinson", email = "dickinson@washnote.com"}]
+authors = [{ name = "Nicolas Dickinson", email = "dickinson@washnote.com"},
+{ name = "Marten Witkamp", email = "marten@wattopia.nl"},
+{name = 'Petra Izeboud', email = 'petra.izeboud@live.nl'}]
 maintainers = [
     {name = "Nicolas Dickinson", email = "dickinson@washnote.com"},
     {name = 'Petra Izeboud', email = 'petra.izeboud@live.nl'},
@@ -15,6 +17,8 @@ maintainers = [
 requires-python = ">= 3.9"
 dependencies = [
     "pandas>=2.2",
+    "pyarrow",
+    "numpy",
 ]
 keywords = ["stroomversnelling", "energietransitie", "warmtepomp"]
 
@@ -23,6 +27,12 @@ keywords = ["stroomversnelling", "energietransitie", "warmtepomp"]
 repository = "https://github.com/Stroomversnelling/etdmap"
 
 [project.optional-dependencies]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "numpydoc",
+    "myst-parser",
+]
 ruffing = ["ruff"]
 pytesting = ["pytest>=7"]
 dev = ["pre-commit"]
