@@ -2,25 +2,25 @@
 
 This package provides the required data model and helpers to map raw data to the `Energietransitie Dataset` (ETD). The ETD is a model defining important variables for energy in the built environment, which are used to inform policy and planning decisions in the Netherlands. For an overview of the ETD and all documentation, see <a href="https://energietransitiedataset.nl/">https://energietransitiedataset.nl/</a>.
 
-## License
+# License
 
 The package may only be used for open processing. You agree to publicly share the intended application, obtained insights, and applied calculation methods under the same license.
 
-## Citation
+# Citation
 
 If you use this package or any code in this package or refer to output, please use the following citations for attribution:
 
 _Witkamp, Dickinson, Izeboud (2024). etdmap: A Python package for mapping raw data to the Energietransitie Dataset (ETD) model._
 
 
-## The data model
+# The data model
 
 The dataset includes two primary types of variables:  
 
 1. **Metadata Variables**: Descriptive information about the project or house, such as identifiers, physical attributes, or installed HVAC systems.  
 2. **Performance Variables**: Time-series data describing the energy performance or environmental conditions.
 
-#### Examples of Variables  
+## Examples of Variables  
 
 | **Category**     | **Variable Name**             | **Type**   | **Description**                                              |
 | ---------------- | ----------------------------- | ---------- | ------------------------------------------------------------ |
@@ -42,7 +42,7 @@ There are two levels of data ultimately used:
 - data for a connected unit in the built environment, such as a household or, perhaps in the future, a charging point, and
 - project level data, an aggregated collection of network connected units with similar characteristics.
 
-## Installation and quick start
+# Installation and quick start
 
 _Note: If only using ETD datasets for analysis, one would use the `etdanalyze` and `etdtranform` packages and install their requirements, which will automatically install `etdmap`._
 
@@ -54,7 +54,7 @@ cd etdmap
 pip install .
 ```
 
-#### Configuration
+# Configuration
 
 In some cases, you may be using this package on its own and may have to configure some options:
 
@@ -73,7 +73,7 @@ Note that the first time that the mapping of raw files is done, there will be a 
 - Due to missing data that could skew analyses or is insufficient
 - Misbehaving devices and poor quality data
 
-#### Developing and contributing
+# Developing and contributing
 
 If you would like to contribute to the package code, you can create an environment and install it in editable mode:
 
@@ -85,13 +85,13 @@ source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
 pip install -e .
 ```
 
-## Overview
+# Overview
 
 `etdmap` is a package that provides data mapping functionalities for energy-related datasets. It includes functions to map and transform data according to specific schemas, ensuring consistency across different sources. It also includes some utility variables like `cumulative_columns`, which can be used.
 
 The process of mapping raw data files to the ETD model involves several key functions. Here's an overview of the main functions used in this process.
 
-#### Data model and column definitions and thresholds
+## Data model and column definitions and thresholds
 
 _Note: This API is relatively stable but subject to change as it is still under development. Please follow our repository or, if necessary, use a tagged releases to ensure stability._
 
@@ -119,7 +119,7 @@ These are defined in `data_model.py`:
 from etdmap.data_model import cumulative_columns, model_column_order, model_column_type
 ```
 
-#### Managing the mapped data files
+## Managing the mapped data files
 
 `index_helpers.py` contains the functions used to manage metadata and add files to the mapped data file index. It also has functions for managing household, project metadata, and BSV (aka ETD) metadata.
 
@@ -141,7 +141,7 @@ From `index_helpers.py`:
    - **Purpose**: Adds metadata columns to the index.
    - **Description**: Updates the index with additional metadata from the supplier, matching on the HuisIdLeverancier column.
 
-#### Mapping raw data to the model specification
+## Mapping raw data to the model specification
 
 From `mapping_helpers.py`:
 
@@ -170,20 +170,20 @@ From `mapping_helpers.py`:
    - *Unexpected zero check*: Identifies and flags unexpected zero values in cumulative readings.
    - *Data availability check*: Ensures that at least a specified percentage of values (default 90%) are not NA.
 
-#### Alignment of clocks from different devices and merging data (ALPHA - example code only)
+## Alignment of clocks from different devices and merging data (ALPHA - example code only)
 
 There are functions in `mapping_clock_helpers.py` that are setup to help align clocks from multiple devices and address situations where readings are spaced out in different intervals during the mapping process.
 
-#### Validators
+## Validators
 
 There are various validators available. There are two major categories:
 
 1. **Dataset validators**: These are used to validate the entire dataset, including checks on cumulative columns and differences between consecutive records.
 2. **Record validators**: These are used to validate individual records, including checks on instantaneous measurements and 5-minute intervals.
 
-## Guidance for suppliers of data and for data preparation
+# Guidance for suppliers of data and for data preparation
 
-#### Prepping raw data
+## Prepping raw data
 
 Use the `Vereist` (`required`) column in the data model in order to check if your metadata and your raw data from device readings are complete and correct. These are the currently required columns (as of 20 Feb 2025):
 
@@ -213,7 +213,7 @@ Use the `Vereist` (`required`) column in the data model in order to check if you
 | Prestatiedata | ElektriciteitsgebruikWarmtepomp | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Gateway / Portal                      | ja           |
 | Prestatiedata | Zon-opwekTotaal                 | nee         | kWh (cumulatief)                                                                                                                   | number         | ja          | 5 minuten    | Dataleverancier | Gateway / Portal                      | ja           |
 
-##### Validation of columns
+## Validation of columns
 
 One should check the stats for each raw data column using the `collect_column_stats()` function to ensure that the data meets expected statistical properties. The statistics include:
 
@@ -233,7 +233,7 @@ One should check the stats for each raw data column using the `collect_column_st
 
 This helps to validate whether or not a particular household/unit has sufficient data of sufficient quality to include in the mapped datasets.
 
-##### Validation of cumulative columns
+## Validation of cumulative columns
 
 The `etdmap` package provides helpers in `mapping_helpers.py` to enable the processing and validation of columns. 
 Cumulative columns are processsed and also validated using the `add_diff_columns()` function. It produces a `diff`, a variable with the incremental increase in the cumulative variable and expects cumulative variables to monotonically increase. In other words, they should never decrease. This assumption might be incorrect in cases where meter readings naturally decrease and in those cases, custom logic may need to be written.
@@ -248,21 +248,21 @@ The `validate_cumulative_variables` function checks for logical consistency in c
 
 _It is important to manually check the logs when adding new datasets. In addition, one should check the stats for each mapped column using the `get_mapped_data_stats()` function to ensure that the data meets the expected statistical properties._
 
-##### Filling data values for devices which report infrequently
+## Filling data values for devices which report infrequently
 
 Sometimes devices are simply not reporting because they are inactive.  In order to ensure the column is not seen as mostly 'missing' data and rather as an unchanging value, the `fill_down_infrequent_devices()` function uses forward fill followed by backward fill to impute missing values for specified columns. 
 
 _This approach may not be suitable if devices if there are underlying issues with the device data, which would be amplified or ignored, especially if the data source is misbehaving. We recommend visually inspecting these columns / data before applying the function._
 
-##### Time Series Consistency
+## Time Series Consistency
 
 At the moment, custom logic has been used for each data source to ensure the data provided is available with a fixed interval (typically 5 minutes). _Example logic has been added to the file `mapping_clock_helpers.py`. It is alpha quality/pseudo code and should not be used at the moment. This should be tested and available to use in a subsequent release._
 
 After the data has fixed (5 min) interval, the `ensure_intervals()` function attempts to ensure a consistent time series by adding missing intervals and removing excess records for the same moment. This process can lead to incorrect data if the raw data does not naturally fit into the expected frequency.
 
-#### Specific function notes
+# Specific function notes
 
-##### `add_diff_columns()`
+## `add_diff_columns()`
 
 1. **Negative differences**:
    - Assumes that negative differences in cumulative columns are erroneous and attempts to correct them by setting values to `pd.NA`. This assumption might not hold true if the meter readings naturally decrease or if there are legitimate zero jumps.
@@ -277,7 +277,7 @@ After the data has fixed (5 min) interval, the `ensure_intervals()` function att
 4. **Known edge cases**:
    - Edge cases where multiple negative dips occur consecutively or where there is a significant pause in data collection are not fully addressed.
 
-##### `fill_down_infrequent_devices()`
+## `fill_down_infrequent_devices()`
 
 1. **Imputation Strategy**:
    - Uses forward fill followed by backward fill to impute missing values, which can lead to inaccuracies if the device reports irregularly or if there are underlying issues with data collection.
@@ -291,7 +291,7 @@ After the data has fixed (5 min) interval, the `ensure_intervals()` function att
 4. **Column specificity**:
    - Processes specified variables by default: `ElektriciteitsgebruikBoilervat`, `ElektriciteitsgebruikRadiator`, `ElektriciteitsgebruikBooster`. Can handle other columns if passed as an argument. Some datasets may require different processing.
 
-##### `ensure_intervals()`
+## `ensure_intervals()`
 
 1. **Frequency assumption**:
    - Assumes a fixed frequency for the time series data (e.g., 5-minute intervals) and the only check it does is for the number of expected records. If the raw data does not naturally fit into this frequency the errors may occur as additional pre-processing is required.
@@ -305,7 +305,7 @@ After the data has fixed (5 min) interval, the `ensure_intervals()` function att
 4. **Excess records**:
    - Attempts to reduce excess records by performing a left merge, which might lead to data loss if the excess records contain valid information.
 
-##### `rearrange_model_columns()`
+## `rearrange_model_columns()`
 
 1. **Column order**:
    - Ensures that the DataFrame columns are in a specific order with additional columns left at the end/right of the dataset.
