@@ -3,11 +3,11 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Energy transition dataset mapping package (etdmap) documentation
+etdmap - "Energietransitie Dataset" mapping package documentation
 ================================================================
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 4
    :caption: Contents:
 
    source/modules
