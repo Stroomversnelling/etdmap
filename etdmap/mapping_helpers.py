@@ -734,6 +734,20 @@ def collect_column_stats(identifier, column_data):
     }
 
 
+def process_raw_data_file(args):
+    file, raw_data_folder_path, summary_data = args
+
+    file_path = os.path.join(raw_data_folder_path, file)
+    logging.info(f"Opening {file_path}")
+
+    df = pd.read_parquet(file_path)
+    for column in df.columns:
+        column_data = df[column]
+        summary_data.append(
+            collect_column_stats(file, column_data)
+        )
+
+
 def get_raw_data_stats(raw_data_folder_path, multi=False, max_workers=2):
     """
     Collect and aggregate statistics for all columns in the DataFrame corresponding to each raw data file in a folder.
@@ -764,26 +778,16 @@ def get_raw_data_stats(raw_data_folder_path, multi=False, max_workers=2):
     try:
         files = os.listdir(raw_data_folder_path)
 
-        def process_file(file):
-            file_path = os.path.join(raw_data_folder_path, file)
-            logging.info(f"Opening {file_path}")
-
-            df = pd.read_parquet(file_path)
-            for column in df.columns:
-                column_data = df[column]
-                summary_data.append(
-                    collect_column_stats(file, column_data)
-                )
-
         if multi:
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                results = executor.map(process_file, [file for file in files if file.endswith(f".{file_extension}")])
+                args_list = [(file, raw_data_folder_path, summary_data) for file in files if file.endswith(f".{file_extension}")]
+                results = executor.map(process_raw_data_file, args_list)
                 summary_data = [item for sublist in results for item in sublist]
         else:
             for file in files:
                 if not file.endswith(f".{file_extension}"):
                     continue
-                process_file(file)
+                process_raw_data_file((file, raw_data_folder_path, summary_data))
 
         df_raw_stats = pd.DataFrame(summary_data)
         return df_raw_stats
