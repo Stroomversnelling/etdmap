@@ -741,12 +741,14 @@ def process_raw_data_file(args):
     logging.info(f"Opening {file_path}")
 
     df = pd.read_parquet(file_path)
+    summary_data = []
+
     for column in df.columns:
         column_data = df[column]
         summary_data.append(
             collect_column_stats(file, column_data)
         )
-
+    return summary_data
 
 def get_raw_data_stats(raw_data_folder_path, multi=False, max_workers=2):
     """
@@ -787,7 +789,9 @@ def get_raw_data_stats(raw_data_folder_path, multi=False, max_workers=2):
             for file in files:
                 if not file.endswith(f".{file_extension}"):
                     continue
-                process_raw_data_file((file, raw_data_folder_path, summary_data))
+                summary_data.extend(
+                    process_raw_data_file((file, raw_data_folder_path))
+                )
 
         df_raw_stats = pd.DataFrame(summary_data)
         return df_raw_stats
