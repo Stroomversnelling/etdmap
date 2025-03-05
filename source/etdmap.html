@@ -1,0 +1,1509 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>etdmap package &mdash; etdmap - &#34;Energietransitie Dataset&#34; mapping package 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="etdmap" href="modules.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            etdmap - "Energietransitie Dataset" mapping package
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Functions</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">etdmap</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">etdmap package</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#submodules">Submodules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-etdmap.data_model">etdmap.data_model module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.data_model.load_etdmodel"><code class="docutils literal notranslate"><span class="pre">load_etdmodel()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.data_model.load_thresholds"><code class="docutils literal notranslate"><span class="pre">load_thresholds()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.data_model.load_thresholds_as_dict"><code class="docutils literal notranslate"><span class="pre">load_thresholds_as_dict()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-etdmap.dataset_validators">etdmap.dataset_validators module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.create_validate_func_col"><code class="docutils literal notranslate"><span class="pre">create_validate_func_col()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.create_validate_func_outliers_neg_cum"><code class="docutils literal notranslate"><span class="pre">create_validate_func_outliers_neg_cum()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.validate_approximately_one_year_of_records"><code class="docutils literal notranslate"><span class="pre">validate_approximately_one_year_of_records()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.validate_column_exists"><code class="docutils literal notranslate"><span class="pre">validate_column_exists()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.validate_columns"><code class="docutils literal notranslate"><span class="pre">validate_columns()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.validate_columns_exist"><code class="docutils literal notranslate"><span class="pre">validate_columns_exist()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.validate_cumm_thesholds"><code class="docutils literal notranslate"><span class="pre">validate_cumm_thesholds()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.validate_cumulative_variable"><code class="docutils literal notranslate"><span class="pre">validate_cumulative_variable()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.validate_energiegebruik_warmteopwekker"><code class="docutils literal notranslate"><span class="pre">validate_energiegebruik_warmteopwekker()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.validate_monitoring_data_counts"><code class="docutils literal notranslate"><span class="pre">validate_monitoring_data_counts()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.validate_no_readingdate_gap"><code class="docutils literal notranslate"><span class="pre">validate_no_readingdate_gap()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.dataset_validators.validate_range"><code class="docutils literal notranslate"><span class="pre">validate_range()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-etdmap.index_helpers">etdmap.index_helpers module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.add_supplier_metadata_to_index"><code class="docutils literal notranslate"><span class="pre">add_supplier_metadata_to_index()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.get_bsv_metadata"><code class="docutils literal notranslate"><span class="pre">get_bsv_metadata()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.get_household_id_pairs"><code class="docutils literal notranslate"><span class="pre">get_household_id_pairs()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.get_mapped_data"><code class="docutils literal notranslate"><span class="pre">get_mapped_data()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.get_mapped_file_path"><code class="docutils literal notranslate"><span class="pre">get_mapped_file_path()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.read_index"><code class="docutils literal notranslate"><span class="pre">read_index()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.read_metadata"><code class="docutils literal notranslate"><span class="pre">read_metadata()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.save_index_to_parquet"><code class="docutils literal notranslate"><span class="pre">save_index_to_parquet()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.set_metadata_dtypes"><code class="docutils literal notranslate"><span class="pre">set_metadata_dtypes()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.update_index"><code class="docutils literal notranslate"><span class="pre">update_index()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.update_meenemen"><code class="docutils literal notranslate"><span class="pre">update_meenemen()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.index_helpers.update_meta_validators"><code class="docutils literal notranslate"><span class="pre">update_meta_validators()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-etdmap.mapping_clock_helpers">etdmap.mapping_clock_helpers module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_clock_helpers.align_and_merge_dataframes"><code class="docutils literal notranslate"><span class="pre">align_and_merge_dataframes()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_clock_helpers.align_timestamps"><code class="docutils literal notranslate"><span class="pre">align_timestamps()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_clock_helpers.determine_dynamic_clocks"><code class="docutils literal notranslate"><span class="pre">determine_dynamic_clocks()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_clock_helpers.interpolate_cumulative"><code class="docutils literal notranslate"><span class="pre">interpolate_cumulative()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_clock_helpers.report_tolerance_impact"><code class="docutils literal notranslate"><span class="pre">report_tolerance_impact()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-etdmap.mapping_helpers">etdmap.mapping_helpers module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_helpers.add_diff_columns"><code class="docutils literal notranslate"><span class="pre">add_diff_columns()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_helpers.collect_column_stats"><code class="docutils literal notranslate"><span class="pre">collect_column_stats()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_helpers.collect_mapped_data_stats"><code class="docutils literal notranslate"><span class="pre">collect_mapped_data_stats()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_helpers.ensure_intervals"><code class="docutils literal notranslate"><span class="pre">ensure_intervals()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_helpers.fill_down_infrequent_devices"><code class="docutils literal notranslate"><span class="pre">fill_down_infrequent_devices()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_helpers.get_mapped_data_stats"><code class="docutils literal notranslate"><span class="pre">get_mapped_data_stats()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_helpers.get_raw_data_stats"><code class="docutils literal notranslate"><span class="pre">get_raw_data_stats()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_helpers.process_raw_data_file"><code class="docutils literal notranslate"><span class="pre">process_raw_data_file()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_helpers.rearrange_model_columns"><code class="docutils literal notranslate"><span class="pre">rearrange_model_columns()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.mapping_helpers.validate_cumulative_variables"><code class="docutils literal notranslate"><span class="pre">validate_cumulative_variables()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-etdmap.record_validators">etdmap.record_validators module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.condition_func_threshold"><code class="docutils literal notranslate"><span class="pre">condition_func_threshold()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.create_validate_cumulative"><code class="docutils literal notranslate"><span class="pre">create_validate_cumulative()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.create_validate_momentaan"><code class="docutils literal notranslate"><span class="pre">create_validate_momentaan()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.get_columns_threshold_validator"><code class="docutils literal notranslate"><span class="pre">get_columns_threshold_validator()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.validate_300sec"><code class="docutils literal notranslate"><span class="pre">validate_300sec()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.validate_columns"><code class="docutils literal notranslate"><span class="pre">validate_columns()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.validate_elektriciteitgebruik"><code class="docutils literal notranslate"><span class="pre">validate_elektriciteitgebruik()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.validate_not_outliers"><code class="docutils literal notranslate"><span class="pre">validate_not_outliers()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.validate_reading_date_uniek"><code class="docutils literal notranslate"><span class="pre">validate_reading_date_uniek()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.validate_thresholds_combined"><code class="docutils literal notranslate"><span class="pre">validate_thresholds_combined()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.record_validators.validate_warmteproductie"><code class="docutils literal notranslate"><span class="pre">validate_warmteproductie()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-etdmap">Module contents</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.read_index"><code class="docutils literal notranslate"><span class="pre">read_index()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.read_metadata"><code class="docutils literal notranslate"><span class="pre">read_metadata()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#etdmap.update_index"><code class="docutils literal notranslate"><span class="pre">update_index()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">etdmap - "Energietransitie Dataset" mapping package</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">etdmap</a></li>
+      <li class="breadcrumb-item active">etdmap package</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/source/etdmap.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="etdmap-package">
+<h1>etdmap package<a class="headerlink" href="#etdmap-package" title="Link to this heading"></a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading"></a></h2>
+</section>
+<section id="module-etdmap.data_model">
+<span id="etdmap-data-model-module"></span><h2>etdmap.data_model module<a class="headerlink" href="#module-etdmap.data_model" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.data_model.load_etdmodel">
+<span class="sig-prename descclassname"><span class="pre">etdmap.data_model.</span></span><span class="sig-name descname"><span class="pre">load_etdmodel</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/data_model.html#load_etdmodel"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/data_model.py#L153"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.data_model.load_etdmodel" title="Link to this definition"></a></dt>
+<dd><p>Load ETD model from the package ETD model definition CSV file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A DataFrame containing the ETD model data.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.data_model.load_thresholds">
+<span class="sig-prename descclassname"><span class="pre">etdmap.data_model.</span></span><span class="sig-name descname"><span class="pre">load_thresholds</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/data_model.html#load_thresholds"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/data_model.py#L106"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.data_model.load_thresholds" title="Link to this definition"></a></dt>
+<dd><p>Load thresholds from a CSV file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A DataFrame containing the thresholds data.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.data_model.load_thresholds_as_dict">
+<span class="sig-prename descclassname"><span class="pre">etdmap.data_model.</span></span><span class="sig-name descname"><span class="pre">load_thresholds_as_dict</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dict</span></span></span><a class="reference internal" href="../_modules/etdmap/data_model.html#load_thresholds_as_dict"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/data_model.py#L135"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.data_model.load_thresholds_as_dict" title="Link to this definition"></a></dt>
+<dd><p>Load thresholds from the package thresholds CSV file and convert to a dictionary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A dictionary containing the thresholds data.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-etdmap.dataset_validators">
+<span id="etdmap-dataset-validators-module"></span><h2>etdmap.dataset_validators module<a class="headerlink" href="#module-etdmap.dataset_validators" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.create_validate_func_col">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">create_validate_func_col</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tresholds</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">callable</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#create_validate_func_col"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L309"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.create_validate_func_col" title="Link to this definition"></a></dt>
+<dd><p>Create a validation function for a specific column based on given thresholds.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>col</strong> (<em>str</em>) – The name of the column to be validated.</p></li>
+<li><p><strong>tresholds</strong> (<em>dict</em>) – A dictionary containing the threshold values for the specified column.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A function that validates the specified column in a DataFrame.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>callable</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function creates a validation function that checks if the specified column is cumulative
+and falls within the given thresholds.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.create_validate_func_outliers_neg_cum">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">create_validate_func_outliers_neg_cum</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">callable</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#create_validate_func_outliers_neg_cum"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L342"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.create_validate_func_outliers_neg_cum" title="Link to this definition"></a></dt>
+<dd><p>Create a validation function to check for outliers and negative cumulative differences in a specific column.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>col</strong> (<em>str</em>) – The name of the column to be validated.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A function that validates the specified column for outliers and negative cumulative differences in a DataFrame.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>callable</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function creates a validation function that checks if all non-null values in the ‘validate_&lt;col&gt;Diff’ column are True.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.validate_approximately_one_year_of_records">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">validate_approximately_one_year_of_records</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#validate_approximately_one_year_of_records"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L187"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.validate_approximately_one_year_of_records" title="Link to this definition"></a></dt>
+<dd><p>Validate that a DataFrame contains approximately one year of records.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>DataFrame</em>) – The input DataFrame containing the data to be validated.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the DataFrame contains approximately one year of records, pd.NA if validation cannot be performed.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool or pd.NA</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function checks if the difference between the maximum and minimum dates in the ‘ReadingDate’ column
+falls within a range of approximately one year, allowing for a specified jitter.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.validate_column_exists">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">validate_column_exists</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#validate_column_exists"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L213"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.validate_column_exists" title="Link to this definition"></a></dt>
+<dd><p>Validate that a specific column exists in a DataFrame.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>DataFrame</em>) – The input DataFrame to be checked.</p></li>
+<li><p><strong>column_name</strong> (<em>str</em>) – The name of the column to check for existence.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the column exists in the DataFrame, False otherwise.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function simply checks if the specified column name is present in the DataFrame’s columns.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.validate_columns">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">validate_columns</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">condition_func</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#validate_columns"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L24"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.validate_columns" title="Link to this definition"></a></dt>
+<dd><p>Validate a dataset based on specified columns in a DataFrame based on a given condition function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>DataFrame</em>) – The input DataFrame to be validated.</p></li>
+<li><p><strong>columns</strong> (<em>list</em>) – A list of column names to be checked for validity.</p></li>
+<li><p><strong>condition_func</strong> (<em>callable</em>) – A function that takes a DataFrame as an argument and returns a boolean Series indicating which rows meet the validation criteria.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if all valid rows meet the specified condition, pd.NA if no valid rows are found or if any of the specified columns do not exist in the DataFrame.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool or pd.NA</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function checks if all specified columns exist in the DataFrame, applies the condition function to valid rows, and returns the overall validation result.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.validate_columns_exist">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">validate_columns_exist</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#validate_columns_exist"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L236"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.validate_columns_exist" title="Link to this definition"></a></dt>
+<dd><p>Validate that all required columns for data analysis exist in a DataFrame.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>DataFrame</em>) – The input DataFrame to be checked.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if all required columns exist in the DataFrame, False otherwise.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function checks if all columns specified in the ‘data_analysis_columns’ list are present in the DataFrame.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.validate_cumm_thesholds">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">validate_cumm_thesholds</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">thresholds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#validate_cumm_thesholds"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L58"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.validate_cumm_thesholds" title="Link to this definition"></a></dt>
+<dd><p>Validate cumulative thresholds for a specific column in a DataFrame.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>DataFrame</em>) – The input DataFrame containing the data to be validated.</p></li>
+<li><p><strong>col</strong> (<em>str</em>) – The name of the column to be validated.</p></li>
+<li><p><strong>thresholds</strong> (<em>dict</em>) – A dictionary containing the threshold values for the specified column.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the column values meet the specified thresholds, pd.NA if validation cannot be performed.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool or pd.NA</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function checks if the differences between consecutive values in the specified column fall within the given thresholds.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.validate_cumulative_variable">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">validate_cumulative_variable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#validate_cumulative_variable"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L110"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.validate_cumulative_variable" title="Link to this definition"></a></dt>
+<dd><p>Validate that a cumulative variable in a DataFrame is non-decreasing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>DataFrame</em>) – The input DataFrame containing the data to be validated.</p></li>
+<li><p><strong>column</strong> (<em>str</em>) – The name of the column to be validated.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the cumulative variable is non-decreasing, pd.NA if validation cannot be performed.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool or pd.NA</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function checks if the differences between consecutive values in the specified column are non-negative.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.validate_energiegebruik_warmteopwekker">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">validate_energiegebruik_warmteopwekker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#validate_energiegebruik_warmteopwekker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L259"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.validate_energiegebruik_warmteopwekker" title="Link to this definition"></a></dt>
+<dd><p>Validate the energy usage of the heat generator in a DataFrame.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>DataFrame</em>) – The input DataFrame containing the data to be validated.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the calculated energy usage falls within the specified range, pd.NA if validation cannot be performed.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool or pd.NA</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function calculates the total energy usage of the heat generator by summing the electricity usage
+of the heat pump, booster, and boiler tank, and then validates if this total falls within a specified range.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.validate_monitoring_data_counts">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">validate_monitoring_data_counts</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#validate_monitoring_data_counts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L88"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.validate_monitoring_data_counts" title="Link to this definition"></a></dt>
+<dd><p>Validate the number of records in a DataFrame.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>DataFrame</em>) – The input DataFrame to be validated.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the number of records falls within the specified range, pd.NA if the DataFrame is empty.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool or pd.NA</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function checks if the number of records in the DataFrame is between 100,000 and 110,000.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.validate_no_readingdate_gap">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">validate_no_readingdate_gap</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#validate_no_readingdate_gap"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L286"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.validate_no_readingdate_gap" title="Link to this definition"></a></dt>
+<dd><p>Validate that there are no gaps in the reading dates of a DataFrame.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>DataFrame</em>) – The input DataFrame containing the data to be validated.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if there are no gaps in the reading dates, False otherwise.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function checks if the time difference between consecutive reading dates is consistently 300 seconds.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.dataset_validators.validate_range">
+<span class="sig-prename descclassname"><span class="pre">etdmap.dataset_validators.</span></span><span class="sig-name descname"><span class="pre">validate_range</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/dataset_validators.html#validate_range"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/dataset_validators.py#L138"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.dataset_validators.validate_range" title="Link to this definition"></a></dt>
+<dd><p>Validate that a column in a DataFrame falls within a specified range over approximately one year.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>DataFrame</em>) – The input DataFrame containing the data to be validated.</p></li>
+<li><p><strong>column</strong> (<em>str</em>) – The name of the column to be validated.</p></li>
+<li><p><strong>min_value</strong> (<em>float</em>) – The minimum acceptable value for the yearly difference.</p></li>
+<li><p><strong>max_value</strong> (<em>float</em>) – The maximum acceptable value for the yearly difference.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>True if the column values fall within the specified range over approximately one year, pd.NA if validation cannot be performed.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bool or pd.NA</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function checks if the difference between the first and last non-null values in the specified column,
+over a period of approximately one year, falls within the given range.</p>
+</dd></dl>
+
+</section>
+<section id="module-etdmap.index_helpers">
+<span id="etdmap-index-helpers-module"></span><h2>etdmap.index_helpers module<a class="headerlink" href="#module-etdmap.index_helpers" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.add_supplier_metadata_to_index">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">add_supplier_metadata_to_index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metadata_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_leverancier</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#add_supplier_metadata_to_index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L341"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.add_supplier_metadata_to_index" title="Link to this definition"></a></dt>
+<dd><p>Adds metadata columns to the index matching on the HuisIdLeverancier column.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>index_df</strong> (<em>pd.DataFrame</em>) – The index DataFrame.</p></li>
+<li><p><strong>metadata_df</strong> (<em>pd.DataFrame</em>) – The metadata DataFrame to be added to the index.</p></li>
+<li><p><strong>data_leverancier</strong> (<em>str</em><em>, </em><em>optional</em>) – The data supplier name (required).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The updated index DataFrame.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.get_bsv_metadata">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">get_bsv_metadata</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#get_bsv_metadata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L34"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.get_bsv_metadata" title="Link to this definition"></a></dt>
+<dd><p>Reads and returns metadata from the BSV metadata file, ensuring that all required columns are present.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>A pandas DataFrame containing the BSV metadata with the specified columns.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>DataFrame</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ValueError</strong> – If any of the required columns are missing in the metadata file.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The function relies on the <cite>read_metadata</cite> utility to read the file and check for required columns.</p></li>
+<li><p>The path to the BSV metadata file is obtained from <cite>etdmap.options.bsv_metadata_file</cite>.</p></li>
+<li><p>The required columns are defined in the <cite>bsv_metadata_columns</cite> list.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.get_household_id_pairs">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">get_household_id_pairs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_folder_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_provider</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">list_files_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">callable</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#get_household_id_pairs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L138"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.get_household_id_pairs" title="Link to this definition"></a></dt>
+<dd><p>Generates pairs of HuisIdBSV and filenames for new and existing entries.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>index_df</strong> (<em>pd.DataFrame</em>) – The index DataFrame.</p></li>
+<li><p><strong>data_folder_path</strong> (<em>str</em>) – The path to the folder containing data files.</p></li>
+<li><p><strong>data_provider</strong> (<em>str</em>) – The name of the data provider.</p></li>
+<li><p><strong>list_files_func</strong> (<em>callable</em>) – A function to get a dictionary of id and the files in the data folder.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A list of tuples containing HuisIdBSV and filenames.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.get_mapped_data">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">get_mapped_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">huis_id_bsv</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#get_mapped_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L512"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.get_mapped_data" title="Link to this definition"></a></dt>
+<dd><p>Retrieves the mapped household data for a given BSV household ID from the Parquet file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>huis_id_bsv</strong> (<em>int</em>) – The BSV household ID.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The DataFrame containing the household data.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>FileNotFoundError</strong> – If the specified file does not exist at the expected path.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.get_mapped_file_path">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">get_mapped_file_path</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">huis_id_bsv</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">str</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#get_mapped_file_path"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L493"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.get_mapped_file_path" title="Link to this definition"></a></dt>
+<dd><p>Generates the file path for the mapped household data based on the BSV household ID.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>huis_id_bsv</strong> (<em>int</em>) – The BSV household ID.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The full file path to the mapped household data in Parquet format.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.read_index">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">read_index</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">DataFrame</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#read_index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L107"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.read_index" title="Link to this definition"></a></dt>
+<dd><p>Reads the index parquet file from the specified folder path.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><dl class="simple">
+<dt>A tuple containing:</dt><dd><ul class="simple">
+<li><p>DataFrame: The DataFrame of the index.</p></li>
+<li><p>str: The path to the index file.</p></li>
+</ul>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.read_metadata">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">read_metadata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">metadata_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">required_columns</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#read_metadata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L60"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.read_metadata" title="Link to this definition"></a></dt>
+<dd><p>Read metadata from an Excel file and check for the presence of required columns.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>metadata_file</strong> (<em>str</em>) – The path to the Excel file containing the metadata for a data source.</p></li>
+<li><p><strong>required_columns</strong> (<em>list</em><em>, </em><em>optional</em>) – A list of column names that must be present in the metadata. Defaults to [‘HuisIdLeverancier’].</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A DataFrame containing the metadata from the specified sheet.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – If not all required columns are found in the metadata file.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.save_index_to_parquet">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">save_index_to_parquet</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#save_index_to_parquet"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L440"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.save_index_to_parquet" title="Link to this definition"></a></dt>
+<dd><p>Save the index DataFrame to a Parquet file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>index_df</strong> (<em>pd.DataFrame</em>) – The DataFrame containing the index data.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function saves the provided DataFrame to a Parquet file.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.set_metadata_dtypes">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">set_metadata_dtypes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">metadata_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#set_metadata_dtypes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L466"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.set_metadata_dtypes" title="Link to this definition"></a></dt>
+<dd><p>Set the data types of columns in the index or metdata DataFrame based on metadata_dtypes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>metadata_df</strong> (<em>pandas.DataFrame</em>) – The DataFrame containing the metadata.</p></li>
+<li><p><strong>strict</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, raises an error if a column specified in metadata_dtypes is not found in the DataFrame. Default is False.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The DataFrame with updated column data types.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.update_index">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">update_index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_entry</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_provider</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#update_index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L185"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.update_index" title="Link to this definition"></a></dt>
+<dd><p>Update the index with new entries and recalculate or add flag columns for dataset validators.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>index_df</strong> (<em>pd.DataFrame</em>) – The index DataFrame.</p></li>
+<li><p><strong>new_entry</strong> (<em>dict</em>) – The new entry to be added or updated in the index.</p></li>
+<li><p><strong>data_provider</strong> (<em>str</em>) – The name of the data provider.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The updated index DataFrame.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.update_meenemen">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">update_meenemen</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#update_meenemen"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L301"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.update_meenemen" title="Link to this definition"></a></dt>
+<dd><p>Updates the index DataFrame to include information about which households should be included in the “Meenemen” column based on BSV metadata.</p>
+<p>This function performs the following steps:
+1. Logs an informational message indicating the start of the update process.
+2. Reads the current index DataFrame and its file path using the <cite>read_index</cite> function.
+3. Removes any existing ‘Meenemen’ column from the index DataFrame.
+4. Retrieves the BSV metadata DataFrame using the <cite>get_bsv_metadata</cite> function.
+5. Extracts the ‘HuisIdBSV’ and ‘Meenemen’ columns from the BSV metadata DataFrame.
+6. Merges the extracted BSV ‘Meenemen’ data with the index DataFrame on the ‘HuisIdBSV’ column.
+7. Saves the updated index DataFrame back to its original file path in Parquet format using the PyArrow engine.
+8. Returns the updated index DataFrame.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>pd.DataFrame</strong></p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>The updated index DataFrame with the new “Meenemen” information included.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.index_helpers.update_meta_validators">
+<span class="sig-prename descclassname"><span class="pre">etdmap.index_helpers.</span></span><span class="sig-name descname"><span class="pre">update_meta_validators</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index_df</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#update_meta_validators"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L266"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.index_helpers.update_meta_validators" title="Link to this definition"></a></dt>
+<dd><p>Updates the index DataFrame with a new column ‘validate_cumulative_diff_ok’ that indicates whether
+all cumulative difference columns in the DataFrame are valid.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>(</strong><strong>pandas.DataFrame</strong><strong>)</strong> (<em>index_df</em>)</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>pandas.DataFrame</strong></p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>The updated DataFrame with an additional column ‘validate_cumulative_diff_ok’.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The function constructs a list of column names based on the global variable <cite>cumulative_columns</cite>.</p></li>
+<li><p>It checks if all these constructed column names exist in the input DataFrame.</p></li>
+<li><p>If they do, it creates a new boolean column ‘validate_cumulative_diff_ok’ where each entry is True
+if all corresponding row-wise values in the cumulative difference columns are True (indicating validity).</p></li>
+<li><p>If any of the expected columns are missing, it fills the ‘validate_cumulative_diff_ok’ column with pd.NA.</p></li>
+</ul>
+</dd></dl>
+
+</section>
+<section id="module-etdmap.mapping_clock_helpers">
+<span id="etdmap-mapping-clock-helpers-module"></span><h2>etdmap.mapping_clock_helpers module<a class="headerlink" href="#module-etdmap.mapping_clock_helpers" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_clock_helpers.align_and_merge_dataframes">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_clock_helpers.</span></span><span class="sig-name descname"><span class="pre">align_and_merge_dataframes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">aligned_dfs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">DataFrame</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timestamp_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'aligned_timestamp'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_first_as_main</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">300</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/mapping_clock_helpers.html#align_and_merge_dataframes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_clock_helpers.py#L135"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_clock_helpers.align_and_merge_dataframes" title="Link to this definition"></a></dt>
+<dd><p>Aligns multiple dataframes by adjusting their first timestamps to minimize overall deviation,
+reports the shifts, and merges them into a single dataframe.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>aligned_dfs</strong> (<em>List</em><em>[</em><em>pd.DataFrame</em><em>]</em>) – List of aligned dataframes to be processed.</p></li>
+<li><p><strong>timestamp_col</strong> (<em>str</em><em>, </em><em>optional</em>) – Name of the aligned timestamp column. Default is ‘aligned_timestamp’.</p></li>
+<li><p><strong>use_first_as_main</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, aligns all dataframes to the first one. Default is False.</p></li>
+<li><p><strong>freq</strong> (<em>int</em><em>, </em><em>optional</em>) – Expected frequency in seconds between timestamps. Default is 300.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Merged dataframe with aligned timestamps.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function is in ALPHA status (untested code, use at your own risk!).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>ValueError</strong> – If any dataframe has an inconsistent frequency.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_clock_helpers.align_timestamps">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_clock_helpers.</span></span><span class="sig-name descname"><span class="pre">align_timestamps</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timestamp_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Timestamp</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'nearest'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cumulative_columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/mapping_clock_helpers.html#align_timestamps"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_clock_helpers.py#L265"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_clock_helpers.align_timestamps" title="Link to this definition"></a></dt>
+<dd><p>ALPHA status (untested code, use at your own risk!). Aligns timestamps in a dataframe based on the specified method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>pd.DataFrame</em>) – Input dataframe.</p></li>
+<li><p><strong>timestamp_col</strong> (<em>str</em>) – Name of the timestamp column.</p></li>
+<li><p><strong>start_time</strong> (<em>pd.Timestamp</em>) – Start time for alignment.</p></li>
+<li><p><strong>freq</strong> (<em>int</em>) – Frequency in seconds.</p></li>
+<li><p><strong>tolerance</strong> (<em>int</em><em>, </em><em>optional</em>) – Tolerance in seconds for alignment (default is 10).</p></li>
+<li><p><strong>method</strong> (<em>str</em><em>, </em><em>optional</em>) – Alignment method (‘nearest’ or ‘interpolation’, default is ‘nearest’).</p></li>
+<li><p><strong>cumulative_columns</strong> (<em>List</em><em>[</em><em>str</em><em>]</em><em>, </em><em>optional</em>) – List of cumulative column names.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Dataframe with aligned timestamps and adjusted values.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>For cumulative columns, uses custom interpolation within tolerance.</p></li>
+<li><p>For non-cumulative columns, uses nearest value within tolerance.</p></li>
+<li><p>Preserves pd.NA for values outside of tolerance range.</p></li>
+<li><p>Ensures consistent frequency and handles edge cases.</p></li>
+</ul>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="gp">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Create a sample dataframe</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+<span class="gp">... </span>    <span class="s1">&#39;timestamp&#39;</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span><span class="s1">&#39;2023-01-01&#39;</span><span class="p">,</span> <span class="n">periods</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="s1">&#39;7min&#39;</span><span class="p">),</span>
+<span class="gp">... </span>    <span class="s1">&#39;value&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+<span class="gp">... </span>    <span class="s1">&#39;cumulative&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">40</span><span class="p">,</span> <span class="mi">50</span><span class="p">]</span>
+<span class="gp">... </span><span class="p">})</span>
+<span class="gp">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Set alignment parameters</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">start_time</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="s1">&#39;2023-01-01&#39;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">freq</span> <span class="o">=</span> <span class="mi">300</span>  <span class="c1"># 5 minutes in seconds</span>
+<span class="gp">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="c1"># Align timestamps</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">aligned_df</span> <span class="o">=</span> <span class="n">align_timestamps</span><span class="p">(</span>
+<span class="gp">... </span>    <span class="n">df</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="s1">&#39;timestamp&#39;</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">start_time</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">freq</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">tolerance</span><span class="o">=</span><span class="mi">60</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">method</span><span class="o">=</span><span class="s1">&#39;interpolation&#39;</span><span class="p">,</span>
+<span class="gp">... </span>    <span class="n">cumulative_columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;cumulative&#39;</span><span class="p">]</span>
+<span class="gp">... </span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">aligned_df</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This will produce an aligned dataframe with 5-minute intervals,
+interpolating the cumulative column and using nearest neighbor
+for the non-cumulative column within a 60-second tolerance.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_clock_helpers.determine_dynamic_clocks">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_clock_helpers.</span></span><span class="sig-name descname"><span class="pre">determine_dynamic_clocks</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataframes</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">DataFrame</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timestamp_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">300</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Timestamp</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/etdmap/mapping_clock_helpers.html#determine_dynamic_clocks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_clock_helpers.py#L46"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_clock_helpers.determine_dynamic_clocks" title="Link to this definition"></a></dt>
+<dd><p>ALPHA status (untested code, use at your own risk!). Determines the ideal dynamic clock start for each device and across all devices.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataframes</strong> (<em>list</em><em> of </em><em>pandas.DataFrame</em>) – List of dataframes, one per device.</p></li>
+<li><p><strong>timestamp_col</strong> (<em>str</em>) – Name of the timestamp column.</p></li>
+<li><p><strong>freq</strong> (<em>int</em><em>, </em><em>optional</em>) – Frequency in seconds (default is 300 for 5-minute intervals).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>dict of str</strong> – Dictionary with ideal clock starts for each device and overall.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.Timestamp</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_clock_helpers.interpolate_cumulative">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_clock_helpers.</span></span><span class="sig-name descname"><span class="pre">interpolate_cumulative</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">series</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Series</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_timestamps</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DatetimeIndex</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Timedelta</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Series</span></span></span><a class="reference internal" href="../_modules/etdmap/mapping_clock_helpers.html#interpolate_cumulative"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_clock_helpers.py#L217"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_clock_helpers.interpolate_cumulative" title="Link to this definition"></a></dt>
+<dd><p>ALPHA status (untested code, use at your own risk!). Interpolate cumulative data within tolerance, preserving pd.NA outside of tolerance ranges.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>series</strong> (<em>pd.Series</em>) – The original cumulative data series.</p></li>
+<li><p><strong>target_timestamps</strong> (<em>pd.DatetimeIndex</em>) – The target timestamps for alignment.</p></li>
+<li><p><strong>tolerance</strong> (<em>pd.Timedelta</em>) – The tolerance for considering nearby values.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Interpolated series aligned with target_timestamps.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.Series</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Interpolates only when there are at least two values within the tolerance range.</p></li>
+<li><p>Preserves pd.NA for timestamps without nearby values.</p></li>
+<li><p>Raises an error if decreasing cumulative values are detected.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_clock_helpers.report_tolerance_impact">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_clock_helpers.</span></span><span class="sig-name descname"><span class="pre">report_tolerance_impact</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dataframes</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">DataFrame</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timestamp_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ideal_starts</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Timestamp</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerances</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[10,</span> <span class="pre">30,</span> <span class="pre">150]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">300</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/etdmap/mapping_clock_helpers.html#report_tolerance_impact"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_clock_helpers.py#L84"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_clock_helpers.report_tolerance_impact" title="Link to this definition"></a></dt>
+<dd><p>ALPHA status (untested code, use at your own risk!). Reports on how different tolerances affect the number of values per column.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dataframes</strong> (<em>list</em><em> of </em><em>pandas.DataFrame</em>) – List of dataframes, one per device.</p></li>
+<li><p><strong>timestamp_col</strong> (<em>str</em>) – Name of the timestamp column.</p></li>
+<li><p><strong>ideal_starts</strong> (<em>dict</em><em> of </em><em>str: pandas.Timestamp</em>) – Dictionary of ideal starts from determine_dynamic_clocks.</p></li>
+<li><p><strong>tolerances</strong> (<em>list</em><em> of </em><em>int</em><em>, </em><em>optional</em>) – List of tolerances in seconds to check (default is [10, 30, 150]).</p></li>
+<li><p><strong>freq</strong> (<em>int</em><em>, </em><em>optional</em>) – Frequency in seconds (default is 300 for 5-minute intervals).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>dict of str</strong> – Nested dictionary with counts for each device, column, and tolerance.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict of str: dict of int: int</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-etdmap.mapping_helpers">
+<span id="etdmap-mapping-helpers-module"></span><h2>etdmap.mapping_helpers module<a class="headerlink" href="#module-etdmap.mapping_helpers" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_helpers.add_diff_columns">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_helpers.</span></span><span class="sig-name descname"><span class="pre">add_diff_columns</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data:</span> <span class="pre">~pandas.core.frame.DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">id_column:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">validate_func=&lt;function</span> <span class="pre">validate_cumulative_variables&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">drop_unvalidated:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/mapping_helpers.html#add_diff_columns"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_helpers.py#L243"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_helpers.add_diff_columns" title="Link to this definition"></a></dt>
+<dd><p>Add difference columns for cumulative variables and handle some data inconsistencies.</p>
+<p>This function calculates the difference between consecutive readings for cumulative columns,
+validates the data, and handles various inconsistencies such as negative differences and unexpected zeros.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>pd.DataFrame</em><em> or </em><em>pd.core.groupby.DataFrameGroupBy</em>) – The input data, either as a DataFrame or a GroupBy object.</p></li>
+<li><p><strong>id_column</strong> (<em>str</em><em>, </em><em>optional</em>) – The name of the column to use for grouping if data is a DataFrame, by default None.</p></li>
+<li><p><strong>validate_func</strong> (<em>callable</em><em>, </em><em>optional</em>) – A function to validate the data, by default validate_cumulative_variables.</p></li>
+<li><p><strong>context</strong> (<em>str</em><em>, </em><em>optional</em>) – A string to prepend to log messages for context, by default ‘’.</p></li>
+<li><p><strong>drop_unvalidated</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, drop groups that fail validation; if False, keep them with warnings, by default False.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A DataFrame with added difference columns for cumulative variables.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>TypeError</strong> – If the input data is neither a DataFrame nor a GroupBy object.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The function uses the global variable <cite>cumulative_columns</cite> to determine which columns to process.</p></li>
+<li><p>It handles various data inconsistencies:
+- Removes unexpected zeros between valid readings.
+- Handles cases where the meter appears to have been reset.
+- Removes data after a negative difference if no subsequent increases are found.</p></li>
+<li><p>Extensive logging is used to document the data cleaning process.</p></li>
+<li><p>If the meter has had negative dip and after that there were no subsequent increases, we choose to ignore all other values from an apparently broken meter by setting them to pd.NA</p></li>
+<li><p>If the meter has a negative dip and the meter simply jumps back up to the last value before the negative dip (or above) then we assume there is one bad value to remove. This cases does not consider time, so may miss edge cases, for example that it did not jump back up but rather so much time passed that the next reading is much higher - this may be addressed in the future but requires assumption about rate of growth.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_helpers.collect_column_stats">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_helpers.</span></span><span class="sig-name descname"><span class="pre">collect_column_stats</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">identifier</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">column_data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/mapping_helpers.html#collect_column_stats"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_helpers.py#L650"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_helpers.collect_column_stats" title="Link to this definition"></a></dt>
+<dd><p>Collect summary statistics for a given column of data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>identifier</strong> (<em>str</em><em> or </em><em>int</em>) – The identifier for the dataset.</p></li>
+<li><p><strong>column_data</strong> (<em>pd.Series</em>) – The data in the column to analyze.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><dl class="simple">
+<dt>A dictionary containing summary statistics for the column. The keys are:</dt><dd><ul class="simple">
+<li><p>’Identifier’: The identifier for the dataset.</p></li>
+<li><p>’column’: The name of the column.</p></li>
+<li><p>’type’: The data type of the column.</p></li>
+<li><p>’count’: The number of non-null values in the column.</p></li>
+<li><p>’missing’: The number of missing values in the column.</p></li>
+<li><p>’errors’: The number of errors (NA) in the column.</p></li>
+<li><p>’min’: The minimum value in the column, if applicable.</p></li>
+<li><p>’max’: The maximum value in the column, if applicable.</p></li>
+<li><p>’mean’: The mean value in the column, if applicable.</p></li>
+<li><p>’median’: The median value in the column, if applicable.</p></li>
+<li><p>’iqr’: The interquartile range (IQR) of the column, if applicable.</p></li>
+<li><p>’quantile_25’: The 25th percentile value in the column, if applicable.</p></li>
+<li><p>’quantile_75’: The 75th percentile value in the column, if applicable.</p></li>
+<li><p>’top5’: A dictionary with the top 5 most frequent values and their counts, if applicable.</p></li>
+</ul>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>This function handles different data types (numeric, boolean, datetime, object) and computes relevant statistics accordingly.</p></li>
+<li><p>At the moment there is no effective difference between missing and errors.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_helpers.collect_mapped_data_stats">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_helpers.</span></span><span class="sig-name descname"><span class="pre">collect_mapped_data_stats</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">huis_id_bsv</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/mapping_helpers.html#collect_mapped_data_stats"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_helpers.py#L613"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_helpers.collect_mapped_data_stats" title="Link to this definition"></a></dt>
+<dd><p>Collect statistics for each column in the DataFrame corresponding to a specific HuisIdBSV.</p>
+<p>This function retrieves data for a given <cite>huis_id_bsv</cite>, processes it, and collects summary statistics
+for each column. It logs errors if any issues occur during processing.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>huis_id_bsv</strong> (<em>str</em><em> or </em><em>int</em>) – The identifier for the household to process.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A list of dictionaries, where each dictionary contains summary statistics for a column in the DataFrame.
+Each dictionary has keys ‘column_name’, ‘mean’, ‘std’, ‘min’, and ‘max’.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list of dict</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The function uses <cite>get_mapped_data</cite> to retrieve the data for the given <cite>huis_id_bsv</cite>.</p></li>
+<li><p>It logs errors if there are issues retrieving or processing the data.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_helpers.ensure_intervals">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_helpers.</span></span><span class="sig-name descname"><span class="pre">ensure_intervals</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">date_column</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'ReadingDate'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'5min'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/mapping_helpers.html#ensure_intervals"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_helpers.py#L517"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_helpers.ensure_intervals" title="Link to this definition"></a></dt>
+<dd><p>Ensure that the DataFrame has a consistent number of records and expected time intervals.
+It will add missing intervals or remove excess records to ensure consistency.</p>
+<p>This function checks if the input DataFrame has the expected number of records
+based on its date range and the specified frequency. If not, it adds missing
+intervals or removes excess records.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>pd.DataFrame</em>) – The input DataFrame containing the time series data.</p></li>
+<li><p><strong>date_column</strong> (<em>str</em><em>, </em><em>optional</em>) – The name of the column containing the datetime information, by default ‘ReadingDate’.</p></li>
+<li><p><strong>freq</strong> (<em>str</em><em>, </em><em>optional</em>) – The expected frequency of the time series, by default ‘5min’.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A DataFrame with consistent time intervals.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>If the number of records matches the expected number, the function returns the input DataFrame unchanged.</p></li>
+<li><p>If there are fewer records than expected, the function adds missing intervals.</p></li>
+<li><p>If there are more records than expected, the function performs a left merge to reduce the number of records.</p></li>
+<li><p>The function uses logging to inform about the actions taken.</p></li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<ul class="simple">
+<li><p>If there are more records than expected, this might indicate issues with the data source.
+The function will log an error in this case.</p></li>
+<li><p>This function assumes that an effort has already been made to prepare the data source in the intervals.</p></li>
+<li><p>If raw data has more frequent data or if it records are coming in at a variable or different frequence, it will first need to be processed to meet the given interval.</p></li>
+</ul>
+</div>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_helpers.fill_down_infrequent_devices">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_helpers.</span></span><span class="sig-name descname"><span class="pre">fill_down_infrequent_devices</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">columns</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">('ElektriciteitsgebruikBoilervat',</span> <span class="pre">'ElektriciteitsgebruikRadiator',</span> <span class="pre">'ElektriciteitsgebruikBooster')</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/mapping_helpers.html#fill_down_infrequent_devices"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_helpers.py#L475"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_helpers.fill_down_infrequent_devices" title="Link to this definition"></a></dt>
+<dd><p>Fill down (forward fill) and then up (backward fill) values for specified columns.</p>
+<p>This function is used to impute missing values for devices that report infrequently.
+It first forward fills (ffill) the values, then backward fills (bfill) any remaining NAs,
+and finally replaces any remaining NAs with 0.0.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>pd.DataFrame</em>) – The input DataFrame containing the device data.</p></li>
+<li><p><strong>columns</strong> (<em>tuple</em><em> of </em><em>str</em><em>, </em><em>optional</em>) – The names of the columns to fill. Default is
+(‘ElektriciteitsgebruikBoilervat’, ‘ElektriciteitsgebruikRadiator’, ‘ElektriciteitsgebruikBooster’).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The input DataFrame with the specified columns filled.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>This function may be problematic if the data source or devices are misbehaving,
+as the imputation will still be performed.</p></li>
+<li><p>The imputation order is: forward fill, backward fill, then fill remaining NAs with 0.0.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_helpers.get_mapped_data_stats">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_helpers.</span></span><span class="sig-name descname"><span class="pre">get_mapped_data_stats</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">multi</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/mapping_helpers.html#get_mapped_data_stats"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_helpers.py#L802"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_helpers.get_mapped_data_stats" title="Link to this definition"></a></dt>
+<dd><p>Collect and aggregate statistics for all columns in the DataFrame corresponding to each HuisIdBSV.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>multi</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, use multiprocessing to collect stats. Default is False.</p></li>
+<li><p><strong>max_workers</strong> (<em>int</em><em>, </em><em>optional</em>) – The maximum number of workers to use for multiprocessing. Default is 2.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A DataFrame containing the aggregated statistics for each column in the DataFrame corresponding to each HuisIdBSV.
+Each row represents a column from a specific HuisIdBSV and contains summary statistics.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The function uses <cite>read_index</cite> to retrieve the index of households.</p></li>
+<li><p>It logs errors if there are issues retrieving or processing the data.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_helpers.get_raw_data_stats">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_helpers.</span></span><span class="sig-name descname"><span class="pre">get_raw_data_stats</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">raw_data_folder_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">multi</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_workers</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/mapping_helpers.html#get_raw_data_stats"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_helpers.py#L753"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_helpers.get_raw_data_stats" title="Link to this definition"></a></dt>
+<dd><p>Collect and aggregate statistics for all columns in the DataFrame corresponding to each raw data file in a folder.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>raw_data_folder_path</strong> (<em>str</em>) – The path to the folder containing the raw data files.</p></li>
+<li><p><strong>multi</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, use multiprocessing to collect stats. Default is False.</p></li>
+<li><p><strong>max_workers</strong> (<em>int</em><em>, </em><em>optional</em>) – The maximum number of workers to use for multiprocessing. Default is 2.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A DataFrame containing the aggregated statistics for each column in the DataFrame corresponding to each file name.
+Each row represents a column from a specific file and contains summary statistics.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Only parquet files are supported</p></li>
+<li><p>It logs errors if there are issues retrieving or processing the data.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_helpers.process_raw_data_file">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_helpers.</span></span><span class="sig-name descname"><span class="pre">process_raw_data_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/mapping_helpers.html#process_raw_data_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_helpers.py#L737"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_helpers.process_raw_data_file" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_helpers.rearrange_model_columns">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_helpers.</span></span><span class="sig-name descname"><span class="pre">rearrange_model_columns</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">household_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/mapping_helpers.html#rearrange_model_columns"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_helpers.py#L11"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_helpers.rearrange_model_columns" title="Link to this definition"></a></dt>
+<dd><p>Rearrange and validate columns in a DataFrame according to a predefined model.</p>
+<p>This function performs the following operations:
+1. Validates and coerces column types to match expected types.
+2. Rearranges columns to match the order defined in model_column_order.
+3. Keeps original columns that are not included in the ETD data model at the end of the dataframe.
+4. Optionally adds missing columns with NA values.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>household_df</strong> (<em>pd.DataFrame</em>) – The input DataFrame containing household data.</p></li>
+<li><p><strong>add_columns</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, add missing columns from model_column_order to the DataFrame.
+If False, only keep columns that are in both the DataFrame and model_column_order.
+Default is True.</p></li>
+<li><p><strong>context</strong> (<em>str</em><em>, </em><em>optional</em>) – A string to prepend to log messages for context. If provided, a colon and space
+will be appended to it. Default is an empty string.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A new DataFrame with rearranged and validated columns.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If type coercion fails for any column.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The function uses the global variables model_column_type and model_column_order.</p></li>
+<li><p>Columns not in model_column_order are appended at the end of the DataFrame.</p></li>
+<li><p>When coercing types, any values that fail to convert are replaced with pd.NA.</p></li>
+<li><p>Logging is used to warn about type mismatches and missing columns.</p></li>
+</ul>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;A&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">],</span> <span class="s1">&#39;B&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">,</span> <span class="s1">&#39;z&#39;</span><span class="p">]})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">rearranged_df</span> <span class="o">=</span> <span class="n">rearrange_model_columns</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">add_columns</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="s1">&#39;Example&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.mapping_helpers.validate_cumulative_variables">
+<span class="sig-prename descclassname"><span class="pre">etdmap.mapping_helpers.</span></span><span class="sig-name descname"><span class="pre">validate_cumulative_variables</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timedelta</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Timedelta('0</span> <span class="pre">days</span> <span class="pre">01:00:00')</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">available</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.9</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">context</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="reference internal" href="../_modules/etdmap/mapping_helpers.html#validate_cumulative_variables"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/mapping_helpers.py#L118"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.mapping_helpers.validate_cumulative_variables" title="Link to this definition"></a></dt>
+<dd><p>Validate cumulative variables in a DataFrame group.</p>
+<p>This function performs several checks on cumulative columns:
+1. Checks for gaps greater than the specified timedelta.
+2. Checks for decreasing cumulative values.
+3. Checks for unexpected zero values.
+4. Checks if at least 90% of the values are not NA.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>group</strong> (<em>pd.DataFrame</em>) – The DataFrame group to validate.</p></li>
+<li><p><strong>timedelta</strong> (<em>pd.Timedelta</em><em>, </em><em>optional</em>) – The maximum allowed time gap between readings, by default 1 hour.</p></li>
+<li><p><strong>available</strong> (<em>float</em><em>, </em><em>optional</em>) – The minimum fraction of non-NA values required, by default 0.9 (90%).</p></li>
+<li><p><strong>context</strong> (<em>str</em><em>, </em><em>optional</em>) – A string to prepend to log messages for context, by default ‘’.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A dictionary with boolean values indicating the results of various checks:
+- ‘column_found’: True if all expected columns are present.
+- ‘max_delta_allowed’: True if no gaps exceed the specified timedelta.
+- ‘no_negative_diff’: True if no decreasing cumulative values are found.
+- ‘no_unexpected_zero’: True if no unexpected zero values are found.
+- ‘enough_values’: True if at least 90% of values are non-NA.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The function uses the global variable <cite>cumulative_columns</cite> to determine which columns to check.</p></li>
+<li><p>Logging is used to warn about any issues found during validation.</p></li>
+</ul>
+</dd></dl>
+
+</section>
+<section id="module-etdmap.record_validators">
+<span id="etdmap-record-validators-module"></span><h2>etdmap.record_validators module<a class="headerlink" href="#module-etdmap.record_validators" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.condition_func_threshold">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">condition_func_threshold</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="pre">DataFrame</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">bool</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/etdmap/record_validators.html#condition_func_threshold"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L91"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.condition_func_threshold" title="Link to this definition"></a></dt>
+<dd><p>Define condition function for column based on min, max from thresholdscsv.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>col</strong> (<em>str</em>) – Column name for which the function holds.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Condition function for the specified column, or None if the column is not in the thresholds dictionary.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>function or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.create_validate_cumulative">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">create_validate_cumulative</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cumulative_columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">record_flag_conditions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="../_modules/etdmap/record_validators.html#create_validate_cumulative"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L322"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.create_validate_cumulative" title="Link to this definition"></a></dt>
+<dd><p>Create validation functions for cumulative columns and add them to the record_flag_conditions dictionary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>cumulative_columns</strong> (<em>list</em>) – List of column names for cumulative data.</p></li>
+<li><p><strong>record_flag_conditions</strong> (<em>dict</em>) – Dictionary to store the validation functions.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.create_validate_momentaan">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">create_validate_momentaan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">columns_5min_momentaan</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">record_flag_conditions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="../_modules/etdmap/record_validators.html#create_validate_momentaan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L295"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.create_validate_momentaan" title="Link to this definition"></a></dt>
+<dd><p>Create validation functions for momentary columns and add them to the record_flag_conditions dictionary.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>columns_5min_momentaan</strong> (<em>list</em>) – List of column names for momentary data.</p></li>
+<li><p><strong>record_flag_conditions</strong> (<em>dict</em>) – Dictionary to store the validation functions.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.get_columns_threshold_validator">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">get_columns_threshold_validator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cols</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/record_validators.html#get_columns_threshold_validator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L74"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.get_columns_threshold_validator" title="Link to this definition"></a></dt>
+<dd><p>Get a validator function for thresholds of specified columns.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>cols</strong> (<em>list</em>) – List of column names to validate.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A function that validates thresholds for the specified columns.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>function</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.validate_300sec">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">validate_300sec</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Series</span></span></span><a class="reference internal" href="../_modules/etdmap/record_validators.html#validate_300sec"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L168"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.validate_300sec" title="Link to this definition"></a></dt>
+<dd><p>Validate that the time difference between consecutive ReadingDate values is 300 seconds.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>DataFrame</em>) – The DataFrame to validate.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A boolean Series indicating which rows have a 300-second difference from the previous row.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.validate_columns">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">validate_columns</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">condition_func</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Series</span></span></span><a class="reference internal" href="../_modules/etdmap/record_validators.html#validate_columns"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L120"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.validate_columns" title="Link to this definition"></a></dt>
+<dd><p>Helper function to validate columns with a given condition function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>DataFrame</em>) – The DataFrame containing the columns to validate.</p></li>
+<li><p><strong>columns</strong> (<em>list</em>) – List of column names to validate.</p></li>
+<li><p><strong>condition_func</strong> (<em>function</em>) – The condition function to apply for validation.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A boolean Series indicating which rows meet the condition.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.validate_elektriciteitgebruik">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">validate_elektriciteitgebruik</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Series</span></span></span><a class="reference internal" href="../_modules/etdmap/record_validators.html#validate_elektriciteitgebruik"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L194"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.validate_elektriciteitgebruik" title="Link to this definition"></a></dt>
+<dd><p>Validate that ElektriciteitsgebruikHuishoudelijk is less than or equal to the sum of Zon-opwekTotaal,
+ElektriciteitNetgebruikHoog, and ElektriciteitNetgebruikLaag.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>DataFrame</em>) – The DataFrame to validate.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A boolean Series indicating which rows meet the condition.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.validate_not_outliers">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">validate_not_outliers</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/etdmap/record_validators.html#validate_not_outliers"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L249"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.validate_not_outliers" title="Link to this definition"></a></dt>
+<dd><p>Validate that values in the DataFrame are not outliers.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>x</strong> (<em>pd.DataFrame</em>) – A DataFrame with one column to check for outliers.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A boolean Series indicating which values are not outliers.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Series</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><strong>ValueError</strong> – If the input is not a DataFrame with one column.</p></li>
+<li><p><strong>TypeError</strong> – If the column contains non-numeric values.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.validate_reading_date_uniek">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">validate_reading_date_uniek</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Series</span></span></span><a class="reference internal" href="../_modules/etdmap/record_validators.html#validate_reading_date_uniek"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L150"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.validate_reading_date_uniek" title="Link to this definition"></a></dt>
+<dd><p>Validate that ReadingDate column has only unique values.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>DataFrame</em>) – The DataFrame to validate.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A boolean Series indicating which rows have unique ReadingDate values.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.validate_thresholds_combined">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">validate_thresholds_combined</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Series</span></span></span><a class="reference internal" href="../_modules/etdmap/record_validators.html#validate_thresholds_combined"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L28"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.validate_thresholds_combined" title="Link to this definition"></a></dt>
+<dd><p>Per row, determine if at least one value fall outside of the Thresholds.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>pd.DataFrame</em>) – Dataframe with columns to be checked.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Booleans, True when at least one value is outside bounds.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.record_validators.validate_warmteproductie">
+<span class="sig-prename descclassname"><span class="pre">etdmap.record_validators.</span></span><span class="sig-name descname"><span class="pre">validate_warmteproductie</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Series</span></span></span><a class="reference internal" href="../_modules/etdmap/record_validators.html#validate_warmteproductie"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/record_validators.py#L227"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.record_validators.validate_warmteproductie" title="Link to this definition"></a></dt>
+<dd><p>Validate that WarmteproductieWarmtepomp is greater than or equal to WarmteproductieWarmTapwater.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>df</strong> (<em>DataFrame</em>) – The DataFrame to validate.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A boolean Series indicating which rows meet the condition.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-etdmap">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-etdmap" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.read_index">
+<span class="sig-prename descclassname"><span class="pre">etdmap.</span></span><span class="sig-name descname"><span class="pre">read_index</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">DataFrame</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#read_index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L107"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.read_index" title="Link to this definition"></a></dt>
+<dd><p>Reads the index parquet file from the specified folder path.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p><dl class="simple">
+<dt>A tuple containing:</dt><dd><ul class="simple">
+<li><p>DataFrame: The DataFrame of the index.</p></li>
+<li><p>str: The path to the index file.</p></li>
+</ul>
+</dd>
+</dl>
+</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>tuple</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.read_metadata">
+<span class="sig-prename descclassname"><span class="pre">etdmap.</span></span><span class="sig-name descname"><span class="pre">read_metadata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">metadata_file</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">required_columns</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#read_metadata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L60"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.read_metadata" title="Link to this definition"></a></dt>
+<dd><p>Read metadata from an Excel file and check for the presence of required columns.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>metadata_file</strong> (<em>str</em>) – The path to the Excel file containing the metadata for a data source.</p></li>
+<li><p><strong>required_columns</strong> (<em>list</em><em>, </em><em>optional</em>) – A list of column names that must be present in the metadata. Defaults to [‘HuisIdLeverancier’].</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A DataFrame containing the metadata from the specified sheet.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>Exception</strong> – If not all required columns are found in the metadata file.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="etdmap.update_index">
+<span class="sig-prename descclassname"><span class="pre">etdmap.</span></span><span class="sig-name descname"><span class="pre">update_index</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">new_entry</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_provider</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/etdmap/index_helpers.html#update_index"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="reference external" href="https://github.com/Stroomversnelling/etdmap/blob/main/etdmap/index_helpers.py#L185"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#etdmap.update_index" title="Link to this definition"></a></dt>
+<dd><p>Update the index with new entries and recalculate or add flag columns for dataset validators.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>index_df</strong> (<em>pd.DataFrame</em>) – The index DataFrame.</p></li>
+<li><p><strong>new_entry</strong> (<em>dict</em>) – The new entry to be added or updated in the index.</p></li>
+<li><p><strong>data_provider</strong> (<em>str</em>) – The name of the data provider.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The updated index DataFrame.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="modules.html" class="btn btn-neutral float-left" title="etdmap" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Nicolas Dickinson, Marten Witkamp, Petra Izeboud.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

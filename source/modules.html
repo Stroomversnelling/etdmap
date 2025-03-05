@@ -1,0 +1,197 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>etdmap &mdash; etdmap - &#34;Energietransitie Dataset&#34; mapping package 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="etdmap package" href="etdmap.html" />
+    <link rel="prev" title="etdmap - “Energietransitie Dataset” mapping package documentation" href="../index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            etdmap - "Energietransitie Dataset" mapping package
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Functions</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">etdmap</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="etdmap.html">etdmap package</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">etdmap - "Energietransitie Dataset" mapping package</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">etdmap</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/source/modules.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="etdmap">
+<h1>etdmap<a class="headerlink" href="#etdmap" title="Link to this heading"></a></h1>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="etdmap.html">etdmap package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="etdmap.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="etdmap.html#module-etdmap.data_model">etdmap.data_model module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.data_model.load_etdmodel"><code class="docutils literal notranslate"><span class="pre">load_etdmodel()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.data_model.load_thresholds"><code class="docutils literal notranslate"><span class="pre">load_thresholds()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.data_model.load_thresholds_as_dict"><code class="docutils literal notranslate"><span class="pre">load_thresholds_as_dict()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="etdmap.html#module-etdmap.dataset_validators">etdmap.dataset_validators module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.create_validate_func_col"><code class="docutils literal notranslate"><span class="pre">create_validate_func_col()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.create_validate_func_outliers_neg_cum"><code class="docutils literal notranslate"><span class="pre">create_validate_func_outliers_neg_cum()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.validate_approximately_one_year_of_records"><code class="docutils literal notranslate"><span class="pre">validate_approximately_one_year_of_records()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.validate_column_exists"><code class="docutils literal notranslate"><span class="pre">validate_column_exists()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.validate_columns"><code class="docutils literal notranslate"><span class="pre">validate_columns()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.validate_columns_exist"><code class="docutils literal notranslate"><span class="pre">validate_columns_exist()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.validate_cumm_thesholds"><code class="docutils literal notranslate"><span class="pre">validate_cumm_thesholds()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.validate_cumulative_variable"><code class="docutils literal notranslate"><span class="pre">validate_cumulative_variable()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.validate_energiegebruik_warmteopwekker"><code class="docutils literal notranslate"><span class="pre">validate_energiegebruik_warmteopwekker()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.validate_monitoring_data_counts"><code class="docutils literal notranslate"><span class="pre">validate_monitoring_data_counts()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.validate_no_readingdate_gap"><code class="docutils literal notranslate"><span class="pre">validate_no_readingdate_gap()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.dataset_validators.validate_range"><code class="docutils literal notranslate"><span class="pre">validate_range()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="etdmap.html#module-etdmap.index_helpers">etdmap.index_helpers module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.add_supplier_metadata_to_index"><code class="docutils literal notranslate"><span class="pre">add_supplier_metadata_to_index()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.get_bsv_metadata"><code class="docutils literal notranslate"><span class="pre">get_bsv_metadata()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.get_household_id_pairs"><code class="docutils literal notranslate"><span class="pre">get_household_id_pairs()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.get_mapped_data"><code class="docutils literal notranslate"><span class="pre">get_mapped_data()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.get_mapped_file_path"><code class="docutils literal notranslate"><span class="pre">get_mapped_file_path()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.read_index"><code class="docutils literal notranslate"><span class="pre">read_index()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.read_metadata"><code class="docutils literal notranslate"><span class="pre">read_metadata()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.save_index_to_parquet"><code class="docutils literal notranslate"><span class="pre">save_index_to_parquet()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.set_metadata_dtypes"><code class="docutils literal notranslate"><span class="pre">set_metadata_dtypes()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.update_index"><code class="docutils literal notranslate"><span class="pre">update_index()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.update_meenemen"><code class="docutils literal notranslate"><span class="pre">update_meenemen()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.index_helpers.update_meta_validators"><code class="docutils literal notranslate"><span class="pre">update_meta_validators()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="etdmap.html#module-etdmap.mapping_clock_helpers">etdmap.mapping_clock_helpers module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_clock_helpers.align_and_merge_dataframes"><code class="docutils literal notranslate"><span class="pre">align_and_merge_dataframes()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_clock_helpers.align_timestamps"><code class="docutils literal notranslate"><span class="pre">align_timestamps()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_clock_helpers.determine_dynamic_clocks"><code class="docutils literal notranslate"><span class="pre">determine_dynamic_clocks()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_clock_helpers.interpolate_cumulative"><code class="docutils literal notranslate"><span class="pre">interpolate_cumulative()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_clock_helpers.report_tolerance_impact"><code class="docutils literal notranslate"><span class="pre">report_tolerance_impact()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="etdmap.html#module-etdmap.mapping_helpers">etdmap.mapping_helpers module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_helpers.add_diff_columns"><code class="docutils literal notranslate"><span class="pre">add_diff_columns()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_helpers.collect_column_stats"><code class="docutils literal notranslate"><span class="pre">collect_column_stats()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_helpers.collect_mapped_data_stats"><code class="docutils literal notranslate"><span class="pre">collect_mapped_data_stats()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_helpers.ensure_intervals"><code class="docutils literal notranslate"><span class="pre">ensure_intervals()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_helpers.fill_down_infrequent_devices"><code class="docutils literal notranslate"><span class="pre">fill_down_infrequent_devices()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_helpers.get_mapped_data_stats"><code class="docutils literal notranslate"><span class="pre">get_mapped_data_stats()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_helpers.get_raw_data_stats"><code class="docutils literal notranslate"><span class="pre">get_raw_data_stats()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_helpers.process_raw_data_file"><code class="docutils literal notranslate"><span class="pre">process_raw_data_file()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_helpers.rearrange_model_columns"><code class="docutils literal notranslate"><span class="pre">rearrange_model_columns()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.mapping_helpers.validate_cumulative_variables"><code class="docutils literal notranslate"><span class="pre">validate_cumulative_variables()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="etdmap.html#module-etdmap.record_validators">etdmap.record_validators module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.condition_func_threshold"><code class="docutils literal notranslate"><span class="pre">condition_func_threshold()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.create_validate_cumulative"><code class="docutils literal notranslate"><span class="pre">create_validate_cumulative()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.create_validate_momentaan"><code class="docutils literal notranslate"><span class="pre">create_validate_momentaan()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.get_columns_threshold_validator"><code class="docutils literal notranslate"><span class="pre">get_columns_threshold_validator()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.validate_300sec"><code class="docutils literal notranslate"><span class="pre">validate_300sec()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.validate_columns"><code class="docutils literal notranslate"><span class="pre">validate_columns()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.validate_elektriciteitgebruik"><code class="docutils literal notranslate"><span class="pre">validate_elektriciteitgebruik()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.validate_not_outliers"><code class="docutils literal notranslate"><span class="pre">validate_not_outliers()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.validate_reading_date_uniek"><code class="docutils literal notranslate"><span class="pre">validate_reading_date_uniek()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.validate_thresholds_combined"><code class="docutils literal notranslate"><span class="pre">validate_thresholds_combined()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.record_validators.validate_warmteproductie"><code class="docutils literal notranslate"><span class="pre">validate_warmteproductie()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="etdmap.html#module-etdmap">Module contents</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.read_index"><code class="docutils literal notranslate"><span class="pre">read_index()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.read_metadata"><code class="docutils literal notranslate"><span class="pre">read_metadata()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="etdmap.html#etdmap.update_index"><code class="docutils literal notranslate"><span class="pre">update_index()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../index.html" class="btn btn-neutral float-left" title="etdmap - “Energietransitie Dataset” mapping package documentation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="etdmap.html" class="btn btn-neutral float-right" title="etdmap package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Nicolas Dickinson, Marten Witkamp, Petra Izeboud.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

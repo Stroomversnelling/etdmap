@@ -1,0 +1,748 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>About etdmap &mdash; etdmap - &#34;Energietransitie Dataset&#34; mapping package 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=01f34227"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            etdmap - "Energietransitie Dataset" mapping package
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Functions</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="source/modules.html">etdmap</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">etdmap - "Energietransitie Dataset" mapping package</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">About etdmap</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/readme.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="about-etdmap">
+<h1>About etdmap<a class="headerlink" href="#about-etdmap" title="Link to this heading"></a></h1>
+<p>This package provides the required data model and helpers to map raw data to the <code class="docutils literal notranslate"><span class="pre">Energietransitie</span> <span class="pre">Dataset</span></code> (ETD). The ETD is a model defining important variables for energy in the built environment, which are used to inform policy and planning decisions in the Netherlands. For an overview of the ETD and all documentation, see <a href="https://energietransitiedataset.nl/">https://energietransitiedataset.nl/</a>.</p>
+</section>
+<section id="license">
+<h1>License<a class="headerlink" href="#license" title="Link to this heading"></a></h1>
+<p>The package may only be used for open processing. You agree to publicly share the intended application, obtained insights, and applied calculation methods under the same license.</p>
+</section>
+<section id="citation">
+<h1>Citation<a class="headerlink" href="#citation" title="Link to this heading"></a></h1>
+<p>If you use this package or any code in this package or refer to output, please use the following citations for attribution:</p>
+<p><em>Witkamp, Dickinson, Izeboud (2024). etdmap: A Python package for mapping raw data to the Energietransitie Dataset (ETD) model.</em></p>
+</section>
+<section id="the-data-model">
+<h1>The data model<a class="headerlink" href="#the-data-model" title="Link to this heading"></a></h1>
+<p>The dataset includes two primary types of variables:</p>
+<ol class="arabic simple">
+<li><p><strong>Metadata Variables</strong>: Descriptive information about the project or house, such as identifiers, physical attributes, or installed HVAC systems.</p></li>
+<li><p><strong>Performance Variables</strong>: Time-series data describing the energy performance or environmental conditions.</p></li>
+</ol>
+<section id="examples-of-variables">
+<h2>Examples of Variables<a class="headerlink" href="#examples-of-variables" title="Link to this heading"></a></h2>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><strong>Category</strong></p></th>
+<th class="head"><p><strong>Variable Name</strong></p></th>
+<th class="head"><p><strong>Type</strong></p></th>
+<th class="head"><p><strong>Description</strong></p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Metadata</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ProjectIdLeverancier</span></code></p></td>
+<td><p>String</p></td>
+<td><p>Unique identifier for the project assigned by the data provider.</p></td>
+</tr>
+<tr class="row-odd"><td><p></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Bouwjaar</span></code></p></td>
+<td><p>Integer</p></td>
+<td><p>Construction year of the house.</p></td>
+</tr>
+<tr class="row-even"><td><p></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">WarmteopwekkerCategorie</span></code></p></td>
+<td><p>String</p></td>
+<td><p>Type of heating system (e.g., hybrid heat pump).</p></td>
+</tr>
+<tr class="row-odd"><td><p></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Oppervlakte</span></code></p></td>
+<td><p>Integer</p></td>
+<td><p>Surface area in square meters.</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Performance</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ReadingDate</span></code></p></td>
+<td><p>Date</p></td>
+<td><p>Timestamp of the reading (Format: YYYY-MM-DD HH:MM:SS).</p></td>
+</tr>
+<tr class="row-odd"><td><p></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ElektriciteitNetgebruikHoog</span></code></p></td>
+<td><p>Number</p></td>
+<td><p>Electricity consumption at high tariff (kWh, cumulative).</p></td>
+</tr>
+<tr class="row-even"><td><p></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">TemperatuurWoonkamer</span></code></p></td>
+<td><p>Number</p></td>
+<td><p>Current living room temperature in degrees Celsius.</p></td>
+</tr>
+<tr class="row-odd"><td><p></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">Zon-opwekTotaal</span></code></p></td>
+<td><p>Number</p></td>
+<td><p>Total solar energy generated (kWh, cumulative).</p></td>
+</tr>
+</tbody>
+</table>
+<p>This categorization ensures the dataset is comprehensive for energy-related policy and planning while maintaining clarity for data contributors and users.</p>
+<p>See the section on data processing and mapping to learn more about how to access this metadata in a python script.</p>
+<p>There are two levels of data ultimately used:</p>
+<ul class="simple">
+<li><p>data for a connected unit in the built environment, such as a household or, perhaps in the future, a charging point, and</p></li>
+<li><p>project level data, an aggregated collection of network connected units with similar characteristics.</p></li>
+</ul>
+</section>
+</section>
+<section id="installation-and-quick-start">
+<h1>Installation and quick start<a class="headerlink" href="#installation-and-quick-start" title="Link to this heading"></a></h1>
+<p><em>Note: If only using ETD datasets for analysis, one would use the <code class="docutils literal notranslate"><span class="pre">etdanalyze</span></code> and <code class="docutils literal notranslate"><span class="pre">etdtranform</span></code> packages and install their requirements, which will automatically install <code class="docutils literal notranslate"><span class="pre">etdmap</span></code>.</em></p>
+<p>To use this package on its own and map raw data in a workflow, you can install it with pip:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Stroomversnelling/etdmap.git
+<span class="nb">cd</span><span class="w"> </span>etdmap
+pip<span class="w"> </span>install<span class="w"> </span>.
+</pre></div>
+</div>
+</section>
+<section id="configuration">
+<h1>Configuration<a class="headerlink" href="#configuration" title="Link to this heading"></a></h1>
+<p>In some cases, you may be using this package on its own and may have to configure some options:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">etdmap</span>
+
+<span class="c1"># Required:</span>
+<span class="n">etdmap</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">mapped_folder</span> <span class="o">=</span> <span class="s1">&#39;mapped_folder_path&#39;</span> <span class="c1"># path to folder where mapped files are stored</span>
+<span class="n">etdmap</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">bsv_metadata_file</span> <span class="o">=</span> <span class="s1">&#39;filepath_to_excel_with_bsv_metdata&#39;</span> <span class="c1"># path to Excel sheet maintained with BSV/ETD metdata (not supplier metadata)</span>
+<span class="n">etdmap</span><span class="o">.</span><span class="n">options</span><span class="o">.</span><span class="n">aggregate_folder</span> <span class="o">=</span> <span class="s1">&#39;aggregate_folder_path&#39;</span> <span class="c1"># path to folder where aggregated files are stored</span>
+</pre></div>
+</div>
+<p>Note that the first time that the mapping of raw files is done, there will be a new index generated or an old index will be updated. The BSV metadata file is an Excel sheet where the auto-generated ids can then be <em>manually</em> mapped to additional metadata variables such as the internal <code class="docutils literal notranslate"><span class="pre">ProjectIdBSV</span></code> that assigns households to specific projects and the <code class="docutils literal notranslate"><span class="pre">Meenemen</span></code> boolean variable that indicates <code class="docutils literal notranslate"><span class="pre">True</span></code> for household/units that should be included in analysis vs. <code class="docutils literal notranslate"><span class="pre">False</span></code> for datasets that may need to be excluded. Some reasons to exclude a household may be:</p>
+<ul class="simple">
+<li><p>By request from the data supplier</p></li>
+<li><p>Due to missing data that could skew analyses or is insufficient</p></li>
+<li><p>Misbehaving devices and poor quality data</p></li>
+</ul>
+</section>
+<section id="developing-and-contributing">
+<h1>Developing and contributing<a class="headerlink" href="#developing-and-contributing" title="Link to this heading"></a></h1>
+<p>If you would like to contribute to the package code, you can create an environment and install it in editable mode:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Stroomversnelling/etdmap.git
+<span class="nb">cd</span><span class="w"> </span>etdmap
+python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+<span class="nb">source</span><span class="w"> </span>.venv/bin/activate<span class="w">  </span><span class="c1"># On Windows use `.venv\Scripts\activate`</span>
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+</section>
+<section id="overview">
+<h1>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">etdmap</span></code> is a package that provides data mapping functionalities for energy-related datasets. It includes functions to map and transform data according to specific schemas, ensuring consistency across different sources. It also includes some utility variables like <code class="docutils literal notranslate"><span class="pre">cumulative_columns</span></code>, which can be used.</p>
+<p>The process of mapping raw data files to the ETD model involves several key functions. Here’s an overview of the main functions used in this process.</p>
+<section id="data-model-and-column-definitions-and-thresholds">
+<h2>Data model and column definitions and thresholds<a class="headerlink" href="#data-model-and-column-definitions-and-thresholds" title="Link to this heading"></a></h2>
+<p><em>Note: This API is relatively stable but subject to change as it is still under development. Please follow our repository or, if necessary, use a tagged releases to ensure stability.</em></p>
+<p>From <code class="docutils literal notranslate"><span class="pre">data_model.py</span></code>:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">load_etdmodel()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Loads the ETD model specification.</p></li>
+<li><p><strong>Description</strong>: Reads a CSV file into a Pandas dataframe that defines the structure and requirements of the ETD model.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">load_thresholds()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Loads predefined thresholds for data validation. These include thresholds for cumulative (annual) values as well as those for 5 minute intervals and instantaneous measurements.</p></li>
+<li><p><strong>Description</strong>: Reads a CSV file into a Pandas dataframe containing threshold values for various variables used in data validation.</p></li>
+</ul>
+</li>
+</ol>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">etdmap.record_validators</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_thresholds</span>
+<span class="n">thresholds_df</span> <span class="o">=</span> <span class="n">load_thresholds</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Additionally, there are some other dictionaries and lists that are currently used such as a list of <code class="docutils literal notranslate"><span class="pre">cumulative_columns</span></code> that can be used in other packages. Other useful definitions include <code class="docutils literal notranslate"><span class="pre">model_column_order</span></code>, which defines the order of columns in a model, and <code class="docutils literal notranslate"><span class="pre">model_column_type</span></code>, which provides the Pandas series types for each column.</p>
+<p>These are defined in <code class="docutils literal notranslate"><span class="pre">data_model.py</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">etdmap.data_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">cumulative_columns</span><span class="p">,</span> <span class="n">model_column_order</span><span class="p">,</span> <span class="n">model_column_type</span>
+</pre></div>
+</div>
+</section>
+<section id="managing-the-mapped-data-files">
+<h2>Managing the mapped data files<a class="headerlink" href="#managing-the-mapped-data-files" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">index_helpers.py</span></code> contains the functions used to manage metadata and add files to the mapped data file index. It also has functions for managing household, project metadata, and BSV (aka ETD) metadata.</p>
+<p>From <code class="docutils literal notranslate"><span class="pre">index_helpers.py</span></code>:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">read_index()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Reads the current index file.</p></li>
+<li><p><strong>Description</strong>: Loads the existing index from a parquet file or creates a new one if it doesn’t exist.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get_household_id_pairs()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Generates pairs of HuisIdBSV and filenames in order to maintain unique ids in the dataset.</p></li>
+<li><p><strong>Description</strong>: Creates a list of tuples containing HuisIdBSV and corresponding filenames for new and existing entries.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">update_index()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Updates the index with new entries.</p></li>
+<li><p><strong>Description</strong>: Adds new entries to the index and recalculates or adds flag columns for dataset validators.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">add_supplier_metadata_to_index()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Adds metadata columns to the index.</p></li>
+<li><p><strong>Description</strong>: Updates the index with additional metadata from the supplier, matching on the HuisIdLeverancier column.</p></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="mapping-raw-data-to-the-model-specification">
+<h2>Mapping raw data to the model specification<a class="headerlink" href="#mapping-raw-data-to-the-model-specification" title="Link to this heading"></a></h2>
+<p>From <code class="docutils literal notranslate"><span class="pre">mapping_helpers.py</span></code>:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">rearrange_model_columns()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Ensures all required columns are present and in the correct order.</p></li>
+<li><p><strong>Description</strong>: Adds missing columns, fills them with NA values, and arranges columns according to the model specification.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">add_diff_columns()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Calculates difference columns for cumulative variables.</p></li>
+<li><p><strong>Description</strong>: Computes the difference between consecutive readings for cumulative variables and adds these as new columns.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ensure_intervals()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Ensures consistent time intervals in the data. Defaults are <code class="docutils literal notranslate"><span class="pre">date_column</span> <span class="pre">=</span> <span class="pre">'ReadingDate',</span> <span class="pre">freq='5min'</span></code></p></li>
+<li><p><strong>Description</strong>: Adds missing timestamps to ensure a consistent time series, typically with 5-minute or 15-minute intervals.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fill_down_infrequent_devices()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Fills gaps in infrequently updated device data. At the moment, this defaults to: ‘ElektriciteitsgebruikBoilervat’, ‘ElektriciteitsgebruikRadiator’, ‘ElektriciteitsgebruikBooster’. This can be changed based on data source requirements.</p></li>
+<li><p><strong>Description</strong>: For certain columns that update infrequently, this function fills down the last known value.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">validate_cumulative_variables()</span></code>:</p>
+<ul class="simple">
+<li><p><strong>Purpose</strong>: Validates cumulative variables in a DataFrame for various quality checks.</p></li>
+<li><p><strong>Description</strong>:</p></li>
+<li><p><em>Time gap check</em>: Ensures there are no gaps in readings greater than a specified time delta (default is 1 hour).</p></li>
+<li><p><em>Negative difference check</em>: Verifies that cumulative values are not decreasing over time.</p></li>
+<li><p><em>Unexpected zero check</em>: Identifies and flags unexpected zero values in cumulative readings.</p></li>
+<li><p><em>Data availability check</em>: Ensures that at least a specified percentage of values (default 90%) are not NA.</p></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="alignment-of-clocks-from-different-devices-and-merging-data-alpha-example-code-only">
+<h2>Alignment of clocks from different devices and merging data (ALPHA - example code only)<a class="headerlink" href="#alignment-of-clocks-from-different-devices-and-merging-data-alpha-example-code-only" title="Link to this heading"></a></h2>
+<p>There are functions in <code class="docutils literal notranslate"><span class="pre">mapping_clock_helpers.py</span></code> that are setup to help align clocks from multiple devices and address situations where readings are spaced out in different intervals during the mapping process.</p>
+</section>
+<section id="validators">
+<h2>Validators<a class="headerlink" href="#validators" title="Link to this heading"></a></h2>
+<p>There are various validators available. There are two major categories:</p>
+<ol class="arabic simple">
+<li><p><strong>Dataset validators</strong>: These are used to validate the entire dataset, including checks on cumulative columns and differences between consecutive records.</p></li>
+<li><p><strong>Record validators</strong>: These are used to validate individual records, including checks on instantaneous measurements and 5-minute intervals.</p></li>
+</ol>
+</section>
+</section>
+<section id="guidance-for-suppliers-of-data-and-for-data-preparation">
+<h1>Guidance for suppliers of data and for data preparation<a class="headerlink" href="#guidance-for-suppliers-of-data-and-for-data-preparation" title="Link to this heading"></a></h1>
+<section id="prepping-raw-data">
+<h2>Prepping raw data<a class="headerlink" href="#prepping-raw-data" title="Link to this heading"></a></h2>
+<p>Use the <code class="docutils literal notranslate"><span class="pre">Vereist</span></code> (<code class="docutils literal notranslate"><span class="pre">required</span></code>) column in the data model in order to check if your metadata and your raw data from device readings are complete and correct. These are the currently required columns (as of 20 Feb 2025):</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Entiteit</p></th>
+<th class="head"><p>Variabele</p></th>
+<th class="head"><p>Key</p></th>
+<th class="head"><p>Definitie</p></th>
+<th class="head"><p>Type variabele</p></th>
+<th class="head"><p>Vereist</p></th>
+<th class="head"><p>Resolutie</p></th>
+<th class="head"><p>Wie vult?</p></th>
+<th class="head"><p>Bron</p></th>
+<th class="head"><p>AVG gevoelig</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Metadata</p></td>
+<td><p>ProjectIdLeverancier</p></td>
+<td><p>nee</p></td>
+<td><p>code toegekend door dataleverancier</p></td>
+<td><p>string</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>ja</p></td>
+</tr>
+<tr class="row-odd"><td><p>Metadata</p></td>
+<td><p>HuisIdLeverancier</p></td>
+<td><p>ja</p></td>
+<td><p>code toegekend door dataleverancier</p></td>
+<td><p>string</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>ja</p></td>
+</tr>
+<tr class="row-even"><td><p>Metadata</p></td>
+<td><p>Weerstation</p></td>
+<td><p>nee</p></td>
+<td><p>dichtstbijzijnde KNMI weerstation</p></td>
+<td><p>string</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-odd"><td><p>Metadata</p></td>
+<td><p>Oppervlakte</p></td>
+<td><p>nee</p></td>
+<td><p>Ag, oftewel m2 gebruiksoppervlak</p></td>
+<td><p>integer</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>BAG / EP-online / Energielabel / Vabi</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-even"><td><p>Metadata</p></td>
+<td><p>Compactheid</p></td>
+<td><p>nee</p></td>
+<td><p>Als/Ag, oftewel m2 verliesoppervlak / m2 gebruiksoppervlak</p></td>
+<td><p>number</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>EP-online / Energielabel</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-odd"><td><p>Metadata</p></td>
+<td><p>Warmtebehoefte</p></td>
+<td><p>nee</p></td>
+<td><p>kWh_th/m2/jr, volgens NTA8800</p></td>
+<td><p>number</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>EP-online / Energielabel</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-even"><td><p>Metadata</p></td>
+<td><p>PrimairFossielGebruik</p></td>
+<td><p>nee</p></td>
+<td><p>kWh/m2/jr, volgens NTA8800</p></td>
+<td><p>number</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>EP-online / Energielabel</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-odd"><td><p>Metadata</p></td>
+<td><p>Bouwjaar</p></td>
+<td><p>nee</p></td>
+<td><p>Oorspronkelijk bouwjaar</p></td>
+<td><p>integer</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>BAG/Vabi</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-even"><td><p>Metadata</p></td>
+<td><p>Renovatiejaar</p></td>
+<td><p>nee</p></td>
+<td><p>Jaar van renovatie</p></td>
+<td><p>integer</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Vabi</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-odd"><td><p>Metadata</p></td>
+<td><p>WoningType</p></td>
+<td><p>nee</p></td>
+<td><p>Wat voor woningbouw is het? Kiezen uit: EGW, MGW</p></td>
+<td><p>string</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-even"><td><p>Metadata</p></td>
+<td><p>WarmteopwekkerCategorie</p></td>
+<td><p>nee</p></td>
+<td><p>Hoe wordt verwarmd? Kiezen uit: Hybride warmtepomp, Lucht-water warmtepomp, Water-water warmtepomp, Lucht-lucht warmtepomp, Anders</p></td>
+<td><p>string</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-odd"><td><p>Metadata</p></td>
+<td><p>Warmteopwekker</p></td>
+<td><p>nee</p></td>
+<td><p>Hoe wordt verwarmd? Kiezen uit: Collectief, Individueel</p></td>
+<td><p>string</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-even"><td><p>Metadata</p></td>
+<td><p>Ventilatiesysteem</p></td>
+<td><p>nee</p></td>
+<td><p>Hoe wordt geventileerd? Kiezen uit: Natuurlijke ventilatie, Type C, Type D, Type E</p></td>
+<td><p>string</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-odd"><td><p>Metadata</p></td>
+<td><p>Kookinstallatie</p></td>
+<td><p>nee</p></td>
+<td><p>Hoe wordt gekookt? Kiezen uit: Gas, Inductie, Anders</p></td>
+<td><p>string</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-even"><td><p>Metadata</p></td>
+<td><p>EPV</p></td>
+<td><p>nee</p></td>
+<td><p>Wordt EPV geïnd? Kiezen uit: EPV 1.0, EPV 2.0 Basis, EPV 2.0 Hoogwaardig, Nee, Niet bekend</p></td>
+<td><p>string</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>nee</p></td>
+</tr>
+<tr class="row-odd"><td><p>Prestatiedata</p></td>
+<td><p>HuisIdLeverancier</p></td>
+<td><p>ja</p></td>
+<td><p>code toegekend door dataleverancier</p></td>
+<td><p>string</p></td>
+<td><p>ja</p></td>
+<td><p>vaste waarde</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>ja</p></td>
+</tr>
+<tr class="row-even"><td><p>Prestatiedata</p></td>
+<td><p>ReadingDate</p></td>
+<td><p>nee</p></td>
+<td><p>Format: YYYY-MM-DD HH:MM:SS</p></td>
+<td><p>date</p></td>
+<td><p>ja</p></td>
+<td><p>5 minuten</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Gateway / Portal</p></td>
+<td><p>ja</p></td>
+</tr>
+<tr class="row-odd"><td><p>Prestatiedata</p></td>
+<td><p>ElektriciteitNetgebruikHoog</p></td>
+<td><p>nee</p></td>
+<td><p>kWh (cumulatief)</p></td>
+<td><p>number</p></td>
+<td><p>ja</p></td>
+<td><p>5 minuten</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Slimme meter</p></td>
+<td><p>ja</p></td>
+</tr>
+<tr class="row-even"><td><p>Prestatiedata</p></td>
+<td><p>ElektriciteitNetgebruikLaag</p></td>
+<td><p>nee</p></td>
+<td><p>kWh (cumulatief)</p></td>
+<td><p>number</p></td>
+<td><p>ja</p></td>
+<td><p>5 minuten</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Slimme meter</p></td>
+<td><p>ja</p></td>
+</tr>
+<tr class="row-odd"><td><p>Prestatiedata</p></td>
+<td><p>ElektriciteitTerugleveringHoog</p></td>
+<td><p>nee</p></td>
+<td><p>kWh (cumulatief)</p></td>
+<td><p>number</p></td>
+<td><p>ja</p></td>
+<td><p>5 minuten</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Slimme meter</p></td>
+<td><p>ja</p></td>
+</tr>
+<tr class="row-even"><td><p>Prestatiedata</p></td>
+<td><p>ElektriciteitTerugleveringLaag</p></td>
+<td><p>nee</p></td>
+<td><p>kWh (cumulatief)</p></td>
+<td><p>number</p></td>
+<td><p>ja</p></td>
+<td><p>5 minuten</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Slimme meter</p></td>
+<td><p>ja</p></td>
+</tr>
+<tr class="row-odd"><td><p>Prestatiedata</p></td>
+<td><p>ElektriciteitsgebruikWarmtepomp</p></td>
+<td><p>nee</p></td>
+<td><p>kWh (cumulatief)</p></td>
+<td><p>number</p></td>
+<td><p>ja</p></td>
+<td><p>5 minuten</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Gateway / Portal</p></td>
+<td><p>ja</p></td>
+</tr>
+<tr class="row-even"><td><p>Prestatiedata</p></td>
+<td><p>Zon-opwekTotaal</p></td>
+<td><p>nee</p></td>
+<td><p>kWh (cumulatief)</p></td>
+<td><p>number</p></td>
+<td><p>ja</p></td>
+<td><p>5 minuten</p></td>
+<td><p>Dataleverancier</p></td>
+<td><p>Gateway / Portal</p></td>
+<td><p>ja</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="validation-of-columns">
+<h2>Validation of columns<a class="headerlink" href="#validation-of-columns" title="Link to this heading"></a></h2>
+<p>One should check the stats for each raw data column using the <code class="docutils literal notranslate"><span class="pre">collect_column_stats()</span></code> function to ensure that the data meets expected statistical properties. The statistics include:</p>
+<ul class="simple">
+<li><p>‘Identifier’: The identifier for the dataset.</p></li>
+<li><p>‘column’: The name of the column.</p></li>
+<li><p>‘type’: The data type of the column.</p></li>
+<li><p>‘count’: The number of non-null values in the column.</p></li>
+<li><p>‘missing’: The number of missing values in the column.</p></li>
+<li><p>‘min’: The minimum value in the column, if applicable.</p></li>
+<li><p>‘max’: The maximum value in the column, if applicable.</p></li>
+<li><p>‘mean’: The mean value in the column, if applicable.</p></li>
+<li><p>‘median’: The median value in the column, if applicable.</p></li>
+<li><p>‘iqr’: The interquartile range (IQR) of the column, if applicable.</p></li>
+<li><p>‘quantile_25’: The 25th percentile value in the column, if applicable.</p></li>
+<li><p>‘quantile_75’: The 75th percentile value in the column, if applicable.</p></li>
+<li><p>‘top5’: A dictionary with the top 5 most frequent values and their counts, if applicable.</p></li>
+</ul>
+<p>This helps to validate whether or not a particular household/unit has sufficient data of sufficient quality to include in the mapped datasets.</p>
+</section>
+<section id="validation-of-cumulative-columns">
+<h2>Validation of cumulative columns<a class="headerlink" href="#validation-of-cumulative-columns" title="Link to this heading"></a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">etdmap</span></code> package provides helpers in <code class="docutils literal notranslate"><span class="pre">mapping_helpers.py</span></code> to enable the processing and validation of columns.
+Cumulative columns are processsed and also validated using the <code class="docutils literal notranslate"><span class="pre">add_diff_columns()</span></code> function. It produces a <code class="docutils literal notranslate"><span class="pre">diff</span></code>, a variable with the incremental increase in the cumulative variable and expects cumulative variables to monotonically increase. In other words, they should never decrease. This assumption might be incorrect in cases where meter readings naturally decrease and in those cases, custom logic may need to be written.</p>
+<p>By default, <code class="docutils literal notranslate"><span class="pre">add_diff_columns()</span></code> relies on the function <code class="docutils literal notranslate"><span class="pre">validate_cumulative_variables()</span></code> to ensure that cumulative variables meet specific conditions:</p>
+<ul class="simple">
+<li><p>90% available data</p></li>
+<li><p>Max gap of 1 hour of consecutive missing data</p></li>
+<li><p>No “unexpected” zero values in cumulative data</p></li>
+<li><p>No decreasing cumulative values</p></li>
+</ul>
+<p>The <code class="docutils literal notranslate"><span class="pre">validate_cumulative_variables</span></code> function checks for logical consistency in cumulative variables but may not cover all edge cases or handle complex data scenarios effectively. To customize this validation behaviour, one may write a custom wrapper function or new function with different checks and pass it to <code class="docutils literal notranslate"><span class="pre">add_diff_columns()</span></code> using the <code class="docutils literal notranslate"><span class="pre">validate_func</span></code> parameter. If this validation is not correctly implemented, problems may not be reported. If <code class="docutils literal notranslate"><span class="pre">drop_unvalidated</span></code> is <code class="docutils literal notranslate"><span class="pre">True</span></code> then function may drop valid data or keep invalid data. By default, <code class="docutils literal notranslate"><span class="pre">drop_unvalidated</span></code> is <code class="docutils literal notranslate"><span class="pre">False</span></code>: data which does not pass these tests is kept but problems are reported in the log.</p>
+<p><em>It is important to manually check the logs when adding new datasets. In addition, one should check the stats for each mapped column using the <code class="docutils literal notranslate"><span class="pre">get_mapped_data_stats()</span></code> function to ensure that the data meets the expected statistical properties.</em></p>
+</section>
+<section id="filling-data-values-for-devices-which-report-infrequently">
+<h2>Filling data values for devices which report infrequently<a class="headerlink" href="#filling-data-values-for-devices-which-report-infrequently" title="Link to this heading"></a></h2>
+<p>Sometimes devices are simply not reporting because they are inactive.  In order to ensure the column is not seen as mostly ‘missing’ data and rather as an unchanging value, the <code class="docutils literal notranslate"><span class="pre">fill_down_infrequent_devices()</span></code> function uses forward fill followed by backward fill to impute missing values for specified columns.</p>
+<p><em>This approach may not be suitable if devices if there are underlying issues with the device data, which would be amplified or ignored, especially if the data source is misbehaving. We recommend visually inspecting these columns / data before applying the function.</em></p>
+</section>
+<section id="time-series-consistency">
+<h2>Time Series Consistency<a class="headerlink" href="#time-series-consistency" title="Link to this heading"></a></h2>
+<p>At the moment, custom logic has been used for each data source to ensure the data provided is available with a fixed interval (typically 5 minutes). <em>Example logic has been added to the file <code class="docutils literal notranslate"><span class="pre">mapping_clock_helpers.py</span></code>. It is alpha quality/pseudo code and should not be used at the moment. This should be tested and available to use in a subsequent release.</em></p>
+<p>After the data has fixed (5 min) interval, the <code class="docutils literal notranslate"><span class="pre">ensure_intervals()</span></code> function attempts to ensure a consistent time series by adding missing intervals and removing excess records for the same moment. This process can lead to incorrect data if the raw data does not naturally fit into the expected frequency.</p>
+</section>
+</section>
+<section id="specific-function-notes">
+<h1>Specific function notes<a class="headerlink" href="#specific-function-notes" title="Link to this heading"></a></h1>
+<section id="add-diff-columns">
+<h2><code class="docutils literal notranslate"><span class="pre">add_diff_columns()</span></code><a class="headerlink" href="#add-diff-columns" title="Link to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p><strong>Negative differences</strong>:</p>
+<ul class="simple">
+<li><p>Assumes that negative differences in cumulative columns are erroneous and attempts to correct them by setting values to <code class="docutils literal notranslate"><span class="pre">pd.NA</span></code>. This assumption might not hold true if the meter readings naturally decrease or if there are legitimate zero jumps.</p></li>
+</ul>
+</li>
+<li><p><strong>Error handling</strong>:</p>
+<ul class="simple">
+<li><p>Logs errors when it encounters negative differences after corrections but does not address underlying issues in the data collection process.</p></li>
+</ul>
+</li>
+<li><p><strong>Handling of large gaps without rates of change</strong>:</p>
+<ul class="simple">
+<li><p>Does not consider the time elapsed between readings, which can lead to incorrect assumptions about the nature of the data.</p></li>
+<li><p>When there are larger gaps in the <code class="docutils literal notranslate"><span class="pre">diff</span></code> data (missing intermediate readings), the function may incorrectly assume that the next available reading is a continuation of the meter reading when perhaps a meter reset has taken place and no cumulative values have been collected for some time (bringing the reading back to the original reading level). If there is a suspicion of these errors, custom logic will need to be added and some assumption about the rate of change in the cumulative variable.</p></li>
+</ul>
+</li>
+<li><p><strong>Known edge cases</strong>:</p>
+<ul class="simple">
+<li><p>Edge cases where multiple negative dips occur consecutively or where there is a significant pause in data collection are not fully addressed.</p></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="fill-down-infrequent-devices">
+<h2><code class="docutils literal notranslate"><span class="pre">fill_down_infrequent_devices()</span></code><a class="headerlink" href="#fill-down-infrequent-devices" title="Link to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p><strong>Imputation Strategy</strong>:</p>
+<ul class="simple">
+<li><p>Uses forward fill followed by backward fill to impute missing values, which can lead to inaccuracies if the device reports irregularly or if there are underlying issues with data collection.</p></li>
+</ul>
+</li>
+<li><p><strong>Assumption of continuity</strong>:</p>
+<ul class="simple">
+<li><p>Assumes that missing values should be filled based on the last available reading, which might not be appropriate for devices that report infrequently or have non-continuous usage patterns.</p></li>
+</ul>
+</li>
+<li><p><strong>Final filling with zeroes</strong>:</p>
+<ul class="simple">
+<li><p>Fills column with zeros if all values are NA. This assumption may not be correct if the device simply was not reporting.</p></li>
+</ul>
+</li>
+<li><p><strong>Column specificity</strong>:</p>
+<ul class="simple">
+<li><p>Processes specified variables by default: <code class="docutils literal notranslate"><span class="pre">ElektriciteitsgebruikBoilervat</span></code>, <code class="docutils literal notranslate"><span class="pre">ElektriciteitsgebruikRadiator</span></code>, <code class="docutils literal notranslate"><span class="pre">ElektriciteitsgebruikBooster</span></code>. Can handle other columns if passed as an argument. Some datasets may require different processing.</p></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="ensure-intervals">
+<h2><code class="docutils literal notranslate"><span class="pre">ensure_intervals()</span></code><a class="headerlink" href="#ensure-intervals" title="Link to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p><strong>Frequency assumption</strong>:</p>
+<ul class="simple">
+<li><p>Assumes a fixed frequency for the time series data (e.g., 5-minute intervals) and the only check it does is for the number of expected records. If the raw data does not naturally fit into this frequency the errors may occur as additional pre-processing is required.</p></li>
+</ul>
+</li>
+<li><p><strong>Data source issues</strong>:</p>
+<ul class="simple">
+<li><p>Does not handle cases where the data source is misbehaving, such as reporting data at irregular intervals or with incorrect timestamps.</p></li>
+</ul>
+</li>
+<li><p><strong>Adding vs. removing records</strong>:</p>
+<ul class="simple">
+<li><p>Adds missing records to ensure consistent intervals but does not verify the correctness of these retained records where removed. It will report inconsistency with respect to the number of records expected.</p></li>
+</ul>
+</li>
+<li><p><strong>Excess records</strong>:</p>
+<ul class="simple">
+<li><p>Attempts to reduce excess records by performing a left merge, which might lead to data loss if the excess records contain valid information.</p></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="rearrange-model-columns">
+<h2><code class="docutils literal notranslate"><span class="pre">rearrange_model_columns()</span></code><a class="headerlink" href="#rearrange-model-columns" title="Link to this heading"></a></h2>
+<ol class="arabic simple">
+<li><p><strong>Column order</strong>:</p>
+<ul class="simple">
+<li><p>Ensures that the DataFrame columns are in a specific order with additional columns left at the end/right of the dataset.</p></li>
+</ul>
+</li>
+</ol>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Nicolas Dickinson, Marten Witkamp, Petra Izeboud.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

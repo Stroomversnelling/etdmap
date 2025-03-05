@@ -1,0 +1,507 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>etdmap.mapping_clock_helpers &mdash; etdmap - &#34;Energietransitie Dataset&#34; mapping package 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            etdmap - "Energietransitie Dataset" mapping package
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Functions</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/modules.html">etdmap</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">etdmap - "Energietransitie Dataset" mapping package</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">etdmap.mapping_clock_helpers</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for etdmap.mapping_clock_helpers</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Timestamp Alignment and Merging Module</span>
+
+<span class="sd">This module provides functions for aligning and merging time series data</span>
+<span class="sd">from multiple devices. It includes functionality for determining ideal</span>
+<span class="sd">clock alignments, reporting on tolerance impacts, and aligning timestamps</span>
+<span class="sd">across multiple dataframes.</span>
+
+<span class="sd">Usage Example:</span>
+<span class="sd">--------------</span>
+<span class="sd">import pandas as pd</span>
+<span class="sd">from timestamp_alignment import determine_dynamic_clocks, report_tolerance_impact, align_timestamps, align_and_merge_dataframes</span>
+
+<span class="sd"># Assume we have a list of dataframes called &#39;device_dataframes&#39;</span>
+<span class="sd">timestamp_col = &#39;timestamp&#39;</span>
+<span class="sd">freq = 300  # 5-minute intervals</span>
+<span class="sd">cumulative_columns = [&#39;energy_consumption&#39;, &#39;water_usage&#39;]</span>
+
+<span class="sd"># Step 1: Determine ideal clocks</span>
+<span class="sd">ideal_clocks = determine_dynamic_clocks(device_dataframes, timestamp_col, freq)</span>
+
+<span class="sd"># Step 2: Report on tolerance impact</span>
+<span class="sd">tolerance_report = report_tolerance_impact(device_dataframes, timestamp_col, ideal_clocks, freq=freq)</span>
+
+<span class="sd"># Step 3: Align timestamps (using device-specific clocks)</span>
+<span class="sd">aligned_dfs = []</span>
+<span class="sd">for i, df in enumerate(device_dataframes):</span>
+<span class="sd">    start_time = ideal_clocks[f&#39;device_{i}&#39;]</span>
+<span class="sd">    aligned_df = align_timestamps(df, timestamp_col, start_time, freq, </span>
+<span class="sd">                                  tolerance=10, method=&#39;interpolation&#39;, </span>
+<span class="sd">                                  cumulative_columns=cumulative_columns)</span>
+<span class="sd">    aligned_dfs.append(aligned_df)</span>
+
+<span class="sd"># Step 4: Align and merge dataframes</span>
+<span class="sd">final_merged_df = align_and_merge_dataframes(aligned_dfs, timestamp_col=&#39;aligned_timestamp&#39;, use_first_as_main=False, freq=freq)</span>
+
+<span class="sd"># Now &#39;final_merged_df&#39; contains the aligned and merged data from all devices</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="determine_dynamic_clocks">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_clock_helpers.determine_dynamic_clocks">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">determine_dynamic_clocks</span><span class="p">(</span><span class="n">dataframes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="n">timestamp_col</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">freq</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">300</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    ALPHA status (untested code, use at your own risk!). Determines the ideal dynamic clock start for each device and across all devices.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    dataframes : list of pandas.DataFrame</span>
+<span class="sd">        List of dataframes, one per device.</span>
+<span class="sd">    timestamp_col : str</span>
+<span class="sd">        Name of the timestamp column.</span>
+<span class="sd">    freq : int, optional</span>
+<span class="sd">        Frequency in seconds (default is 300 for 5-minute intervals).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict of str: pandas.Timestamp</span>
+<span class="sd">        Dictionary with ideal clock starts for each device and overall.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ideal_starts</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">all_timestamps</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;datetime64[ns]&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">find_optimal_start</span><span class="p">(</span><span class="n">timestamps</span><span class="p">):</span>
+        <span class="n">seconds</span> <span class="o">=</span> <span class="n">timestamps</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span> <span class="o">//</span> <span class="mf">1e9</span>
+        <span class="n">offsets</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">freq</span><span class="p">)</span>
+        <span class="n">deviations</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">((</span><span class="n">seconds</span> <span class="o">+</span> <span class="n">offset</span><span class="p">)</span> <span class="o">%</span> <span class="n">freq</span><span class="p">,</span> <span class="n">freq</span> <span class="o">-</span> <span class="p">(</span><span class="n">seconds</span> <span class="o">+</span> <span class="n">offset</span><span class="p">)</span> <span class="o">%</span> <span class="n">freq</span><span class="p">))</span> <span class="k">for</span> <span class="n">offset</span> <span class="ow">in</span> <span class="n">offsets</span><span class="p">])</span>
+        <span class="n">optimal_offset</span> <span class="o">=</span> <span class="n">offsets</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">deviations</span><span class="p">)]</span>
+        <span class="n">optimal_start</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">seconds</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">-</span> <span class="p">(</span><span class="n">seconds</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">+</span> <span class="n">optimal_offset</span><span class="p">)</span> <span class="o">%</span> <span class="n">freq</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">optimal_start</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">df</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">dataframes</span><span class="p">):</span>
+        <span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">])</span>
+        <span class="n">timestamps</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span>
+        <span class="n">ideal_starts</span><span class="p">[</span><span class="sa">f</span><span class="s1">&#39;device_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">find_optimal_start</span><span class="p">(</span><span class="n">timestamps</span><span class="p">)</span>
+        <span class="n">all_timestamps</span> <span class="o">=</span> <span class="n">all_timestamps</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">timestamps</span><span class="p">)</span>
+
+    <span class="n">ideal_starts</span><span class="p">[</span><span class="s1">&#39;overall&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">find_optimal_start</span><span class="p">(</span><span class="n">all_timestamps</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ideal_starts</span></div>
+
+
+<div class="viewcode-block" id="report_tolerance_impact">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_clock_helpers.report_tolerance_impact">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">report_tolerance_impact</span><span class="p">(</span><span class="n">dataframes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="n">timestamp_col</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+                            <span class="n">ideal_starts</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">],</span>
+                            <span class="n">tolerances</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">150</span><span class="p">],</span>
+                            <span class="n">freq</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">300</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    ALPHA status (untested code, use at your own risk!). Reports on how different tolerances affect the number of values per column.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    dataframes : list of pandas.DataFrame</span>
+<span class="sd">        List of dataframes, one per device.</span>
+<span class="sd">    timestamp_col : str</span>
+<span class="sd">        Name of the timestamp column.</span>
+<span class="sd">    ideal_starts : dict of str: pandas.Timestamp</span>
+<span class="sd">        Dictionary of ideal starts from determine_dynamic_clocks.</span>
+<span class="sd">    tolerances : list of int, optional</span>
+<span class="sd">        List of tolerances in seconds to check (default is [10, 30, 150]).</span>
+<span class="sd">    freq : int, optional</span>
+<span class="sd">        Frequency in seconds (default is 300 for 5-minute intervals).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict of str: dict of str: dict of int: int</span>
+<span class="sd">        Nested dictionary with counts for each device, column, and tolerance.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">results</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">df</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">dataframes</span><span class="p">):</span>
+        <span class="n">device_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;device_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">&#39;</span>
+        <span class="n">results</span><span class="p">[</span><span class="n">device_key</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">col</span> <span class="o">!=</span> <span class="n">timestamp_col</span><span class="p">:</span>
+                <span class="n">results</span><span class="p">[</span><span class="n">device_key</span><span class="p">][</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+                <span class="k">for</span> <span class="n">tolerance</span> <span class="ow">in</span> <span class="n">tolerances</span><span class="p">:</span>
+                    <span class="c1"># Count values within tolerance for device-specific clock</span>
+                    <span class="n">device_deviations</span> <span class="o">=</span> <span class="p">((</span><span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span> <span class="o">-</span> <span class="n">ideal_starts</span><span class="p">[</span><span class="n">device_key</span><span class="p">])</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">%</span> <span class="n">freq</span><span class="p">)</span>
+                    <span class="n">device_deviations</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">device_deviations</span><span class="p">,</span> <span class="n">freq</span> <span class="o">-</span> <span class="n">device_deviations</span><span class="p">)</span>
+                    <span class="n">device_count</span> <span class="o">=</span> <span class="p">(</span><span class="n">device_deviations</span> <span class="o">&lt;=</span> <span class="n">tolerance</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+                    <span class="n">results</span><span class="p">[</span><span class="n">device_key</span><span class="p">][</span><span class="n">col</span><span class="p">][</span><span class="n">tolerance</span><span class="p">]</span> <span class="o">=</span> <span class="n">device_count</span>
+
+                    <span class="c1"># Count values within tolerance for overall clock</span>
+                    <span class="n">overall_deviations</span> <span class="o">=</span> <span class="p">((</span><span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span> <span class="o">-</span> <span class="n">ideal_starts</span><span class="p">[</span><span class="s1">&#39;overall&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">%</span> <span class="n">freq</span><span class="p">)</span>
+                    <span class="n">overall_deviations</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">overall_deviations</span><span class="p">,</span> <span class="n">freq</span> <span class="o">-</span> <span class="n">overall_deviations</span><span class="p">)</span>
+                    <span class="n">overall_count</span> <span class="o">=</span> <span class="p">(</span><span class="n">overall_deviations</span> <span class="o">&lt;=</span> <span class="n">tolerance</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+                    <span class="n">results</span><span class="p">[</span><span class="n">device_key</span><span class="p">][</span><span class="n">col</span><span class="p">][</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">tolerance</span><span class="si">}</span><span class="s1">_overall&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">overall_count</span>
+
+    <span class="k">return</span> <span class="n">results</span></div>
+
+
+<div class="viewcode-block" id="align_and_merge_dataframes">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_clock_helpers.align_and_merge_dataframes">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">align_and_merge_dataframes</span><span class="p">(</span><span class="n">aligned_dfs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> 
+                               <span class="n">timestamp_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;aligned_timestamp&#39;</span><span class="p">,</span>
+                               <span class="n">use_first_as_main</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+                               <span class="n">freq</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">300</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Aligns multiple dataframes by adjusting their first timestamps to minimize overall deviation,</span>
+<span class="sd">    reports the shifts, and merges them into a single dataframe.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    aligned_dfs : List[pd.DataFrame]</span>
+<span class="sd">        List of aligned dataframes to be processed.</span>
+<span class="sd">    timestamp_col : str, optional</span>
+<span class="sd">        Name of the aligned timestamp column. Default is &#39;aligned_timestamp&#39;.</span>
+<span class="sd">    use_first_as_main : bool, optional</span>
+<span class="sd">        If True, aligns all dataframes to the first one. Default is False.</span>
+<span class="sd">    freq : int, optional</span>
+<span class="sd">        Expected frequency in seconds between timestamps. Default is 300.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Merged dataframe with aligned timestamps.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function is in ALPHA status (untested code, use at your own risk!).</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If any dataframe has an inconsistent frequency.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">aligned_dfs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Only one dataframe provided. No alignment necessary.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">aligned_dfs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="c1"># Verify consistent frequency</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">df</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">aligned_dfs</span><span class="p">):</span>
+        <span class="n">df_freq</span> <span class="o">=</span> <span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span><span class="o">.</span><span class="n">mode</span><span class="p">()</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">df_freq</span> <span class="o">-</span> <span class="n">freq</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>  <span class="c1"># Allow 1 second tolerance for float imprecision</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Dataframe </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2"> has inconsistent frequency: </span><span class="si">{</span><span class="n">df_freq</span><span class="si">}</span><span class="s2"> seconds instead of </span><span class="si">{</span><span class="n">freq</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Extract first timestamps</span>
+    <span class="n">first_timestamps</span> <span class="o">=</span> <span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="k">for</span> <span class="n">df</span> <span class="ow">in</span> <span class="n">aligned_dfs</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">use_first_as_main</span><span class="p">:</span>
+        <span class="n">reference_time</span> <span class="o">=</span> <span class="n">first_timestamps</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Convert timestamps to seconds since epoch</span>
+        <span class="n">first_seconds</span> <span class="o">=</span> <span class="p">[</span><span class="n">ts</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span> <span class="k">for</span> <span class="n">ts</span> <span class="ow">in</span> <span class="n">first_timestamps</span><span class="p">]</span>
+
+        <span class="c1"># Find the offset that minimizes overall deviation</span>
+        <span class="n">offsets</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">freq</span><span class="p">)</span>
+        <span class="n">deviations</span> <span class="o">=</span> <span class="p">[</span><span class="nb">sum</span><span class="p">(</span><span class="nb">min</span><span class="p">((</span><span class="n">s</span> <span class="o">+</span> <span class="n">offset</span><span class="p">)</span> <span class="o">%</span> <span class="n">freq</span><span class="p">,</span> <span class="n">freq</span> <span class="o">-</span> <span class="p">(</span><span class="n">s</span> <span class="o">+</span> <span class="n">offset</span><span class="p">)</span> <span class="o">%</span> <span class="n">freq</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">first_seconds</span><span class="p">)</span> <span class="k">for</span> <span class="n">offset</span> <span class="ow">in</span> <span class="n">offsets</span><span class="p">]</span>
+        <span class="n">optimal_offset</span> <span class="o">=</span> <span class="n">offsets</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">deviations</span><span class="p">)]</span>
+
+        <span class="c1"># Calculate the reference time</span>
+        <span class="n">min_timestamp</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">first_timestamps</span><span class="p">)</span>
+        <span class="n">reference_time</span> <span class="o">=</span> <span class="n">min_timestamp</span> <span class="o">-</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="p">(</span><span class="n">min_timestamp</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span> <span class="o">+</span> <span class="n">optimal_offset</span><span class="p">)</span> <span class="o">%</span> <span class="n">freq</span><span class="p">)</span>
+
+    <span class="c1"># Align and merge dataframes</span>
+    <span class="n">merged_df</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">df</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">aligned_dfs</span><span class="p">):</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">shift</span> <span class="o">=</span> <span class="p">(</span><span class="n">reference_time</span> <span class="o">-</span> <span class="n">first_timestamps</span><span class="p">[</span><span class="n">i</span><span class="p">])</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">%</span> <span class="n">freq</span>
+        <span class="k">if</span> <span class="n">shift</span> <span class="o">&gt;</span> <span class="n">freq</span> <span class="o">/</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">shift</span> <span class="o">-=</span> <span class="n">freq</span>
+
+        <span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span> <span class="o">+</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="n">shift</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Dataframe </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2"> shifted by </span><span class="si">{</span><span class="n">shift</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> seconds&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">merged_df</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">merged_df</span> <span class="o">=</span> <span class="n">df</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">merged_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">merged_df</span><span class="p">,</span> <span class="n">df</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="n">timestamp_col</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s1">&#39;outer&#39;</span><span class="p">,</span> <span class="n">suffixes</span><span class="o">=</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;_df</span><span class="si">{</span><span class="n">i</span><span class="o">-</span><span class="mi">1</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;_df</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">))</span>
+
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;All dataframes merged successfully&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">merged_df</span></div>
+
+
+
+<div class="viewcode-block" id="interpolate_cumulative">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_clock_helpers.interpolate_cumulative">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">interpolate_cumulative</span><span class="p">(</span><span class="n">series</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">,</span> <span class="n">target_timestamps</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">,</span> <span class="n">tolerance</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    ALPHA status (untested code, use at your own risk!). Interpolate cumulative data within tolerance, preserving pd.NA outside of tolerance ranges.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    series : pd.Series</span>
+<span class="sd">        The original cumulative data series.</span>
+<span class="sd">    target_timestamps : pd.DatetimeIndex</span>
+<span class="sd">        The target timestamps for alignment.</span>
+<span class="sd">    tolerance : pd.Timedelta</span>
+<span class="sd">        The tolerance for considering nearby values.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.Series</span>
+<span class="sd">        Interpolated series aligned with target_timestamps.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - Interpolates only when there are at least two values within the tolerance range.</span>
+<span class="sd">    - Preserves pd.NA for timestamps without nearby values.</span>
+<span class="sd">    - Raises an error if decreasing cumulative values are detected.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">target_timestamps</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">series</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="n">result</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span>
+
+    <span class="k">for</span> <span class="n">timestamp</span> <span class="ow">in</span> <span class="n">target_timestamps</span><span class="p">:</span>
+        <span class="n">nearby</span> <span class="o">=</span> <span class="n">series</span><span class="p">[(</span><span class="n">series</span><span class="o">.</span><span class="n">index</span> <span class="o">&gt;=</span> <span class="n">timestamp</span> <span class="o">-</span> <span class="n">tolerance</span><span class="p">)</span> <span class="o">&amp;</span> 
+                        <span class="p">(</span><span class="n">series</span><span class="o">.</span><span class="n">index</span> <span class="o">&lt;=</span> <span class="n">timestamp</span> <span class="o">+</span> <span class="n">tolerance</span><span class="p">)]</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">nearby</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">nearby</span><span class="o">.</span><span class="n">is_monotonic_increasing</span><span class="p">:</span>
+                <span class="n">interp_value</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">interp</span><span class="p">(</span>
+                    <span class="n">timestamp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> 
+                    <span class="n">nearby</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">),</span> 
+                    <span class="n">nearby</span><span class="o">.</span><span class="n">values</span>
+                <span class="p">)</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">timestamp</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([</span><span class="n">interp_value</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">series</span><span class="o">.</span><span class="n">dtype</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">elif</span> <span class="n">nearby</span><span class="o">.</span><span class="n">is_monotonic</span><span class="p">:</span>
+                <span class="n">result</span><span class="p">[</span><span class="n">timestamp</span><span class="p">]</span> <span class="o">=</span> <span class="n">nearby</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Decreasing cumulative values detected near </span><span class="si">{</span><span class="n">timestamp</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">nearby</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">timestamp</span><span class="p">]</span> <span class="o">=</span> <span class="n">nearby</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="align_timestamps">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_clock_helpers.align_timestamps">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">align_timestamps</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+                     <span class="n">timestamp_col</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+                     <span class="n">start_time</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">,</span>
+                     <span class="n">freq</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+                     <span class="n">tolerance</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+                     <span class="n">method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;nearest&#39;</span><span class="p">,</span>
+                     <span class="n">cumulative_columns</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    ALPHA status (untested code, use at your own risk!). Aligns timestamps in a dataframe based on the specified method.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : pd.DataFrame</span>
+<span class="sd">        Input dataframe.</span>
+<span class="sd">    timestamp_col : str</span>
+<span class="sd">        Name of the timestamp column.</span>
+<span class="sd">    start_time : pd.Timestamp</span>
+<span class="sd">        Start time for alignment.</span>
+<span class="sd">    freq : int</span>
+<span class="sd">        Frequency in seconds.</span>
+<span class="sd">    tolerance : int, optional</span>
+<span class="sd">        Tolerance in seconds for alignment (default is 10).</span>
+<span class="sd">    method : str, optional</span>
+<span class="sd">        Alignment method (&#39;nearest&#39; or &#39;interpolation&#39;, default is &#39;nearest&#39;).</span>
+<span class="sd">    cumulative_columns : List[str], optional</span>
+<span class="sd">        List of cumulative column names.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Dataframe with aligned timestamps and adjusted values.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - For cumulative columns, uses custom interpolation within tolerance.</span>
+<span class="sd">    - For non-cumulative columns, uses nearest value within tolerance.</span>
+<span class="sd">    - Preserves pd.NA for values outside of tolerance range.</span>
+<span class="sd">    - Ensures consistent frequency and handles edge cases.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    &gt;&gt;&gt; import pandas as pd</span>
+<span class="sd">    &gt;&gt;&gt;</span>
+<span class="sd">    &gt;&gt;&gt; # Create a sample dataframe</span>
+<span class="sd">    &gt;&gt;&gt; df = pd.DataFrame({</span>
+<span class="sd">    ...     &#39;timestamp&#39;: pd.date_range(&#39;2023-01-01&#39;, periods=5, freq=&#39;7min&#39;),</span>
+<span class="sd">    ...     &#39;value&#39;: [1, 2, 3, 4, 5],</span>
+<span class="sd">    ...     &#39;cumulative&#39;: [10, 20, 30, 40, 50]</span>
+<span class="sd">    ... })</span>
+<span class="sd">    &gt;&gt;&gt;</span>
+<span class="sd">    &gt;&gt;&gt; # Set alignment parameters</span>
+<span class="sd">    &gt;&gt;&gt; start_time = pd.Timestamp(&#39;2023-01-01&#39;)</span>
+<span class="sd">    &gt;&gt;&gt; freq = 300  # 5 minutes in seconds</span>
+<span class="sd">    &gt;&gt;&gt;</span>
+<span class="sd">    &gt;&gt;&gt; # Align timestamps</span>
+<span class="sd">    &gt;&gt;&gt; aligned_df = align_timestamps(</span>
+<span class="sd">    ...     df,</span>
+<span class="sd">    ...     &#39;timestamp&#39;,</span>
+<span class="sd">    ...     start_time,</span>
+<span class="sd">    ...     freq,</span>
+<span class="sd">    ...     tolerance=60,</span>
+<span class="sd">    ...     method=&#39;interpolation&#39;,</span>
+<span class="sd">    ...     cumulative_columns=[&#39;cumulative&#39;]</span>
+<span class="sd">    ... )</span>
+<span class="sd">    &gt;&gt;&gt;</span>
+<span class="sd">    &gt;&gt;&gt; print(aligned_df)</span>
+
+<span class="sd">    This will produce an aligned dataframe with 5-minute intervals,</span>
+<span class="sd">    interpolating the cumulative column and using nearest neighbor</span>
+<span class="sd">    for the non-cumulative column within a 60-second tolerance.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="n">timestamps_seconds</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span> <span class="o">//</span> <span class="mi">1_000_000_000</span>
+    <span class="n">start_time_seconds</span> <span class="o">=</span> <span class="n">start_time</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+    <span class="n">offsets</span> <span class="o">=</span> <span class="p">(</span><span class="n">timestamps_seconds</span> <span class="o">-</span> <span class="n">start_time_seconds</span><span class="p">)</span> <span class="o">%</span> <span class="n">freq</span>
+
+    <span class="n">original_duration</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">df</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+    <span class="n">end_time</span> <span class="o">=</span> <span class="n">start_time</span> <span class="o">+</span> <span class="n">original_duration</span> <span class="o">+</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="n">freq</span><span class="p">)</span>
+
+    <span class="n">target_timestamps</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span><span class="n">start</span><span class="o">=</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="n">end_time</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">freq</span><span class="si">}</span><span class="s1">S&#39;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;nearest&#39;</span><span class="p">:</span>
+        <span class="n">adjusted_offsets</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">offsets</span> <span class="o">&lt;=</span> <span class="n">freq</span><span class="o">/</span><span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">freq</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;interpolation&#39;</span><span class="p">:</span>
+        <span class="n">adjusted_offsets</span> <span class="o">=</span> <span class="n">offsets</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown method: </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2">. Use &#39;nearest&#39; or &#39;interpolation&#39;.&quot;</span><span class="p">)</span>
+
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;aligned_timestamp&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span>
+        <span class="n">start_time_seconds</span> <span class="o">+</span> 
+        <span class="p">((</span><span class="n">timestamps_seconds</span> <span class="o">-</span> <span class="n">start_time_seconds</span><span class="p">)</span> <span class="o">-</span> <span class="n">offsets</span> <span class="o">+</span> <span class="n">adjusted_offsets</span><span class="p">),</span> 
+        <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;aligned_timestamp&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">duplicated</span><span class="p">()</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Multiple records found for the same aligned timestamp.&quot;</span><span class="p">)</span>
+
+    <span class="n">aligned_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">target_timestamps</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="o">==</span> <span class="n">timestamp_col</span> <span class="ow">or</span> <span class="n">col</span> <span class="o">==</span> <span class="s1">&#39;aligned_timestamp&#39;</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="n">is_cumulative</span> <span class="o">=</span> <span class="n">cumulative_columns</span> <span class="ow">and</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cumulative_columns</span>
+
+        <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;nearest&#39;</span><span class="p">:</span>
+            <span class="n">aligned_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;aligned_timestamp&#39;</span><span class="p">)[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span>
+                <span class="n">target_timestamps</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;nearest&#39;</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="n">tolerance</span><span class="p">)</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">NA</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;interpolation&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">is_cumulative</span><span class="p">:</span>
+                <span class="n">aligned_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">interpolate_cumulative</span><span class="p">(</span>
+                    <span class="n">df</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;aligned_timestamp&#39;</span><span class="p">)[</span><span class="n">col</span><span class="p">],</span>
+                    <span class="n">target_timestamps</span><span class="p">,</span>
+                    <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="n">tolerance</span><span class="p">)</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">aligned_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;aligned_timestamp&#39;</span><span class="p">)[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span>
+                    <span class="n">target_timestamps</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;nearest&#39;</span><span class="p">,</span> <span class="n">tolerance</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="n">tolerance</span><span class="p">)</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">NA</span><span class="p">)</span>
+
+    <span class="n">aligned_df</span> <span class="o">=</span> <span class="n">aligned_df</span><span class="o">.</span><span class="n">dropna</span><span class="p">(</span><span class="n">how</span><span class="o">=</span><span class="s1">&#39;all&#39;</span><span class="p">)</span>
+    <span class="n">aligned_df</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">aligned_df</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;index&#39;</span><span class="p">:</span> <span class="s1">&#39;aligned_timestamp&#39;</span><span class="p">},</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">aligned_df</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Nicolas Dickinson, Marten Witkamp, Petra Izeboud.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

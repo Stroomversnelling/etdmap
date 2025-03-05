@@ -1,0 +1,978 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>etdmap.mapping_helpers &mdash; etdmap - &#34;Energietransitie Dataset&#34; mapping package 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            etdmap - "Energietransitie Dataset" mapping package
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Functions</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/modules.html">etdmap</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">etdmap - "Energietransitie Dataset" mapping package</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">etdmap.mapping_helpers</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for etdmap.mapping_helpers</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">concurrent.futures</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProcessPoolExecutor</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">etdmap.data_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">cumulative_columns</span><span class="p">,</span> <span class="n">model_column_order</span><span class="p">,</span> <span class="n">model_column_type</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">etdmap.index_helpers</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_mapped_data</span><span class="p">,</span> <span class="n">read_index</span>
+
+
+<div class="viewcode-block" id="rearrange_model_columns">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_helpers.rearrange_model_columns">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">rearrange_model_columns</span><span class="p">(</span>
+    <span class="n">household_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">add_columns</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">context</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Rearrange and validate columns in a DataFrame according to a predefined model.</span>
+
+<span class="sd">    This function performs the following operations:</span>
+<span class="sd">    1. Validates and coerces column types to match expected types.</span>
+<span class="sd">    2. Rearranges columns to match the order defined in model_column_order.</span>
+<span class="sd">    3. Keeps original columns that are not included in the ETD data model at the end of the dataframe.</span>
+<span class="sd">    4. Optionally adds missing columns with NA values.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    household_df : pd.DataFrame</span>
+<span class="sd">        The input DataFrame containing household data.</span>
+<span class="sd">    add_columns : bool, optional</span>
+<span class="sd">        If True, add missing columns from model_column_order to the DataFrame.</span>
+<span class="sd">        If False, only keep columns that are in both the DataFrame and model_column_order.</span>
+<span class="sd">        Default is True.</span>
+<span class="sd">    context : str, optional</span>
+<span class="sd">        A string to prepend to log messages for context. If provided, a colon and space</span>
+<span class="sd">        will be appended to it. Default is an empty string.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        A new DataFrame with rearranged and validated columns.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If type coercion fails for any column.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - The function uses the global variables model_column_type and model_column_order.</span>
+<span class="sd">    - Columns not in model_column_order are appended at the end of the DataFrame.</span>
+<span class="sd">    - When coercing types, any values that fail to convert are replaced with pd.NA.</span>
+<span class="sd">    - Logging is used to warn about type mismatches and missing columns.</span>
+
+<span class="sd">    Examples</span>
+<span class="sd">    --------</span>
+<span class="sd">    &gt;&gt;&gt; df = pd.DataFrame({&#39;A&#39;: [1, 2, 3], &#39;B&#39;: [&#39;x&#39;, &#39;y&#39;, &#39;z&#39;]})</span>
+<span class="sd">    &gt;&gt;&gt; rearranged_df = rearrange_model_columns(df, add_columns=True, context=&#39;Example&#39;)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">context</span> <span class="o">!=</span> <span class="s1">&#39;&#39;</span><span class="p">:</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="n">context</span> <span class="o">+</span> <span class="s1">&#39;: &#39;</span>
+
+    <span class="k">for</span> <span class="n">col</span><span class="p">,</span> <span class="n">expected_type</span> <span class="ow">in</span> <span class="n">model_column_type</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">household_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">actual_type</span> <span class="o">=</span> <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span>
+            <span class="k">if</span> <span class="n">actual_type</span> <span class="o">!=</span> <span class="n">expected_type</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">Column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; has type &#39;</span><span class="si">{</span><span class="n">actual_type</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;but expected type is &#39;</span><span class="si">{</span><span class="n">expected_type</span><span class="si">}</span><span class="s2">&#39;. Coercing type.&quot;</span>
+                <span class="p">)</span>
+
+                <span class="c1"># Coerce type and ensure any failures are pd.NA</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_numeric_dtype</span><span class="p">(</span><span class="n">expected_type</span><span class="p">):</span>
+                        <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s1">&#39;coerce&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">expected_type</span><span class="p">)</span>
+                    <span class="k">elif</span> <span class="n">expected_type</span> <span class="o">==</span> <span class="s1">&#39;boolean&#39;</span><span class="p">:</span>
+                        <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s1">&#39;boolean&#39;</span><span class="p">)</span>
+                    <span class="k">elif</span> <span class="n">expected_type</span> <span class="o">==</span> <span class="s1">&#39;string&#39;</span><span class="p">:</span>
+                        <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s1">&#39;string&#39;</span><span class="p">)</span>
+                    <span class="k">elif</span> <span class="n">expected_type</span> <span class="o">==</span> <span class="s1">&#39;category&#39;</span><span class="p">:</span>
+                        <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s1">&#39;category&#39;</span><span class="p">)</span>
+                    <span class="k">elif</span> <span class="n">expected_type</span> <span class="o">==</span> <span class="s1">&#39;datetime64[ns]&#39;</span><span class="p">:</span>
+                        <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s1">&#39;coerce&#39;</span><span class="p">)</span>
+
+                    <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">notna</span><span class="p">(</span><span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]),</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span><span class="p">)</span>
+
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">Failed to coerce column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; type: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">Failed to coerce column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; type: </span><span class="si">{</span><span class="n">e</span><span class="si">!s}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># noqa: B904</span>
+
+    <span class="k">if</span> <span class="n">add_columns</span><span class="p">:</span>
+        <span class="c1"># Add all model columns and keep any additional columns from the original DataFrame</span>
+        <span class="n">household_df</span> <span class="o">=</span> <span class="n">household_df</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span>
+            <span class="n">columns</span><span class="o">=</span><span class="n">model_column_order</span>
+            <span class="o">+</span> <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">household_df</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">model_column_order</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">model_column_order</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">household_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">Missing column </span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2"> added &quot;</span>
+                    <span class="s1">&#39;and filled with NA values.&#39;</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">household_df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span>
+                    <span class="n">pd</span><span class="o">.</span><span class="n">NA</span><span class="p">,</span>
+                    <span class="n">dtype</span><span class="o">=</span><span class="n">model_column_type</span><span class="p">[</span><span class="n">col</span><span class="p">],</span>
+                    <span class="n">index</span><span class="o">=</span><span class="n">household_df</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
+                <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Keep only columns that are in both model_column_order and the original DataFrame</span>
+        <span class="n">household_df</span> <span class="o">=</span> <span class="n">household_df</span><span class="p">[</span>
+            <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">model_column_order</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">household_df</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
+            <span class="o">+</span> <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">household_df</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">model_column_order</span><span class="p">]</span>
+        <span class="p">]</span>
+    <span class="k">return</span> <span class="n">household_df</span>
+    <span class="k">return</span> <span class="n">household_df</span></div>
+
+
+<span class="c1"># Check for any gaps greater than one hour</span>
+<span class="c1"># Check if at least 90% of the values are not NA</span>
+<div class="viewcode-block" id="validate_cumulative_variables">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_helpers.validate_cumulative_variables">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_cumulative_variables</span><span class="p">(</span>
+                <span class="n">group</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+                <span class="n">timedelta</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">hours</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span>
+                <span class="n">available</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+                <span class="n">context</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span>
+            <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate cumulative variables in a DataFrame group.</span>
+
+<span class="sd">    This function performs several checks on cumulative columns:</span>
+<span class="sd">    1. Checks for gaps greater than the specified timedelta.</span>
+<span class="sd">    2. Checks for decreasing cumulative values.</span>
+<span class="sd">    3. Checks for unexpected zero values.</span>
+<span class="sd">    4. Checks if at least 90% of the values are not NA.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    group : pd.DataFrame</span>
+<span class="sd">        The DataFrame group to validate.</span>
+<span class="sd">    timedelta : pd.Timedelta, optional</span>
+<span class="sd">        The maximum allowed time gap between readings, by default 1 hour.</span>
+<span class="sd">    available : float, optional</span>
+<span class="sd">        The minimum fraction of non-NA values required, by default 0.9 (90%).</span>
+<span class="sd">    context : str, optional</span>
+<span class="sd">        A string to prepend to log messages for context, by default &#39;&#39;.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict</span>
+<span class="sd">        A dictionary with boolean values indicating the results of various checks:</span>
+<span class="sd">        - &#39;column_found&#39;: True if all expected columns are present.</span>
+<span class="sd">        - &#39;max_delta_allowed&#39;: True if no gaps exceed the specified timedelta.</span>
+<span class="sd">        - &#39;no_negative_diff&#39;: True if no decreasing cumulative values are found.</span>
+<span class="sd">        - &#39;no_unexpected_zero&#39;: True if no unexpected zero values are found.</span>
+<span class="sd">        - &#39;enough_values&#39;: True if at least 90% of values are non-NA.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - The function uses the global variable `cumulative_columns` to determine which columns to check.</span>
+<span class="sd">    - Logging is used to warn about any issues found during validation.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">context</span> <span class="o">==</span> <span class="s1">&#39;&#39;</span><span class="p">:</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="n">context</span> <span class="o">+</span> <span class="s1">&#39;: &#39;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;column_found&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s1">&#39;max_delta_allowed&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s1">&#39;no_negative_diff&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s1">&#39;no_unexpected_zero&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s1">&#39;enough_values&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cumulative_columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">group</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="c1"># Check for gaps greater than specified timedelta after first value</span>
+            <span class="n">filtered_group</span> <span class="o">=</span> <span class="n">group</span><span class="p">[[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">,</span> <span class="n">col</span><span class="p">]]</span>
+            <span class="n">filtered_group</span> <span class="o">=</span> <span class="n">group</span><span class="p">[[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">,</span> <span class="n">col</span><span class="p">]]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+            <span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;ReadingDateDiff&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;ReadingDateDiff&#39;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">timedelta</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                <span class="n">max_delta</span> <span class="o">=</span> <span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;ReadingDateDiff&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+                <span class="n">max_gap_start</span> <span class="o">=</span> <span class="n">filtered_group</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                    <span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;ReadingDateDiff&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">idxmax</span><span class="p">(),</span>
+                    <span class="s1">&#39;ReadingDate&#39;</span><span class="p">,</span>
+                <span class="p">]</span>
+                <span class="n">max_gap_start_unix</span> <span class="o">=</span> <span class="n">max_gap_start</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">Group has a gap of </span><span class="si">{</span><span class="n">max_delta</span><span class="si">}</span><span class="s2"> &gt; allowed &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">timedelta</span><span class="si">}</span><span class="s2">) starting at </span><span class="si">{</span><span class="n">max_gap_start</span><span class="si">}</span><span class="s2"> &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;(</span><span class="si">{</span><span class="n">max_gap_start_unix</span><span class="si">}</span><span class="s2">) in &#39;ReadingDate&#39; for &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39;.&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">result</span><span class="p">[</span><span class="s1">&#39;max_delta_allowed&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+
+            <span class="c1"># Find decreasing cumulative values in the column</span>
+            <span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;negative_diff&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="nb">round</span><span class="p">(</span><span class="n">filtered_group</span><span class="p">[[</span><span class="n">col</span><span class="p">]]</span><span class="o">.</span><span class="n">diff</span><span class="p">(),</span> <span class="mi">10</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Ensure only the first row can have NA (from diff()), but no other rows should</span>
+            <span class="k">if</span> <span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;negative_diff&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unexpected NA values found in &#39;negative_diff&#39; for column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+
+            <span class="c1"># Explicitly fill only the first row with False (since it always gets NA)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">filtered_group</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+                <span class="n">filtered_group</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">filtered_group</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">get_loc</span><span class="p">(</span><span class="s1">&#39;negative_diff&#39;</span><span class="p">)]</span> <span class="o">=</span> <span class="kc">False</span>
+
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;negative_diff&#39;</span><span class="p">]):</span>
+                <span class="n">reading_dates</span> <span class="o">=</span> <span class="n">filtered_group</span><span class="p">[</span><span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;negative_diff&#39;</span><span class="p">]][</span>
+                    <span class="s1">&#39;ReadingDate&#39;</span>
+                <span class="p">]</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">Column </span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2"> has a decrease in subsequent &quot;</span>
+                    <span class="s2">&quot;cumulative values at &#39;ReadingDate&#39;: &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">reading_dates</span><span class="o">.</span><span class="n">to_list</span><span class="p">()</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">result</span><span class="p">[</span><span class="s1">&#39;no_negative_diff&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+
+                <span class="n">first_date</span> <span class="o">=</span> <span class="p">(</span><span class="n">reading_dates</span><span class="p">)</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+                <span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;zero&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">filtered_group</span><span class="p">[[</span><span class="n">col</span><span class="p">]]</span> <span class="o">==</span> <span class="mi">0</span>
+                <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;zero&#39;</span><span class="p">]):</span>
+                    <span class="n">reading_dates</span> <span class="o">=</span> <span class="n">filtered_group</span><span class="p">[</span>
+                        <span class="p">(</span><span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">first_date</span><span class="p">)</span>
+                        <span class="o">&amp;</span> <span class="p">(</span><span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;zero&#39;</span><span class="p">])</span>
+                    <span class="p">][</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span>
+                    <span class="n">last_date</span> <span class="o">=</span> <span class="n">reading_dates</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+                    <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">Column </span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2"> has unexpected zero values &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;in cumulative values from </span><span class="si">{</span><span class="n">first_date</span><span class="si">}</span><span class="s2"> to &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">last_date</span><span class="si">}</span><span class="s2">. This will be removed&quot;</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">result</span><span class="p">[</span><span class="s1">&#39;no_unexpected_zero&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+
+            <span class="k">if</span> <span class="n">group</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">ffill</span><span class="p">()</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">group</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">available</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">Column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; in group has less than &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">available</span><span class="o">*</span><span class="mi">100</span><span class="si">}</span><span class="s2">% non-NA values.&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">result</span><span class="p">[</span><span class="s1">&#39;enough_values&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context</span><span class="si">}</span><span class="s2">Column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; not found in DataFrame.&quot;</span><span class="p">)</span>
+            <span class="n">result</span><span class="p">[</span><span class="s1">&#39;column_found&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+
+<div class="viewcode-block" id="add_diff_columns">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_helpers.add_diff_columns">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">add_diff_columns</span><span class="p">(</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">id_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">validate_func</span><span class="o">=</span><span class="n">validate_cumulative_variables</span><span class="p">,</span>
+    <span class="n">context</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="p">,</span>
+    <span class="n">drop_unvalidated</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Add difference columns for cumulative variables and handle some data inconsistencies.</span>
+
+<span class="sd">    This function calculates the difference between consecutive readings for cumulative columns,</span>
+<span class="sd">    validates the data, and handles various inconsistencies such as negative differences and unexpected zeros.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pd.DataFrame or pd.core.groupby.DataFrameGroupBy</span>
+<span class="sd">        The input data, either as a DataFrame or a GroupBy object.</span>
+<span class="sd">    id_column : str, optional</span>
+<span class="sd">        The name of the column to use for grouping if data is a DataFrame, by default None.</span>
+<span class="sd">    validate_func : callable, optional</span>
+<span class="sd">        A function to validate the data, by default validate_cumulative_variables.</span>
+<span class="sd">    context : str, optional</span>
+<span class="sd">        A string to prepend to log messages for context, by default &#39;&#39;.</span>
+<span class="sd">    drop_unvalidated : bool, optional</span>
+<span class="sd">        If True, drop groups that fail validation; if False, keep them with warnings, by default False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        A DataFrame with added difference columns for cumulative variables.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    TypeError</span>
+<span class="sd">        If the input data is neither a DataFrame nor a GroupBy object.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - The function uses the global variable `cumulative_columns` to determine which columns to process.</span>
+<span class="sd">    - It handles various data inconsistencies:</span>
+<span class="sd">      - Removes unexpected zeros between valid readings.</span>
+<span class="sd">      - Handles cases where the meter appears to have been reset.</span>
+<span class="sd">      - Removes data after a negative difference if no subsequent increases are found.</span>
+<span class="sd">    - Extensive logging is used to document the data cleaning process.</span>
+<span class="sd">    - If the meter has had negative dip and after that there were no subsequent increases, we choose to ignore all other values from an apparently broken meter by setting them to pd.NA</span>
+<span class="sd">    - If the meter has a negative dip and the meter simply jumps back up to the last value before the negative dip (or above) then we assume there is one bad value to remove. This cases does not consider time, so may miss edge cases, for example that it did not jump back up but rather so much time passed that the next reading is much higher - this may be addressed in the future but requires assumption about rate of growth.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">context</span> <span class="o">==</span> <span class="s1">&#39;&#39;</span><span class="p">:</span>
+        <span class="n">context_string</span> <span class="o">=</span> <span class="n">context</span> <span class="o">+</span> <span class="s1">&#39;: &#39;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">context_string</span> <span class="o">=</span> <span class="n">context</span>
+
+    <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_diff</span><span class="p">(</span><span class="n">group</span><span class="p">):</span>
+        <span class="n">valid_result</span> <span class="o">=</span> <span class="n">validate_func</span><span class="p">(</span><span class="n">group</span><span class="o">=</span><span class="n">group</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="n">context</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="n">valid_result</span><span class="o">.</span><span class="n">values</span><span class="p">()):</span>
+            <span class="n">invalid</span> <span class="o">=</span> <span class="p">[</span><span class="n">key</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">valid_result</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">drop_unvalidated</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Some cumulative columns did &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;not pass validation (</span><span class="si">{</span><span class="n">invalid</span><span class="si">}</span><span class="s2">). Dropping group/data.&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="c1"># Return empty DataFrame to drop invalid group</span>
+                <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Some cumulative columns did not &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;pass validation (</span><span class="si">{</span><span class="n">invalid</span><span class="si">}</span><span class="s2">). Keeping group/data.&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cumulative_columns</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">group</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Cumulative column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; not found. &quot;</span>
+                    <span class="s1">&#39;No Diff column created.&#39;</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calculating diff for </span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">group</span><span class="p">[</span><span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+            <span class="n">group</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">group</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">valid_result</span><span class="p">[</span><span class="s1">&#39;no_negative_diff&#39;</span><span class="p">]:</span>
+                <span class="n">filtered_group</span> <span class="o">=</span> <span class="n">group</span><span class="p">[[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">,</span> <span class="n">col</span><span class="p">]]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+                <span class="n">filtered_group</span><span class="p">[</span><span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff_no_gap&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">filtered_group</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+                <span class="p">)</span>
+
+                <span class="n">reading_dates</span> <span class="o">=</span> <span class="n">filtered_group</span><span class="p">[</span>
+                    <span class="n">filtered_group</span><span class="p">[</span><span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff_no_gap&#39;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span>
+                <span class="p">][</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span>
+
+                <span class="c1"># recalculate = False</span>
+
+                <span class="k">for</span> <span class="n">rd</span> <span class="ow">in</span> <span class="n">reading_dates</span><span class="p">:</span>
+                    <span class="n">gap</span> <span class="o">=</span> <span class="n">filtered_group</span><span class="p">[(</span><span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="n">rd</span><span class="p">)][</span>
+                        <span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff_no_gap&#39;</span>
+                    <span class="p">]</span><span class="o">.</span><span class="n">to_list</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="n">next_value_row</span> <span class="o">=</span> <span class="n">filtered_group</span><span class="p">[</span>
+                        <span class="p">(</span><span class="n">filtered_group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">rd</span><span class="p">)</span>
+                        <span class="o">&amp;</span> <span class="p">(</span><span class="n">filtered_group</span><span class="p">[</span><span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff_no_gap&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
+                    <span class="p">]</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+                    <span class="c1"># There is another meter reading after the negative dip</span>
+                    <span class="c1"># This code block addresses different cases</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">next_value_row</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+                        <span class="c1"># We want to know what the next meter reading value and the next date is</span>
+                        <span class="n">next_value</span> <span class="o">=</span> <span class="n">next_value_row</span><span class="p">[</span><span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff_no_gap&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                        <span class="n">next_value_date</span> <span class="o">=</span> <span class="n">next_value_row</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+                        <span class="c1"># If the meter simply jumps back up to the last value before the negative dip (or above) then we assume there is one bad value to remove</span>
+                        <span class="c1"># This cases does not consider time, so may miss edge cases, for example that it did not jump back up but rather so much time passed that the next reading is much higher - this may be fixed in the future but requires assumption about rate of growth</span>
+                        <span class="k">if</span> <span class="n">next_value</span> <span class="o">&gt;=</span> <span class="o">-</span><span class="mi">1</span> <span class="o">*</span> <span class="n">gap</span><span class="p">:</span>
+                            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Removing unexpected &quot;</span>
+                                <span class="sa">f</span><span class="s2">&quot;zeros from &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; between </span><span class="si">{</span><span class="n">rd</span><span class="si">}</span><span class="s2"> and &quot;</span>
+                                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">next_value_date</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                            <span class="p">)</span>
+                            <span class="n">group</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                                <span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">rd</span><span class="p">)</span>
+                                <span class="o">&amp;</span> <span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">next_value_date</span><span class="p">),</span>
+                                <span class="n">col</span><span class="p">,</span>
+                            <span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span>
+                            <span class="c1"># recalculate = True</span>
+
+                        <span class="c1"># After the negative dip, the meter dips down again (still broken)</span>
+                        <span class="k">elif</span> <span class="n">next_value</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Two negative diffs &quot;</span>
+                                <span class="sa">f</span><span class="s2">&quot;one after the other between </span><span class="si">{</span><span class="n">rd</span><span class="si">}</span><span class="s2"> and &quot;</span>
+                                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">next_value_date</span><span class="si">}</span><span class="s2">. Will remove all &quot;</span>
+                                <span class="sa">f</span><span class="s2">&quot;these values for </span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">,</span>
+                            <span class="p">)</span>
+                            <span class="n">group</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                                <span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">rd</span><span class="p">)</span>
+                                <span class="o">&amp;</span> <span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">next_value_date</span><span class="p">),</span>
+                                <span class="n">col</span><span class="p">,</span>
+                            <span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span>
+                            <span class="c1"># recalculate = True</span>
+
+                        <span class="c1"># The meter has values but they are non-negative and not larger than the negative dip</span>
+                        <span class="c1"># we consider the meter to have been reset to the value it dipped to</span>
+                        <span class="c1"># In this case we sacrifice one value because we cannot calculate a diff from it (it will be negative)</span>
+
+                        <span class="c1"># It would be better to save all &#39;sacrificed&#39; value reading dates in a list and then only mark the recalculated diff as &lt;NA&gt;</span>
+                        <span class="c1"># It is only one value so leaving like this for now</span>
+                        <span class="k">else</span><span class="p">:</span>
+
+                            <span class="c1"># In the case where we know the colDiff is NA, we actualy don&#39;t have to delete the original meter reading</span>
+                            <span class="c1"># This happens when there is a pause/missing data before the negative dip so it does not impact our diff calculation</span>
+                            <span class="k">if</span> <span class="p">(</span><span class="n">group</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                                    <span class="n">group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="n">rd</span><span class="p">,</span>
+                                    <span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff&#39;</span><span class="p">,</span>
+                                <span class="p">]</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">()):</span>
+                                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Negative gap jump &quot;</span>
+                                        <span class="sa">f</span><span class="s2">&quot;at </span><span class="si">{</span><span class="n">rd</span><span class="si">}</span><span class="s2">. Diff is NA, not &quot;</span>
+                                        <span class="s1">&#39;removing any values.&#39;</span><span class="p">,</span>
+                                    <span class="p">)</span>
+
+                            <span class="c1"># When there are negative diffs calculated we in fact do remove the original value from the column</span>
+                            <span class="c1"># so that no negative diff may be calculated</span>
+                            <span class="k">else</span><span class="p">:</span>
+                                <span class="n">diff_belowzero</span> <span class="o">=</span> <span class="n">group</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                                    <span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="n">rd</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff&#39;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">),</span>
+                                    <span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff&#39;</span>
+                                <span class="p">]</span>
+                                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">diff_belowzero</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                                    <span class="n">group</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                                        <span class="n">group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="n">rd</span><span class="p">,</span>
+                                        <span class="n">col</span><span class="p">,]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span>
+                                    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Negative gap jump &quot;</span>
+                                        <span class="sa">f</span><span class="s2">&quot;at </span><span class="si">{</span><span class="n">rd</span><span class="si">}</span><span class="s2">. Removing single cumulative &quot;</span>
+                                        <span class="s1">&#39;value.&#39;</span><span class="p">,</span>
+                                    <span class="p">)</span>
+
+                                <span class="c1"># Handling where all values are</span>
+                                <span class="k">else</span><span class="p">:</span>
+                                    <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Negative gap jump &quot;</span>
+                                        <span class="sa">f</span><span class="s2">&quot;at </span><span class="si">{</span><span class="n">rd</span><span class="si">}</span><span class="s2">. Diff is not negative, and &quot;</span>
+                                        <span class="s1">&#39;not &lt;NA&gt;. Check for errors, e.g duplicate reading dates!&#39;</span>
+                                    <span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="c1"># The meter has had negative dip and after that there were no subsequent increases so we choose to ignore all other values from an apparently broken meter</span>
+                        <span class="n">group</span><span class="o">.</span><span class="n">loc</span><span class="p">[(</span><span class="n">group</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">rd</span><span class="p">),</span> <span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span>
+                        <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Removing all values in &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; after date &#39;</span><span class="si">{</span><span class="n">rd</span><span class="si">}</span><span class="s2">&#39; as there are &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;no subsequent increases after the negative &quot;</span>
+                            <span class="sa">f</span><span class="s2">&quot;diff.&quot;</span><span class="p">,</span>
+                        <span class="p">)</span>
+
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Re-calculating diff for &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2"> after corrections.&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">group</span><span class="p">[</span><span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">group</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+                <span class="n">group</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">group</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+
+                <span class="k">if</span> <span class="p">(</span><span class="n">group</span><span class="p">[</span><span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff&#39;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">skipna</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+                    <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Removed zeros but &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;diff still has negative values! Check data and &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;consider removing.&quot;</span><span class="p">,</span>
+                    <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">group</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">core</span><span class="o">.</span><span class="n">groupby</span><span class="o">.</span><span class="n">DataFrameGroupBy</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">data</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">calculate_diff</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">id_column</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="n">data</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">id_column</span><span class="p">,</span> <span class="n">group_keys</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">calculate_diff</span><span class="p">)</span>
+                <span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">calculate_diff</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_string</span><span class="si">}</span><span class="s2">Input data must be a pandas DataFrame &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;or a pandas GroupBy object.&quot;</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="fill_down_infrequent_devices">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_helpers.fill_down_infrequent_devices">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fill_down_infrequent_devices</span><span class="p">(</span>
+    <span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">columns</span><span class="o">=</span><span class="p">(</span>
+        <span class="s1">&#39;ElektriciteitsgebruikBoilervat&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;ElektriciteitsgebruikRadiator&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;ElektriciteitsgebruikBooster&#39;</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Fill down (forward fill) and then up (backward fill) values for specified columns.</span>
+
+<span class="sd">    This function is used to impute missing values for devices that report infrequently.</span>
+<span class="sd">    It first forward fills (ffill) the values, then backward fills (bfill) any remaining NAs,</span>
+<span class="sd">    and finally replaces any remaining NAs with 0.0.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : pd.DataFrame</span>
+<span class="sd">        The input DataFrame containing the device data.</span>
+<span class="sd">    columns : tuple of str, optional</span>
+<span class="sd">        The names of the columns to fill. Default is</span>
+<span class="sd">        (&#39;ElektriciteitsgebruikBoilervat&#39;, &#39;ElektriciteitsgebruikRadiator&#39;, &#39;ElektriciteitsgebruikBooster&#39;).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        The input DataFrame with the specified columns filled.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - This function may be problematic if the data source or devices are misbehaving,</span>
+<span class="sd">      as the imputation will still be performed.</span>
+<span class="sd">    - The imputation order is: forward fill, backward fill, then fill remaining NAs with 0.0.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">ffill</span><span class="p">()</span><span class="o">.</span><span class="n">bfill</span><span class="p">()</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">df</span></div>
+
+
+
+<div class="viewcode-block" id="ensure_intervals">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_helpers.ensure_intervals">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">ensure_intervals</span><span class="p">(</span>
+    <span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">date_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;ReadingDate&#39;</span><span class="p">,</span>
+    <span class="n">freq</span><span class="o">=</span><span class="s1">&#39;5min&#39;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Ensure that the DataFrame has a consistent number of records and expected time intervals.</span>
+<span class="sd">    It will add missing intervals or remove excess records to ensure consistency.</span>
+
+<span class="sd">    This function checks if the input DataFrame has the expected number of records</span>
+<span class="sd">    based on its date range and the specified frequency. If not, it adds missing</span>
+<span class="sd">    intervals or removes excess records.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : pd.DataFrame</span>
+<span class="sd">        The input DataFrame containing the time series data.</span>
+<span class="sd">    date_column : str, optional</span>
+<span class="sd">        The name of the column containing the datetime information, by default &#39;ReadingDate&#39;.</span>
+<span class="sd">    freq : str, optional</span>
+<span class="sd">        The expected frequency of the time series, by default &#39;5min&#39;.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        A DataFrame with consistent time intervals.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - If the number of records matches the expected number, the function returns the input DataFrame unchanged.</span>
+<span class="sd">    - If there are fewer records than expected, the function adds missing intervals.</span>
+<span class="sd">    - If there are more records than expected, the function performs a left merge to reduce the number of records.</span>
+<span class="sd">    - The function uses logging to inform about the actions taken.</span>
+
+<span class="sd">    Warnings</span>
+<span class="sd">    --------</span>
+<span class="sd">    - If there are more records than expected, this might indicate issues with the data source.</span>
+<span class="sd">      The function will log an error in this case.</span>
+<span class="sd">    - This function assumes that an effort has already been made to prepare the data source in the intervals.</span>
+<span class="sd">    - If raw data has more frequent data or if it records are coming in at a variable or different frequence, it will first need to be processed to meet the given interval.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">df</span><span class="p">[</span><span class="n">date_column</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">date_column</span><span class="p">])</span>
+
+    <span class="n">earliest</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">date_column</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+    <span class="n">latest</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">date_column</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+
+    <span class="n">expected_num_records</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="nb">int</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">latest</span> <span class="o">-</span> <span class="n">earliest</span><span class="p">)</span> <span class="o">/</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">minutes</span><span class="o">=</span><span class="mi">5</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="o">+</span> <span class="mi">1</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">expected_num_records</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Expected number of records based on start and end date. &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Not attempting to add </span><span class="si">{</span><span class="n">freq</span><span class="si">}</span><span class="s2"> intervals.&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">df</span>
+
+    <span class="n">all_dates_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">{</span><span class="n">date_column</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span><span class="n">start</span><span class="o">=</span><span class="n">earliest</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="n">latest</span><span class="p">,</span> <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">)},</span>
+    <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">merge_left</span><span class="p">(</span><span class="n">df</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">all_dates_df</span><span class="p">,</span> <span class="n">df</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="n">date_column</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s1">&#39;left&#39;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">expected_num_records</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Adding </span><span class="si">{</span><span class="n">freq</span><span class="si">}</span><span class="s2"> intervals.&quot;</span><span class="p">)</span>
+        <span class="n">all_dates_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="n">date_column</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span>
+                    <span class="n">start</span><span class="o">=</span><span class="n">earliest</span><span class="p">,</span>
+                    <span class="n">end</span><span class="o">=</span><span class="n">latest</span><span class="p">,</span>
+                    <span class="n">freq</span><span class="o">=</span><span class="n">freq</span><span class="p">,</span>
+                <span class="p">),</span>
+            <span class="p">},</span>
+        <span class="p">)</span>
+        <span class="n">merged_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">all_dates_df</span><span class="p">,</span> <span class="n">df</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="n">date_column</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s1">&#39;outer&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">merged_df</span><span class="o">.</span><span class="n">index</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">expected_num_records</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;There are more records than possible if </span><span class="si">{</span><span class="n">freq</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;interval would be respected. Merging left to reduce records.&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Check data source.&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">merged_df</span> <span class="o">=</span> <span class="n">merge_left</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">merged_df</span>
+    <span class="k">else</span><span class="p">:</span>  <span class="c1"># (expected_num_records&lt;len(df.index)):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;There are more records than possible if </span><span class="si">{</span><span class="n">freq</span><span class="si">}</span><span class="s2"> interval would &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;be respected. Merging left to reduce records. Check data source&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">merged_df</span> <span class="o">=</span> <span class="n">merge_left</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">merged_df</span></div>
+
+
+<div class="viewcode-block" id="collect_mapped_data_stats">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_helpers.collect_mapped_data_stats">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">collect_mapped_data_stats</span><span class="p">(</span><span class="n">huis_id_bsv</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Collect statistics for each column in the DataFrame corresponding to a specific HuisIdBSV.</span>
+
+<span class="sd">    This function retrieves data for a given `huis_id_bsv`, processes it, and collects summary statistics</span>
+<span class="sd">    for each column. It logs errors if any issues occur during processing.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    huis_id_bsv : str or int</span>
+<span class="sd">        The identifier for the household to process.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    list of dict</span>
+<span class="sd">        A list of dictionaries, where each dictionary contains summary statistics for a column in the DataFrame.</span>
+<span class="sd">        Each dictionary has keys &#39;column_name&#39;, &#39;mean&#39;, &#39;std&#39;, &#39;min&#39;, and &#39;max&#39;.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - The function uses `get_mapped_data` to retrieve the data for the given `huis_id_bsv`.</span>
+<span class="sd">    - It logs errors if there are issues retrieving or processing the data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processing stats from columns where HuisIdBSV = </span><span class="si">{</span><span class="n">huis_id_bsv</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">file_summary_data</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="n">get_mapped_data</span><span class="p">(</span><span class="n">huis_id_bsv</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">column_data</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">column</span><span class="p">]</span>
+            <span class="n">file_summary_data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">collect_column_stats</span><span class="p">(</span><span class="n">huis_id_bsv</span><span class="p">,</span> <span class="n">column_data</span><span class="p">)</span>
+            <span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to process stats from columns where HuisIdBSV = </span><span class="si">{</span><span class="n">huis_id_bsv</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">file_summary_data</span></div>
+
+
+<div class="viewcode-block" id="collect_column_stats">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_helpers.collect_column_stats">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">collect_column_stats</span><span class="p">(</span><span class="n">identifier</span><span class="p">,</span> <span class="n">column_data</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Collect summary statistics for a given column of data.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    identifier : str or int</span>
+<span class="sd">        The identifier for the dataset.</span>
+<span class="sd">    column_data : pd.Series</span>
+<span class="sd">        The data in the column to analyze.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict</span>
+<span class="sd">        A dictionary containing summary statistics for the column. The keys are:</span>
+<span class="sd">            - &#39;Identifier&#39;: The identifier for the dataset.</span>
+<span class="sd">            - &#39;column&#39;: The name of the column.</span>
+<span class="sd">            - &#39;type&#39;: The data type of the column.</span>
+<span class="sd">            - &#39;count&#39;: The number of non-null values in the column.</span>
+<span class="sd">            - &#39;missing&#39;: The number of missing values in the column.</span>
+<span class="sd">            - &#39;errors&#39;: The number of errors (NA) in the column.</span>
+<span class="sd">            - &#39;min&#39;: The minimum value in the column, if applicable.</span>
+<span class="sd">            - &#39;max&#39;: The maximum value in the column, if applicable.</span>
+<span class="sd">            - &#39;mean&#39;: The mean value in the column, if applicable.</span>
+<span class="sd">            - &#39;median&#39;: The median value in the column, if applicable.</span>
+<span class="sd">            - &#39;iqr&#39;: The interquartile range (IQR) of the column, if applicable.</span>
+<span class="sd">            - &#39;quantile_25&#39;: The 25th percentile value in the column, if applicable.</span>
+<span class="sd">            - &#39;quantile_75&#39;: The 75th percentile value in the column, if applicable.</span>
+<span class="sd">            - &#39;top5&#39;: A dictionary with the top 5 most frequent values and their counts, if applicable.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - This function handles different data types (numeric, boolean, datetime, object) and computes relevant statistics accordingly.</span>
+<span class="sd">    - At the moment there is no effective difference between missing and errors.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dtype</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">dtype</span>
+    <span class="n">n_values</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+    <span class="n">n_missing</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">isnull</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="n">n_errors</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+
+    <span class="c1"># Initialize statistics variables</span>
+    <span class="n">_min</span><span class="p">,</span> <span class="n">_max</span><span class="p">,</span> <span class="n">_mean</span><span class="p">,</span> <span class="n">_median</span><span class="p">,</span> <span class="n">_iqr</span><span class="p">,</span> <span class="n">quantile_25</span><span class="p">,</span> <span class="n">quantile_75</span><span class="p">,</span> <span class="n">top5</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="kc">None</span><span class="p">,</span>
+        <span class="kc">None</span><span class="p">,</span>
+        <span class="kc">None</span><span class="p">,</span>
+        <span class="kc">None</span><span class="p">,</span>
+        <span class="kc">None</span><span class="p">,</span>
+        <span class="kc">None</span><span class="p">,</span>
+        <span class="kc">None</span><span class="p">,</span>
+        <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">column_data</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_bool_dtype</span><span class="p">(</span><span class="n">column_data</span><span class="p">):</span>
+            <span class="n">_mean</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_numeric_dtype</span><span class="p">(</span><span class="n">column_data</span><span class="p">):</span>
+            <span class="n">_min</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+            <span class="n">_max</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+            <span class="n">_mean</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+            <span class="n">_median</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">median</span><span class="p">()</span>
+            <span class="n">quantile_25</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="mf">0.25</span><span class="p">)</span>
+            <span class="n">quantile_75</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="mf">0.75</span><span class="p">)</span>
+            <span class="n">_iqr</span> <span class="o">=</span> <span class="n">quantile_75</span> <span class="o">-</span> <span class="n">quantile_25</span>
+        <span class="k">elif</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_datetime64_any_dtype</span><span class="p">(</span><span class="n">column_data</span><span class="p">):</span>
+            <span class="n">_min</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+            <span class="n">_max</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_object_dtype</span><span class="p">(</span><span class="n">column_data</span><span class="p">):</span>
+            <span class="n">top5</span> <span class="o">=</span> <span class="n">column_data</span><span class="o">.</span><span class="n">value_counts</span><span class="p">()</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;Identifier&quot;</span><span class="p">:</span> <span class="n">identifier</span><span class="p">,</span>
+        <span class="s2">&quot;column&quot;</span><span class="p">:</span> <span class="n">column_data</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="n">dtype</span><span class="p">,</span>
+        <span class="s2">&quot;count&quot;</span><span class="p">:</span> <span class="n">n_values</span><span class="p">,</span>
+        <span class="s2">&quot;missing&quot;</span><span class="p">:</span> <span class="n">n_missing</span><span class="p">,</span>
+        <span class="s2">&quot;errors&quot;</span><span class="p">:</span> <span class="n">n_errors</span><span class="p">,</span>
+        <span class="s2">&quot;min&quot;</span><span class="p">:</span> <span class="n">_min</span><span class="p">,</span>
+        <span class="s2">&quot;max&quot;</span><span class="p">:</span> <span class="n">_max</span><span class="p">,</span>
+        <span class="s2">&quot;mean&quot;</span><span class="p">:</span> <span class="n">_mean</span><span class="p">,</span>
+        <span class="s2">&quot;median&quot;</span><span class="p">:</span> <span class="n">_median</span><span class="p">,</span>
+        <span class="s2">&quot;iqr&quot;</span><span class="p">:</span> <span class="n">_iqr</span><span class="p">,</span>
+        <span class="s2">&quot;quantile_25&quot;</span><span class="p">:</span> <span class="n">quantile_25</span><span class="p">,</span>
+        <span class="s2">&quot;quantile_75&quot;</span><span class="p">:</span> <span class="n">quantile_75</span><span class="p">,</span>
+        <span class="s2">&quot;top5&quot;</span><span class="p">:</span> <span class="n">top5</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="process_raw_data_file">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_helpers.process_raw_data_file">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">process_raw_data_file</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+    <span class="n">file</span><span class="p">,</span> <span class="n">raw_data_folder_path</span> <span class="o">=</span> <span class="n">args</span>
+
+    <span class="n">file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">raw_data_folder_path</span><span class="p">,</span> <span class="n">file</span><span class="p">)</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Opening </span><span class="si">{</span><span class="n">file_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+    <span class="n">summary_data</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">column_data</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">column</span><span class="p">]</span>
+        <span class="n">summary_data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">collect_column_stats</span><span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="n">column_data</span><span class="p">)</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">summary_data</span></div>
+
+
+<div class="viewcode-block" id="get_raw_data_stats">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_helpers.get_raw_data_stats">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_raw_data_stats</span><span class="p">(</span><span class="n">raw_data_folder_path</span><span class="p">,</span> <span class="n">multi</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">max_workers</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Collect and aggregate statistics for all columns in the DataFrame corresponding to each raw data file in a folder.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    raw_data_folder_path : str</span>
+<span class="sd">        The path to the folder containing the raw data files.</span>
+<span class="sd">    multi : bool, optional</span>
+<span class="sd">        If True, use multiprocessing to collect stats. Default is False.</span>
+<span class="sd">    max_workers : int, optional</span>
+<span class="sd">        The maximum number of workers to use for multiprocessing. Default is 2.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        A DataFrame containing the aggregated statistics for each column in the DataFrame corresponding to each file name.</span>
+<span class="sd">        Each row represents a column from a specific file and contains summary statistics.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - Only parquet files are supported</span>
+<span class="sd">    - It logs errors if there are issues retrieving or processing the data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">file_extension</span> <span class="o">=</span> <span class="s1">&#39;parquet&#39;</span>
+    <span class="n">summary_data</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">files</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="n">raw_data_folder_path</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">multi</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">ProcessPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">max_workers</span><span class="p">)</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+                <span class="n">args_list</span> <span class="o">=</span> <span class="p">[(</span><span class="n">file</span><span class="p">,</span> <span class="n">raw_data_folder_path</span><span class="p">)</span> <span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span class="n">files</span> <span class="k">if</span> <span class="n">file</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;.</span><span class="si">{</span><span class="n">file_extension</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)]</span>
+                <span class="n">results</span> <span class="o">=</span> <span class="n">executor</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">process_raw_data_file</span><span class="p">,</span> <span class="n">args_list</span><span class="p">)</span>
+                <span class="n">summary_data</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">sublist</span> <span class="ow">in</span> <span class="n">results</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">sublist</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">file</span> <span class="ow">in</span> <span class="n">files</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">file</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;.</span><span class="si">{</span><span class="n">file_extension</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">summary_data</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+                    <span class="n">process_raw_data_file</span><span class="p">((</span><span class="n">file</span><span class="p">,</span> <span class="n">raw_data_folder_path</span><span class="p">))</span>
+                <span class="p">)</span>
+
+        <span class="n">df_raw_stats</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">summary_data</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">df_raw_stats</span>
+
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to complete the main process: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="get_mapped_data_stats">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.mapping_helpers.get_mapped_data_stats">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_mapped_data_stats</span><span class="p">(</span><span class="n">multi</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">max_workers</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Collect and aggregate statistics for all columns in the DataFrame corresponding to each HuisIdBSV.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    multi : bool, optional</span>
+<span class="sd">        If True, use multiprocessing to collect stats. Default is False.</span>
+<span class="sd">    max_workers : int, optional</span>
+<span class="sd">        The maximum number of workers to use for multiprocessing. Default is 2.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        A DataFrame containing the aggregated statistics for each column in the DataFrame corresponding to each HuisIdBSV.</span>
+<span class="sd">        Each row represents a column from a specific HuisIdBSV and contains summary statistics.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - The function uses `read_index` to retrieve the index of households.</span>
+<span class="sd">    - It logs errors if there are issues retrieving or processing the data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">summary_data</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">index_df</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">read_index</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">multi</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">ProcessPoolExecutor</span><span class="p">(</span><span class="n">max_workers</span><span class="o">=</span><span class="n">max_workers</span><span class="p">)</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+                <span class="n">results</span> <span class="o">=</span> <span class="n">executor</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">collect_mapped_data_stats</span><span class="p">,</span> <span class="n">index_df</span><span class="p">[</span><span class="s2">&quot;HuisIdBSV&quot;</span><span class="p">])</span>
+                <span class="n">summary_data</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">sublist</span> <span class="ow">in</span> <span class="n">results</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">sublist</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">huis_id</span> <span class="ow">in</span> <span class="n">index_df</span><span class="p">[</span><span class="s2">&quot;HuisIdBSV&quot;</span><span class="p">]:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Collecting stats for HuisIdBSV = </span><span class="si">{</span><span class="n">huis_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">collect_mapped_data_stats</span><span class="p">(</span><span class="n">huis_id</span><span class="p">)</span>
+                <span class="n">summary_data</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+
+        <span class="n">data_summary</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">summary_data</span><span class="p">)</span>
+
+        <span class="n">data_summary</span> <span class="o">=</span> <span class="n">data_summary</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Identifier&quot;</span><span class="p">:</span> <span class="s2">&quot;HuisIdBSV&quot;</span><span class="p">})</span>
+
+        <span class="n">data_summary</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">data_summary</span><span class="p">,</span> <span class="n">index_df</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="s2">&quot;HuisIdBSV&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">data_summary</span>
+
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to complete the main process: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Nicolas Dickinson, Marten Witkamp, Petra Izeboud.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
