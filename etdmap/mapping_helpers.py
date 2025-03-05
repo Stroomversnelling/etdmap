@@ -735,7 +735,7 @@ def collect_column_stats(identifier, column_data):
 
 
 def process_raw_data_file(args):
-    file, raw_data_folder_path, summary_data = args
+    file, raw_data_folder_path = args
 
     file_path = os.path.join(raw_data_folder_path, file)
     logging.info(f"Opening {file_path}")
