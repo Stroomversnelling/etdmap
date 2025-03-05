@@ -7,8 +7,8 @@ etdmap - "Energietransitie Dataset" mapping package documentation
 ================================================================
 
 .. toctree::
-   :maxdepth: 4
-   :caption: Contents:
+   :maxdepth: 1
+   :caption: Functions
 
    source/modules
 
