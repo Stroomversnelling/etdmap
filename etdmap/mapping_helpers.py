@@ -1,4 +1,5 @@
 import logging
+import os
 from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
@@ -732,16 +733,74 @@ def collect_column_stats(identifier, column_data):
         "top5": top5,
     }
 
-def get_mapped_data_stats(multi=True, max_workers=1):
+
+def get_raw_data_stats(raw_data_folder_path, multi=False, max_workers=2):
+    """
+    Collect and aggregate statistics for all columns in the DataFrame corresponding to each raw data file in a folder.
+
+    Parameters
+    ----------
+    raw_data_folder_path : str
+        The path to the folder containing the raw data files.
+    multi : bool, optional
+        If True, use multiprocessing to collect stats. Default is False.
+    max_workers : int, optional
+        The maximum number of workers to use for multiprocessing. Default is 2.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the aggregated statistics for each column in the DataFrame corresponding to each file name.
+        Each row represents a column from a specific file and contains summary statistics.
+
+    Notes
+    -----
+    - Only parquet files are supported
+    - It logs errors if there are issues retrieving or processing the data.
+    """
+    file_extension = 'parquet'
+    summary_data = []
+
+    try:
+        files = os.listdir(raw_data_folder_path)
+
+        def process_file(file):
+            file_path = os.path.join(raw_data_folder_path, file)
+            logging.info(f"Opening {file_path}")
+
+            df = pd.read_parquet(file_path)
+            for column in df.columns:
+                column_data = df[column]
+                summary_data.append(
+                    collect_column_stats(file, column_data)
+                )
+
+        if multi:
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                results = executor.map(process_file, [file for file in files if file.endswith(f".{file_extension}")])
+                summary_data = [item for sublist in results for item in sublist]
+        else:
+            for file in files:
+                if not file.endswith(f".{file_extension}"):
+                    continue
+                process_file(file)
+
+        df_raw_stats = pd.DataFrame(summary_data)
+        return df_raw_stats
+
+    except Exception as e:
+        logging.error(f"Failed to complete the main process: {str(e)}", exc_info=True)
+
+def get_mapped_data_stats(multi=False, max_workers=2):
     """
     Collect and aggregate statistics for all columns in the DataFrame corresponding to each HuisIdBSV.
 
     Parameters
     ----------
     multi : bool, optional
-        If True, use multiprocessing to collect stats. Default is True.
+        If True, use multiprocessing to collect stats. Default is False.
     max_workers : int, optional
-        The maximum number of workers to use for multiprocessing. Default is 1.
+        The maximum number of workers to use for multiprocessing. Default is 2.
 
     Returns
     -------
