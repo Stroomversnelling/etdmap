@@ -782,7 +782,7 @@ def get_raw_data_stats(raw_data_folder_path, multi=False, max_workers=2):
 
         if multi:
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                args_list = [(file, raw_data_folder_path, summary_data) for file in files if file.endswith(f".{file_extension}")]
+                args_list = [(file, raw_data_folder_path) for file in files if file.endswith(f".{file_extension}")]
                 results = executor.map(process_raw_data_file, args_list)
                 summary_data = [item for sublist in results for item in sublist]
         else:
