@@ -3,7 +3,10 @@ name: Deploy Sphinx Docs to GitHub Pages
 on:
   push:
     branches:
-      - main
+      - main  # Only build on direct pushes or merges to the main branch
+
+permissions:
+  contents: write
 
 jobs:
   build:
