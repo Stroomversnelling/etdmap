@@ -12,9 +12,9 @@ import sys
 
 sys.path.insert(0, os.path.abspath('../etdmap'))
 
-project = 'etdmap'
-copyright = '2025, Nicolas Dickinson and Petra Izeboud'
-author = 'Nicolas Dickinson and Petra Izeboud'
+project = 'etdmap - "Energietransitie Dataset" mapping package'
+copyright = '2025, Nicolas Dickinson, Marten Witkamp, Petra Izeboud'
+author = 'Nicolas Dickinson, Marten Witkamp, Petra Izeboud'
 release = '0.1.0'
 
 # -- General configuration ---------------------------------------------------
