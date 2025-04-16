@@ -2,27 +2,14 @@ from importlib.resources import files
 
 import pandas as pd
 
+# Required columns
 data_analysis_columns = [
     "ReadingDate",
-    "Ventilatiedebiet",
-    "CO2",
     "ElektriciteitNetgebruikHoog",
     "ElektriciteitNetgebruikLaag",
     "ElektriciteitTerugleveringHoog",
     "ElektriciteitTerugleveringLaag",
-    "ElektriciteitVermogen",
-    "ElektriciteitsgebruikWTW",
-    "ElektriciteitsgebruikWarmtepomp",
-    "ElektriciteitsgebruikBooster",
-    "ElektriciteitsgebruikBoilervat",
-    "ElektriciteitsgebruikHuishoudelijk",
-    "TemperatuurWarmTapwater",
-    "TemperatuurWoonkamer",
-    "WarmteproductieWarmtepomp",
-    "TemperatuurSetpointWoonkamer",
-    "Zon-opwekMomentaan",
     "Zon-opwekTotaal",
-    "Luchtvochtigheid",
 ]
 
 cumulative_columns = [
@@ -35,10 +22,16 @@ cumulative_columns = [
     'ElektriciteitsgebruikWarmtepomp',
     'ElektriciteitsgebruikBooster',
     'ElektriciteitsgebruikBoilervat',
-    'ElektriciteitsgebruikRadiator',
+    #'ElektriciteitsgebruikRadiator',
     'WarmteproductieWarmtepomp',
     'WatergebruikWarmTapwater',
     'Zon-opwekTotaal',
+
+    'ElektriciteitsgebruikWarmtepompIntern',
+    'WarmteproductieRuimteverwarming',
+    'WarmteproductieTapwater',
+    'WatergebruikWarmtepomp',
+    'WatergebruikRuimteverwarming',
 ]
 
 model_column_order = [
@@ -53,8 +46,8 @@ model_column_order = [
     'ElektriciteitsgebruikWarmtepomp',
     'ElektriciteitsgebruikBooster',
     'ElektriciteitsgebruikBoilervat',
-    'ElektriciteitsgebruikRadiator',
-    'ElektriciteitsgebruikHuishoudelijk',
+    # 'ElektriciteitsgebruikRadiator',
+    # 'ElektriciteitsgebruikHuishoudelijk',
     'TemperatuurWarmTapwater',
     'TemperatuurWoonkamer',
     'TemperatuurSetpointWoonkamer',
@@ -65,6 +58,25 @@ model_column_order = [
     'CO2',
     'Luchtvochtigheid',
     'Ventilatiedebiet',
+
+    'SlimmemeterVoltageL1',
+    'SlimmemeterVoltageL2',
+    'SlimmemeterVoltageL3',
+    'SlimmemeterStroomsterkteL1',
+    'SlimmemeterStroomsterkteL2',
+    'SlimmemeterStroomsterkteL3',
+    'ElektriciteitsgebruikWarmtepompIntern',
+    'TemperatuurBoilervat',
+    'TemperatuurBinnenWTW',
+    'TemperatuurBuitenWTW',
+    'TemperatuurBuitenWarmtepomp',
+    'TemperatuurAfgifteAanvoer',
+    'TemperatuurAfgifteRetour',
+    'WarmteproductieRuimteverwarming',
+    'WarmteproductieTapwater',
+    'WatergebruikWarmtepomp',
+    'WatergebruikRuimteverwarming',
+    'WarmtepompModus',
 ]
 model_column_type = {
     'ReadingDate': 'datetime64[ns]',  # pandas datetime column
@@ -78,7 +90,7 @@ model_column_type = {
     'ElektriciteitsgebruikWarmtepomp': 'Float64',
     'ElektriciteitsgebruikBooster': 'Float64',
     'ElektriciteitsgebruikBoilervat': 'Float64',
-    'ElektriciteitsgebruikRadiator': 'Float64',
+    # 'ElektriciteitsgebruikRadiator': 'Float64',
     # 'ElektriciteitsgebruikHuishoudelijk': 'Float64',
     'TemperatuurWarmTapwater': 'Float64',
     'TemperatuurWoonkamer': 'Float64',
@@ -90,8 +102,25 @@ model_column_type = {
     'CO2': 'Float64',
     'Luchtvochtigheid': 'Float64',
     'Ventilatiedebiet': 'Float64',
+    'SlimmemeterVoltageL1': 'Float64',
+    'SlimmemeterVoltageL2': 'Float64',
+    'SlimmemeterVoltageL3': 'Float64',
+    'SlimmemeterStroomsterkteL1': 'Float64',
+    'SlimmemeterStroomsterkteL2': 'Float64',
+    'SlimmemeterStroomsterkteL3': 'Float64',
+    'ElektriciteitsgebruikWarmtepompIntern': 'Float64',
+    'TemperatuurBoilervat': 'Float64',
+    'TemperatuurBinnenWTW': 'Float64',
+    'TemperatuurBuitenWTW': 'Float64',
+    'TemperatuurBuitenWarmtepomp': 'Float64',
+    'TemperatuurAfgifteAanvoer': 'Float64',
+    'TemperatuurAfgifteRetour': 'Float64',
+    'WarmteproductieRuimteverwarming': 'Float64',
+    'WarmteproductieTapwater': 'Float64',
+    'WatergebruikWarmtepomp': 'Float64',
+    'WatergebruikRuimteverwarming': 'Float64',
+    'WarmtepompModus': 'Float64',
 }
-
 
 allowed_supplier_metadata_columns = [
     "ProjectIdLeverancier", "HuisIdLeverancier", "Weerstation", "Oppervlakte", "PlatOfZadelDak",
@@ -99,7 +128,17 @@ allowed_supplier_metadata_columns = [
     "WoningType", "WoningTypeDetail", "WarmteopwekkerType", "WarmteopwekkerCategorie",
     "Warmteopwekker", "Ventilatiesysteem", "Kookinstallatie", "PVJaarbundel", "PVMerk",
     "PVType", "PVAantalPanelen", "PVWattpiekPerPaneel", "EPV", "GasgebruikVoorRenovatie",
-    "ElektriciteitVoorRenovatie", "Meenemen", "ProjectIdBSV"
+    "ElektriciteitVoorRenovatie",
+    'Eigenaarschap',
+    'Nieuwheid',
+    'WarmtepompKoudemiddel',
+    'WarmtepompVermogenTh',
+    'WarmtepompElElement',
+    'WarmtepompElAansluiting',
+    'WarmtepompBron',
+    'BoilervatVolume',
+    'AfgiftesysteemCategorie',
+    'DakType'
 ]
 
 
@@ -182,3 +221,4 @@ def load_etdmodel():
     )
 
     return df
+    
