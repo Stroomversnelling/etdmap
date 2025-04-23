@@ -1,0 +1,559 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>etdmap.dataset_validators &mdash; etdmap - &#34;Energietransitie Dataset&#34; mapping package 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            etdmap - "Energietransitie Dataset" mapping package
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Functions</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/modules.html">etdmap</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">etdmap - "Energietransitie Dataset" mapping package</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">etdmap.dataset_validators</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for etdmap.dataset_validators</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataFrame</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">etdmap.data_model</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">cumulative_columns</span><span class="p">,</span>
+    <span class="n">data_analysis_columns</span><span class="p">,</span>
+    <span class="n">load_thresholds</span><span class="p">,</span>
+    <span class="n">load_thresholds_as_dict</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Functions and code to generate a dict `dataset_flag_conditions`</span>
+<span class="sd">which contains validator functions that check comulative colums</span>
+<span class="sd">over a timeperiod. It checks for example:</span>
+<span class="sd">- if the annual increase is above the min/below the max value in</span>
+<span class="sd">    the thresholds file.</span>
+<span class="sd">- if not too much data is missing</span>
+<span class="sd">- if columns exist</span>
+<span class="sd">- if the diff of cumulative columns is never negative.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="validate_columns">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.validate_columns">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_columns</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span> <span class="n">columns</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">condition_func</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate a dataset based on specified columns in a DataFrame based on a given condition function.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The input DataFrame to be validated.</span>
+<span class="sd">    columns : list</span>
+<span class="sd">        A list of column names to be checked for validity.</span>
+<span class="sd">    condition_func : callable</span>
+<span class="sd">        A function that takes a DataFrame as an argument and returns a boolean Series indicating which rows meet the validation criteria.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool or pd.NA</span>
+<span class="sd">        True if all valid rows meet the specified condition, pd.NA if no valid rows are found or if any of the specified columns do not exist in the DataFrame.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function checks if all specified columns exist in the DataFrame, applies the condition function to valid rows, and returns the overall validation result.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">):</span>
+        <span class="n">valid_mask</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">columns</span><span class="p">]</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">valid_mask</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="n">condition</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">NA</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;boolean&quot;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+            <span class="n">condition</span><span class="p">[</span><span class="n">valid_mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">condition_func</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">valid_mask</span><span class="p">])</span>
+            <span class="c1"># note need typecast to bool because returns np.True_/np.False_ otherwise</span>
+            <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">condition</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">skipna</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span></div>
+
+
+<div class="viewcode-block" id="validate_cumm_thesholds">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.validate_cumm_thesholds">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_cumm_thesholds</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span> <span class="n">col</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">thresholds</span><span class="p">:</span><span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate cumulative thresholds for a specific column in a DataFrame.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The input DataFrame containing the data to be validated.</span>
+<span class="sd">    col : str</span>
+<span class="sd">        The name of the column to be validated.</span>
+<span class="sd">    thresholds : dict</span>
+<span class="sd">        A dictionary containing the threshold values for the specified column.</span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool or pd.NA</span>
+<span class="sd">        True if the column values meet the specified thresholds, pd.NA if validation cannot be performed.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function checks if the differences between consecutive values in the specified column fall within the given thresholds.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">min_tresh</span> <span class="o">=</span> <span class="n">thresholds</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Min&#39;</span><span class="p">]</span>
+    <span class="n">max_tresh</span> <span class="o">=</span> <span class="n">thresholds</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Max&#39;</span><span class="p">]</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">condition_func</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="n">min_tresh</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span>
+            <span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span> <span class="o">&lt;=</span> <span class="n">max_tresh</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">validate_columns</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">condition_func</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="validate_monitoring_data_counts">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.validate_monitoring_data_counts">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_monitoring_data_counts</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate the number of records in a DataFrame.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The input DataFrame to be validated.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool or pd.NA</span>
+<span class="sd">        True if the number of records falls within the specified range, pd.NA if the DataFrame is empty.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function checks if the number of records in the DataFrame is between 100,000 and 110,000.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">min_count</span><span class="p">,</span> <span class="n">max_count</span> <span class="o">=</span> <span class="mi">100000</span><span class="p">,</span> <span class="mi">110000</span>
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span> <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="n">min_count</span> <span class="o">&lt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">max_count</span></div>
+
+
+
+<div class="viewcode-block" id="validate_cumulative_variable">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.validate_cumulative_variable">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_cumulative_variable</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span> <span class="n">column</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that a cumulative variable in a DataFrame is non-decreasing.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The input DataFrame containing the data to be validated.</span>
+<span class="sd">    column : str</span>
+<span class="sd">        The name of the column to be validated.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool or pd.NA</span>
+<span class="sd">        True if the cumulative variable is non-decreasing, pd.NA if validation cannot be performed.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function checks if the differences between consecutive values in the specified column are non-negative.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="n">column</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">condition_func</span><span class="p">(</span><span class="n">df</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">df</span><span class="p">[</span><span class="n">column</span><span class="p">]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="mi">0</span>
+
+    <span class="k">return</span> <span class="n">validate_columns</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">columns</span><span class="p">,</span> <span class="n">condition_func</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="validate_range">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.validate_range">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_range</span><span class="p">(</span>
+        <span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">column</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">min_value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">max_value</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that a column in a DataFrame falls within a specified range over approximately one year.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The input DataFrame containing the data to be validated.</span>
+<span class="sd">    column : str</span>
+<span class="sd">        The name of the column to be validated.</span>
+<span class="sd">    min_value : float</span>
+<span class="sd">        The minimum acceptable value for the yearly difference.</span>
+<span class="sd">    max_value : float</span>
+<span class="sd">        The maximum acceptable value for the yearly difference.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool or pd.NA</span>
+<span class="sd">        True if the column values fall within the specified range over approximately one year, pd.NA if validation cannot be performed.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function checks if the difference between the first and last non-null values in the specified column,</span>
+<span class="sd">    over a period of approximately one year, falls within the given range.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">column</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">enough_days</span> <span class="o">=</span> <span class="mi">365</span> <span class="o">-</span> <span class="n">year_allowed_jitter</span>
+        <span class="n">df_sorted</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;ReadingDate&quot;</span><span class="p">)</span>
+        <span class="n">df_sorted</span> <span class="o">=</span> <span class="n">df_sorted</span><span class="p">[</span><span class="n">df_sorted</span><span class="p">[</span><span class="n">column</span><span class="p">]</span><span class="o">.</span><span class="n">notna</span><span class="p">()]</span>
+        <span class="k">if</span> <span class="n">df_sorted</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span>
+        <span class="n">date_diff</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">df_sorted</span><span class="p">[</span><span class="s2">&quot;ReadingDate&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">df_sorted</span><span class="p">[</span><span class="s2">&quot;ReadingDate&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">days</span>
+        <span class="n">yearly_diff</span> <span class="o">=</span> <span class="n">df_sorted</span><span class="p">[</span><span class="n">column</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">df_sorted</span><span class="p">[</span><span class="n">column</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">pd</span><span class="o">.</span><span class="n">NA</span>
+            <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">date_diff</span><span class="p">)</span> <span class="ow">or</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">yearly_diff</span><span class="p">)</span>
+            <span class="k">else</span> <span class="p">(</span><span class="n">date_diff</span> <span class="o">&gt;=</span> <span class="n">enough_days</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">min_value</span> <span class="o">&lt;=</span> <span class="n">yearly_diff</span> <span class="o">&lt;=</span> <span class="n">max_value</span><span class="p">)</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span></div>
+
+
+
+<div class="viewcode-block" id="validate_approximately_one_year_of_records">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.validate_approximately_one_year_of_records">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_approximately_one_year_of_records</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that a DataFrame contains approximately one year of records.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The input DataFrame containing the data to be validated.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool or pd.NA</span>
+<span class="sd">        True if the DataFrame contains approximately one year of records, pd.NA if validation cannot be performed.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function checks if the difference between the maximum and minimum dates in the &#39;ReadingDate&#39; column</span>
+<span class="sd">    falls within a range of approximately one year, allowing for a specified jitter.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;ReadingDate&quot;</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">date_diff</span> <span class="o">=</span> <span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s2">&quot;ReadingDate&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;ReadingDate&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">())</span><span class="o">.</span><span class="n">days</span>
+        <span class="k">return</span> <span class="p">(</span><span class="mi">365</span> <span class="o">-</span> <span class="n">year_allowed_jitter</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">date_diff</span> <span class="o">&lt;=</span> <span class="p">(</span><span class="mi">365</span> <span class="o">+</span> <span class="n">year_allowed_jitter</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span></div>
+
+
+
+<div class="viewcode-block" id="validate_column_exists">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.validate_column_exists">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_column_exists</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span> <span class="n">column_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that a specific column exists in a DataFrame.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The input DataFrame to be checked.</span>
+<span class="sd">    column_name : str</span>
+<span class="sd">        The name of the column to check for existence.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if the column exists in the DataFrame, False otherwise.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function simply checks if the specified column name is present in the DataFrame&#39;s columns.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">column_name</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span></div>
+
+
+
+<div class="viewcode-block" id="validate_columns_exist">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.validate_columns_exist">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_columns_exist</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that all required columns for data analysis exist in a DataFrame.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The input DataFrame to be checked.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if all required columns exist in the DataFrame, False otherwise.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function checks if all columns specified in the &#39;data_analysis_columns&#39; list are present in the DataFrame.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">all</span><span class="p">(</span>
+        <span class="n">validate_column_exists</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">col</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">data_analysis_columns</span>
+            <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="validate_energiegebruik_warmteopwekker">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.validate_energiegebruik_warmteopwekker">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_energiegebruik_warmteopwekker</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate the energy usage of the heat generator in a DataFrame.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The input DataFrame containing the data to be validated.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool or pd.NA</span>
+<span class="sd">        True if the calculated energy usage falls within the specified range, pd.NA if validation cannot be performed.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function calculates the total energy usage of the heat generator by summing the electricity usage</span>
+<span class="sd">    of the heat pump, booster, and boiler tank, and then validates if this total falls within a specified range.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">df</span><span class="p">[</span><span class="s2">&quot;EnergiegebruikWarmteopwekker&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">df</span><span class="p">[</span><span class="s2">&quot;ElektriciteitsgebruikWarmtepomp&quot;</span><span class="p">]</span>
+        <span class="o">+</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;ElektriciteitsgebruikBooster&quot;</span><span class="p">]</span>
+        <span class="o">+</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;ElektriciteitsgebruikBoilervat&quot;</span><span class="p">]</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">validate_range</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s2">&quot;EnergiegebruikWarmteopwekker&quot;</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">20000</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="validate_no_readingdate_gap">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.validate_no_readingdate_gap">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_no_readingdate_gap</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that there are no gaps in the reading dates of a DataFrame.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The input DataFrame containing the data to be validated.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    bool</span>
+<span class="sd">        True if there are no gaps in the reading dates, False otherwise.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function checks if the time difference between consecutive reading dates is consistently 300 seconds.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">time_diffs</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;ReadingDate&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span>
+    <span class="n">valid</span> <span class="o">=</span> <span class="nb">all</span><span class="p">(</span><span class="n">time_diffs</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">==</span> <span class="mi">300</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">valid</span></div>
+
+
+
+<div class="viewcode-block" id="create_validate_func_col">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.create_validate_func_col">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_validate_func_col</span><span class="p">(</span><span class="n">col</span><span class="p">:</span><span class="nb">str</span><span class="p">,</span> <span class="n">tresholds</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">callable</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Create a validation function for a specific column based on given thresholds.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    col : str</span>
+<span class="sd">        The name of the column to be validated.</span>
+<span class="sd">    tresholds : dict</span>
+<span class="sd">        A dictionary containing the threshold values for the specified column.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    callable</span>
+<span class="sd">        A function that validates the specified column in a DataFrame.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function creates a validation function that checks if the specified column is cumulative</span>
+<span class="sd">    and falls within the given thresholds.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">low_thres</span> <span class="o">=</span> <span class="n">tresholds</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Min&#39;</span><span class="p">]</span>
+    <span class="n">high_thres</span> <span class="o">=</span> <span class="n">tresholds</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Max&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_func</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">validate_cumulative_variable</span><span class="p">(</span>
+            <span class="n">df</span><span class="p">,</span>
+            <span class="n">col</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">&amp;</span> <span class="n">validate_range</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">col</span><span class="p">,</span> <span class="n">low_thres</span><span class="p">,</span> <span class="n">high_thres</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">validate_func</span></div>
+
+
+
+<div class="viewcode-block" id="create_validate_func_outliers_neg_cum">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.dataset_validators.create_validate_func_outliers_neg_cum">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_validate_func_outliers_neg_cum</span><span class="p">(</span>
+        <span class="n">col</span><span class="p">:</span><span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">callable</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Create a validation function to check for outliers and negative cumulative differences in a specific column.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    col : str</span>
+<span class="sd">        The name of the column to be validated.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    callable</span>
+<span class="sd">        A function that validates the specified column for outliers and negative cumulative differences in a DataFrame.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    This function creates a validation function that checks if all non-null values in the &#39;validate_&lt;col&gt;Diff&#39; column are True.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_no_outliers_negative_cumulative_diff</span><span class="p">(</span>
+        <span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">cum_col</span><span class="o">=</span><span class="n">col</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">all</span><span class="p">(</span>
+            <span class="n">df</span><span class="p">[</span><span class="s2">&quot;validate_&quot;</span> <span class="o">+</span> <span class="n">cum_col</span> <span class="o">+</span> <span class="s2">&quot;Diff&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span>
+            <span class="o">|</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;validate_&quot;</span> <span class="o">+</span> <span class="n">cum_col</span> <span class="o">+</span> <span class="s2">&quot;Diff&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">validate_no_outliers_negative_cumulative_diff</span></div>
+
+
+<span class="n">year_allowed_jitter</span> <span class="o">=</span> <span class="mi">18</span>  <span class="c1"># approx 5% of the year can be missing</span>
+<span class="n">thresholds_df</span> <span class="o">=</span> <span class="n">load_thresholds</span><span class="p">()</span>
+<span class="n">thresholds_dict</span> <span class="o">=</span> <span class="n">load_thresholds_as_dict</span><span class="p">()</span>
+
+<span class="n">cumulative_columns_thresholds</span> <span class="o">=</span> <span class="n">thresholds_df</span><span class="p">[</span>
+    <span class="n">thresholds_df</span><span class="p">[</span><span class="s1">&#39;VariabelType&#39;</span><span class="p">]</span><span class="o">==</span><span class="s1">&#39;cumulatief&#39;</span><span class="p">]</span>
+
+<span class="c1"># print(cumulative_columns_threholds.columns)</span>
+
+<span class="c1"># dictionary with validators.</span>
+<span class="c1"># Each key/value pair defines the new column name with</span>
+<span class="c1"># the corresponding validator function.</span>
+<span class="c1"># Additional key/value pairs are added in the loop.</span>
+<span class="n">dataset_flag_conditions</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;validate_monitoring_data_counts&quot;</span><span class="p">:</span> <span class="n">validate_monitoring_data_counts</span><span class="p">,</span>
+    <span class="s2">&quot;validate_energiegebruik_warmteopwekker&quot;</span><span class="p">:</span> <span class="n">validate_energiegebruik_warmteopwekker</span><span class="p">,</span>  <span class="c1"># E501</span>
+    <span class="s2">&quot;validate_approximately_one_year_of_records&quot;</span><span class="p">:</span> <span class="n">validate_approximately_one_year_of_records</span><span class="p">,</span>  <span class="c1"># E501</span>
+    <span class="s2">&quot;validate_columns_exist&quot;</span><span class="p">:</span> <span class="n">validate_columns_exist</span><span class="p">,</span>
+    <span class="s2">&quot;validate_no_readingdate_gap&quot;</span><span class="p">:</span> <span class="n">validate_no_readingdate_gap</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="n">column_diff</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">cumulative_columns_thresholds</span><span class="p">[</span><span class="s1">&#39;Variabele&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">)</span> \
+        <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">cumulative_columns</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="n">column_diff</span><span class="p">:</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s1">&#39;More comulative_columns found in thesholds.csv &#39;</span>
+        <span class="sa">f</span><span class="s1">&#39;then used in validation. For validation only the &#39;</span>
+        <span class="sa">f</span><span class="s1">&#39;columns from `data_model.cumulative_columns` are used. &#39;</span>
+        <span class="sa">f</span><span class="s1">&#39;Missing: </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">column_diff</span><span class="p">)</span><span class="si">}</span><span class="s1">&#39;</span>
+        <span class="p">)</span>
+
+<span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cumulative_columns</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">thresholds_dict</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Column name: </span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2"> found in data_model.cumulative_columns &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;that is not present in the `thresholds.csv`.&quot;</span>
+            <span class="p">)</span>
+
+    <span class="c1"># These validators will be added only to the index.parquet file</span>
+    <span class="c1"># because they validate the complete file, not each column/row</span>
+    <span class="n">dataset_flag_conditions</span><span class="p">[</span><span class="s2">&quot;validate_&quot;</span> <span class="o">+</span> <span class="n">col</span><span class="p">]</span> <span class="o">=</span> \
+        <span class="n">create_validate_func_col</span><span class="p">(</span><span class="n">col</span><span class="p">,</span> <span class="n">thresholds_dict</span><span class="p">)</span>
+
+    <span class="c1"># note that the household.parquet files also contain a column</span>
+    <span class="c1"># &quot;validate_&quot; + col + &quot;Diff&quot;, but these are from the</span>
+    <span class="c1"># record_validators (from validate + col in record_validators)</span>
+    <span class="c1"># plus the col_Diff from the theshold file.</span>
+    <span class="n">dataset_flag_conditions</span><span class="p">[</span><span class="s2">&quot;validate_&quot;</span> <span class="o">+</span> <span class="n">col</span> <span class="o">+</span> <span class="s2">&quot;Diff&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">create_validate_func_outliers_neg_cum</span><span class="p">(</span><span class="n">col</span><span class="p">)</span>
+    <span class="p">)</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Nicolas Dickinson, Marten Witkamp, Petra Izeboud.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

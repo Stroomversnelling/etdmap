@@ -1,0 +1,505 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>etdmap.record_validators &mdash; etdmap - &#34;Energietransitie Dataset&#34; mapping package 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            etdmap - "Energietransitie Dataset" mapping package
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Functions</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/modules.html">etdmap</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">etdmap - "Energietransitie Dataset" mapping package</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">etdmap.record_validators</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for etdmap.record_validators</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataFrame</span><span class="p">,</span> <span class="n">Series</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">etdmap.data_model</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">cumulative_columns</span><span class="p">,</span>
+    <span class="n">load_thresholds</span><span class="p">,</span>
+    <span class="n">load_thresholds_as_dict</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">It contains functions &amp; script that generates a dictionary</span>
+<span class="sd">with the names of column and the corresponding validator functions.</span>
+<span class="sd">They check for each record individually if the values are:</span>
+<span class="sd">- are within the thresholds</span>
+<span class="sd">- don&#39;t have statistical outliers</span>
+
+<span class="sd">Using these functions, new boolean columns can be</span>
+<span class="sd">created that can be used to get insight in the data. The columns are:</span>
+<span class="sd">- &#39;validate_&#39; + col + &#39;Diff_outliers&#39; (statistical for cumulative columns)</span>
+<span class="sd">- &#39;validate&#39;+ col (thresholds for both cumulative and diff/delta columns)</span>
+<span class="sd">- &#39;validate_combined&#39; (checks for each row if any value</span>
+<span class="sd">    is outside of thresholds)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="validate_thresholds_combined">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.validate_thresholds_combined">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_thresholds_combined</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Per row, determine if at least one value fall outside of the Thresholds.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : pd.DataFrame</span>
+<span class="sd">        Dataframe with columns to be checked.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.Series</span>
+<span class="sd">        Booleans, True when at least one value is outside bounds.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">thresholds_dict</span><span class="p">]</span>
+
+    <span class="n">ge_masks</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="n">col</span><span class="p">:</span> <span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Min&#39;</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">notna</span><span class="p">(</span><span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Min&#39;</span><span class="p">])</span>
+            <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">columns</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
+    <span class="n">le_masks</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="n">col</span><span class="p">:</span> <span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Max&#39;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">notna</span><span class="p">(</span><span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Max&#39;</span><span class="p">])</span>
+            <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">columns</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
+
+    <span class="n">valid_masks</span> <span class="o">=</span> <span class="p">(</span><span class="n">ge_masks</span> <span class="o">&amp;</span> <span class="n">le_masks</span><span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">valid_combined</span> <span class="o">=</span> <span class="n">valid_masks</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="c1"># All relevant columns have NA values (set to pd.NA)</span>
+    <span class="n">all_na_rows</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">columns</span><span class="p">]</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">valid_combined</span><span class="p">[</span><span class="n">all_na_rows</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span>
+
+    <span class="c1"># Replace any NaN with pd.NA explicitly - Need to check if no edge cases are missed - will delete this later</span>
+    <span class="c1"># valid_combined = valid_combined.where(pd.notna(valid_combined), pd.NA)</span>
+
+    <span class="k">return</span> <span class="n">valid_combined</span></div>
+
+
+
+<div class="viewcode-block" id="get_columns_threshold_validator">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.get_columns_threshold_validator">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_columns_threshold_validator</span><span class="p">(</span><span class="n">cols</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Get a validator function for thresholds of specified columns.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cols : list</span>
+<span class="sd">        List of column names to validate.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    function</span>
+<span class="sd">        A function that validates thresholds for the specified columns.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="k">lambda</span> <span class="n">df</span><span class="p">:</span> <span class="n">validate_thresholds_combined</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">cols</span><span class="p">])</span></div>
+
+
+
+<div class="viewcode-block" id="condition_func_threshold">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.condition_func_threshold">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">condition_func_threshold</span><span class="p">(</span><span class="n">col</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Define condition function for column based on min, max from thresholdscsv.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    col : str</span>
+<span class="sd">        Column name for which the function holds.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    function or None</span>
+<span class="sd">        Condition function for the specified column, or None if the column is not in the thresholds dictionary.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">col</span> <span class="ow">in</span> <span class="n">thresholds_dict</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">condition_func</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span>
+                    <span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Min&#39;</span><span class="p">])</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Min&#39;</span><span class="p">])</span>
+                <span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span>
+                    <span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Max&#39;</span><span class="p">])</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">&#39;Max&#39;</span><span class="p">])</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="n">condition_func</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Cannot generate function: no column named </span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2"> in the thresholds dictionary&quot;</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="validate_columns">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.validate_columns">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_columns</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span> <span class="n">columns</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">condition_func</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Series</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Helper function to validate columns with a given condition function.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The DataFrame containing the columns to validate.</span>
+<span class="sd">    columns : list</span>
+<span class="sd">        List of column names to validate.</span>
+<span class="sd">    condition_func : function</span>
+<span class="sd">        The condition function to apply for validation.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Series</span>
+<span class="sd">        A boolean Series indicating which rows meet the condition.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">):</span>
+        <span class="n">valid_mask</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">columns</span><span class="p">]</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">condition</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">NA</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;boolean&#39;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">condition</span><span class="p">[</span><span class="n">valid_mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">condition_func</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">valid_mask</span><span class="p">,</span> <span class="n">columns</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">condition</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Cannot validate columns </span><span class="si">{</span><span class="n">columns</span><span class="si">}</span><span class="s2">: At least one is not available in the DataFrame.&quot;</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">NA</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;boolean&#39;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="validate_reading_date_uniek">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.validate_reading_date_uniek">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_reading_date_uniek</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Series</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that ReadingDate column has only unique values.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The DataFrame to validate.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Series</span>
+<span class="sd">        A boolean Series indicating which rows have unique ReadingDate values.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># df[&#39;ReadingDate&#39;] should only have unique values</span>
+    <span class="k">return</span> <span class="o">~</span><span class="n">df</span><span class="o">.</span><span class="n">duplicated</span><span class="p">(</span><span class="n">subset</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">])</span></div>
+
+
+
+<div class="viewcode-block" id="validate_300sec">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.validate_300sec">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_300sec</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Series</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that the time difference between consecutive ReadingDate values is 300 seconds.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The DataFrame to validate.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Series</span>
+<span class="sd">        A boolean Series indicating which rows have a 300-second difference from the previous row.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[</span><span class="s1">&#39;ReadingDateDiff&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;ReadingDate&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span>
+    <span class="n">column</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;ReadingDateDiff&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">condition_func</span><span class="p">(</span><span class="n">df</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;ReadingDateDiff&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">300</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="n">validate_columns</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">column</span><span class="p">,</span> <span class="n">condition_func</span><span class="p">)</span>
+    <span class="n">df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;ReadingDateDiff&#39;</span><span class="p">],</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+
+<div class="viewcode-block" id="validate_elektriciteitgebruik">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.validate_elektriciteitgebruik">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_elektriciteitgebruik</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Series</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that ElektriciteitsgebruikHuishoudelijk is less than or equal to the sum of Zon-opwekTotaal,</span>
+<span class="sd">    ElektriciteitNetgebruikHoog, and ElektriciteitNetgebruikLaag.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The DataFrame to validate.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Series</span>
+<span class="sd">        A boolean Series indicating which rows meet the condition.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">columns</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s1">&#39;ElektriciteitsgebruikHuishoudelijk&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;Zon-opwekTotaal&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;ElektriciteitNetgebruikHoog&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;ElektriciteitNetgebruikLaag&#39;</span><span class="p">,</span>
+    <span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">condition_func</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">df</span><span class="p">[</span><span class="s1">&#39;ElektriciteitsgebruikHuishoudelijk&#39;</span><span class="p">]</span>
+            <span class="o">&lt;=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;Zon-opwekTotaal&#39;</span><span class="p">]</span>
+            <span class="o">+</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;ElektriciteitNetgebruikHoog&#39;</span><span class="p">]</span>
+            <span class="o">+</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;ElektriciteitNetgebruikLaag&#39;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">validate_columns</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">columns</span><span class="p">,</span> <span class="n">condition_func</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="validate_warmteproductie">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.validate_warmteproductie">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_warmteproductie</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Series</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that WarmteproductieWarmtepomp is greater than or equal to WarmteproductieWarmTapwater.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The DataFrame to validate.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Series</span>
+<span class="sd">        A boolean Series indicating which rows meet the condition.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;WarmteproductieWarmtepomp&#39;</span><span class="p">,</span> <span class="s1">&#39;WarmteproductieWarmTapwater&#39;</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">condition_func</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;WarmteproductieWarmtepomp&#39;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;WarmteproductieWarmTapwater&#39;</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">validate_columns</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">columns</span><span class="p">,</span> <span class="n">condition_func</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="validate_not_outliers">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.validate_not_outliers">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_not_outliers</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Validate that values in the DataFrame are not outliers.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    x : pd.DataFrame</span>
+<span class="sd">        A DataFrame with one column to check for outliers.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Series</span>
+<span class="sd">        A boolean Series indicating which values are not outliers.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If the input is not a DataFrame with one column.</span>
+<span class="sd">    TypeError</span>
+<span class="sd">        If the column contains non-numeric values.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Input must be a pandas DataFrame with one column.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Convert DataFrame to Series</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_numeric_dtype</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+        <span class="n">unique_values</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">unique</span><span class="p">()</span>
+
+        <span class="n">non_numeric_values</span> <span class="o">=</span> <span class="n">unique_values</span><span class="p">[</span><span class="o">~</span><span class="n">unique_values</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_number</span><span class="p">)]</span>
+
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Trying to validate outliers for a non-numerical type in Series: </span><span class="si">{</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2">. &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Non-numeric values found: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span><span class="w"> </span><span class="n">non_numeric_values</span><span class="p">))</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">x</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">x</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">]</span>
+    <span class="n">q1</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="mf">0.25</span><span class="p">)</span>
+    <span class="n">q3</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="mf">0.75</span><span class="p">)</span>
+    <span class="n">iqr</span> <span class="o">=</span> <span class="n">q3</span> <span class="o">-</span> <span class="n">q1</span>
+    <span class="n">lower_bound</span> <span class="o">=</span> <span class="n">q1</span> <span class="o">-</span> <span class="mf">1.5</span> <span class="o">*</span> <span class="n">iqr</span>
+    <span class="n">upper_bound</span> <span class="o">=</span> <span class="n">q3</span> <span class="o">+</span> <span class="mf">1.5</span> <span class="o">*</span> <span class="n">iqr</span>
+    <span class="k">return</span> <span class="o">~</span><span class="p">((</span><span class="n">x</span> <span class="o">&lt;</span> <span class="n">lower_bound</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">x</span> <span class="o">&gt;</span> <span class="n">upper_bound</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="create_validate_momentaan">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.create_validate_momentaan">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_validate_momentaan</span><span class="p">(</span>
+        <span class="n">columns_5min_momentaan</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
+        <span class="n">record_flag_conditions</span><span class="p">:</span> <span class="nb">dict</span>
+        <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Create validation functions for momentary columns and add them to the record_flag_conditions dictionary.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    columns_5min_momentaan : list</span>
+<span class="sd">        List of column names for momentary data.</span>
+<span class="sd">    record_flag_conditions : dict</span>
+<span class="sd">        Dictionary to store the validation functions.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">columns_5min_momentaan</span><span class="p">:</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">validate_momentaan</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span> <span class="n">col</span><span class="o">=</span><span class="n">col</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Series</span><span class="p">:</span>
+            <span class="c1"># Checks thresholds</span>
+            <span class="n">condition_func</span> <span class="o">=</span> <span class="n">condition_func_threshold</span><span class="p">(</span><span class="n">col</span><span class="p">)</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">validate_columns</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">condition_func</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">result</span>
+        <span class="n">record_flag_conditions</span><span class="p">[</span><span class="s1">&#39;validate_&#39;</span> <span class="o">+</span> <span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">validate_momentaan</span></div>
+
+
+
+<div class="viewcode-block" id="create_validate_cumulative">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.record_validators.create_validate_cumulative">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_validate_cumulative</span><span class="p">(</span>
+        <span class="n">cumulative_columns</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
+        <span class="n">record_flag_conditions</span><span class="p">:</span> <span class="nb">dict</span>
+        <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Create validation functions for cumulative columns and add them to the record_flag_conditions dictionary.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cumulative_columns : list</span>
+<span class="sd">        List of column names for cumulative data.</span>
+<span class="sd">    record_flag_conditions : dict</span>
+<span class="sd">        Dictionary to store the validation functions.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># loop to produce cumulative outlier validators per cumulative column</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cumulative_columns</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Creating </span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2"> outliers check&quot;</span><span class="p">)</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">validate_cumulative_outliers</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span> <span class="n">cum_col</span><span class="o">=</span><span class="n">col</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Series</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Checking </span><span class="si">{</span><span class="n">cum_col</span><span class="si">}</span><span class="s2"> outliers&quot;</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">result</span> <span class="o">=</span> <span class="n">validate_columns</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="p">[</span><span class="n">cum_col</span> <span class="o">+</span> <span class="s1">&#39;Diff&#39;</span><span class="p">],</span> <span class="n">validate_not_outliers</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">result</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error in </span><span class="si">{</span><span class="n">cum_col</span><span class="si">}</span><span class="s2"> outliers check&quot;</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">Exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error in </span><span class="si">{</span><span class="n">cum_col</span><span class="si">}</span><span class="s2"> outliers check: </span><span class="si">{</span><span class="n">e</span><span class="si">!s}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># noqa: B904</span>
+
+        <span class="n">record_flag_conditions</span><span class="p">[</span><span class="s1">&#39;validate_&#39;</span> <span class="o">+</span> <span class="n">col</span> <span class="o">+</span> <span class="s1">&#39;Diff_outliers&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">validate_cumulative_outliers</span></div>
+
+
+<span class="n">thresholds_df</span> <span class="o">=</span> <span class="n">load_thresholds</span><span class="p">()</span>
+<span class="n">thresholds_dict</span> <span class="o">=</span> <span class="n">load_thresholds_as_dict</span><span class="p">()</span>
+<span class="c1"># Combine all specific validators into the dictionary</span>
+<span class="n">record_flag_conditions</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">&#39;validate_reading_date_uniek&#39;</span><span class="p">:</span> <span class="n">validate_reading_date_uniek</span><span class="p">,</span>
+    <span class="s1">&#39;validate_300sec&#39;</span><span class="p">:</span> <span class="n">validate_300sec</span><span class="p">,</span>
+    <span class="c1">#&#39;validate_zonopwek_totaal_tegen_gebruik&#39;: validate_zonopwek_totaal_tegen_gebruik,</span>
+    <span class="s1">&#39;validate_elektriciteitgebruik&#39;</span><span class="p">:</span> <span class="n">validate_elektriciteitgebruik</span><span class="p">,</span>
+    <span class="s1">&#39;validate_warmteproductie&#39;</span><span class="p">:</span> <span class="n">validate_warmteproductie</span><span class="p">,</span>
+    <span class="s1">&#39;validate_thresholds_combined&#39;</span><span class="p">:</span> <span class="n">validate_thresholds_combined</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="n">columns_5min_momentaan</span> <span class="o">=</span> <span class="n">thresholds_df</span><span class="p">[</span>
+    <span class="n">thresholds_df</span><span class="p">[</span><span class="s1">&#39;VariabelType&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">([</span><span class="s1">&#39;5-minute&#39;</span><span class="p">,</span> <span class="s1">&#39;momentaan&#39;</span><span class="p">])</span>
+    <span class="p">][</span><span class="s1">&#39;Variabele&#39;</span><span class="p">]</span>
+
+<span class="n">create_validate_momentaan</span><span class="p">(</span><span class="n">columns_5min_momentaan</span><span class="p">,</span> <span class="n">record_flag_conditions</span><span class="p">)</span>
+<span class="n">create_validate_cumulative</span><span class="p">(</span><span class="n">cumulative_columns</span><span class="p">,</span> <span class="n">record_flag_conditions</span><span class="p">)</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Nicolas Dickinson, Marten Witkamp, Petra Izeboud.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
