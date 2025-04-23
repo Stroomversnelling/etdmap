@@ -18,7 +18,7 @@ test_output.txt
 
 # gitignore exceptions to above extensions
 !.\data\thresholds.csv
-!.\config_test_template.yaml
+!config_test_template.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
