@@ -1,51 +1,133 @@
-﻿Entiteit,Variabele,Key,Type variabele,Vereist,Resolutie,Wie vult?,Bron,Definitie,AVG gevoelig
-Metadata,ProjectIdBSV,nee,integer,nee,vaste waarde,Stroomversnelling,Stroomversnelling,code toegekend door Stroomversnelling,nee
-Metadata,ProjectIdLeverancier,nee,string,ja,vaste waarde,Dataleverancier,Dataleverancier,code toegekend door dataleverancier,ja
-Metadata,HuisIdBSV,nee,integer,nee,vaste waarde,Stroomversnelling,Stroomversnelling,code toegekend door Stroomversnelling,nee
-Metadata,HuisIdLeverancier,ja,string,ja,vaste waarde,Dataleverancier,Dataleverancier,code toegekend door dataleverancier,ja
-Metadata,Weerstation,nee,string,ja,vaste waarde,Dataleverancier,Dataleverancier,dichtstbijzijnde KNMI weerstation,nee
-Metadata,Oppervlakte,nee,integer,ja,vaste waarde,Dataleverancier,BAG / EP-online / Energielabel / Vabi,"Ag, oftewel m2 gebruiksoppervlak",nee
-Metadata,Compactheid,nee,number,ja,vaste waarde,Dataleverancier,EP-online / Energielabel,"Als/Ag, oftewel m2 verliesoppervlak / m2 gebruiksoppervlak",nee
-Metadata,Warmtebehoefte,nee,number,ja,vaste waarde,Dataleverancier,EP-online / Energielabel,"kWh_th/m2/jr, volgens NTA8800",nee
-Metadata,PrimairFossielGebruik,nee,number,ja,vaste waarde,Dataleverancier,EP-online / Energielabel,"kWh/m2/jr, volgens NTA8800",nee
-Metadata,Bouwjaar,nee,integer,ja,vaste waarde,Dataleverancier,BAG/Vabi,Oorspronkelijk bouwjaar,nee
-Metadata,Renovatiejaar,nee,integer,ja,vaste waarde,Dataleverancier,Vabi,Jaar van renovatie,nee
-Metadata,WoningType,nee,string,ja,vaste waarde,Dataleverancier,Dataleverancier,"Wat voor woningbouw is het? Kiezen uit: EGW, MGW",nee
-Metadata,WoningTypeDetail,nee,string,nee,vaste waarde,Dataleverancier,Dataleverancier,"Wat voor woningbouw is het? Kiezen uit: Tussenwoning, Hoekwoning, 2-onder-1-kap, Vrijstaand, Portieketage, Galerij, Anders",nee
-Metadata,WarmteopwekkerType,nee,string,nee,vaste waarde,Dataleverancier,Dataleverancier,Merk en productcode van warmtepomp of andere warmteopwekker,nee
-Metadata,WarmteopwekkerCategorie,nee,string,ja,vaste waarde,Dataleverancier,Dataleverancier,"Hoe wordt verwarmd? Kiezen uit: Hybride warmtepomp, Lucht-water warmtepomp, Water-water warmtepomp, Lucht-lucht warmtepomp, Anders",nee
-Metadata,Warmteopwekker,nee,string,ja,vaste waarde,Dataleverancier,Dataleverancier,"Hoe wordt verwarmd? Kiezen uit: Collectief, Individueel",nee
-Metadata,Ventilatiesysteem,nee,string,ja,vaste waarde,Dataleverancier,Dataleverancier,"Hoe wordt geventileerd? Kiezen uit: Natuurlijke ventilatie, Type C, Type D, Type E",nee
-Metadata,Kookinstallatie,nee,string,ja,vaste waarde,Dataleverancier,Dataleverancier,"Hoe wordt gekookt? Kiezen uit: Gas, Inductie, Anders",nee
-Metadata,PVJaarbundel,nee,string,nee,vaste waarde,Dataleverancier,Dataleverancier,Contractueel aan bewoner gegarandeerde PV opwek (indien van toepassing). ,nee
-Metadata,PVMerk,nee,string,nee,vaste waarde,Dataleverancier,Dataleverancier,Merk van de geplaatste PV panelen.,nee
-Metadata,PVType,nee,string,nee,vaste waarde,Dataleverancier,Dataleverancier,Producttype van de geplaatste PV panelen.,nee
-Metadata,PVAantalPanelen,nee,integer,nee,vaste waarde,Dataleverancier,Dataleverancier,Aantal geplaatste PV panelen.,nee
-Metadata,PVWattpiekPerPaneel,nee,integer,nee,vaste waarde,Dataleverancier,Dataleverancier,Wattpiek per paneel van de geplaatste panelen.,nee
-Metadata,EPV,nee,string,ja,vaste waarde,Dataleverancier,Dataleverancier,"Wordt EPV geïnd? Kiezen uit: EPV 1.0, EPV 2.0 Basis, EPV 2.0 Hoogwaardig, Nee, Niet bekend",nee
-Metadata,GasgebruikVoorRenovatie,nee,integer,nee,vaste waarde,Dataleverancier,Dataleverancier,"Indien bekend, wat was het jaarlijkse gasgebruik voor renovatie?",ja
-Metadata,ElektriciteitVoorRenovatie,nee,integer,nee,vaste waarde,Dataleverancier,Dataleverancier,"Indien bekend, wat was het jaarlijkse elektriciteitsgebruik voor renovatie?",ja
-Prestatiedata,HuisIdBSV,nee,integer,nee,vaste waarde,Stroomversnelling,Stroomversnelling,code toegekend door Stroomversnelling,nee
-Prestatiedata,HuisIdLeverancier,ja,string,ja,vaste waarde,Dataleverancier,Dataleverancier,code toegekend door dataleverancier,ja
-Prestatiedata,ReadingDate,nee,date,ja,5 minuten,Dataleverancier,Gateway / Portal,Format: YYYY-MM-DD HH:MM:SS,ja
-Prestatiedata,ElektriciteitNetgebruikHoog,nee,number,ja,5 minuten,Dataleverancier,Slimme meter,kWh (cumulatief),ja
-Prestatiedata,ElektriciteitNetgebruikLaag,nee,number,ja,5 minuten,Dataleverancier,Slimme meter,kWh (cumulatief),ja
-Prestatiedata,ElektriciteitTerugleveringHoog,nee,number,ja,5 minuten,Dataleverancier,Slimme meter,kWh (cumulatief),ja
-Prestatiedata,ElektriciteitTerugleveringLaag,nee,number,ja,5 minuten,Dataleverancier,Slimme meter,kWh (cumulatief),ja
-Prestatiedata,ElektriciteitVermogen,nee,number,nee,5 minuten,Dataleverancier,Slimme meter,W (momentaan),ja
-Prestatiedata,Gasgebruik,nee,number,nee,5 minuten,Dataleverancier,Slimme meter,m3 (cumulatief),ja
-Prestatiedata,ElektriciteitsgebruikWTW,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,kWh (cumulatief),ja
-Prestatiedata,ElektriciteitsgebruikWarmtepomp,nee,number,ja,5 minuten,Dataleverancier,Gateway / Portal,kWh (cumulatief),ja
-Prestatiedata,ElektriciteitsgebruikBooster,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,kWh (cumulatief) (booster zit in warmtepomp),ja
-Prestatiedata,ElektriciteitsgebruikBoilervat,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,kWh (cumulatief) (spiraal in boilervat),ja
-Prestatiedata,ElektriciteitsgebruikHuishoudelijk,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,kWh (cumulatief),ja
-Prestatiedata,TemperatuurWarmTapwater,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,graden C (momentaan),ja
-Prestatiedata,TemperatuurWoonkamer,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,graden C (momentaan),ja
-Prestatiedata,TemperatuurSetpointWoonkamer,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,graden C (momentaan),ja
-Prestatiedata,WarmteproductieWarmtepomp,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,GJ (cumulatief),ja
-Prestatiedata,WatergebruikWarmTapwater,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,liter (cumulatief),ja
-Prestatiedata,Zon-opwekMomentaan,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,kW (momentaan),ja
-Prestatiedata,Zon-opwekTotaal,nee,number,ja,5 minuten,Dataleverancier,Gateway / Portal,kWh (cumulatief),ja
-Prestatiedata,CO2,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ppm (momentaan),ja
-Prestatiedata,Luchtvochtigheid,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,% relatieve luchtvochtigheid (momentaan),ja
-Prestatiedata,Ventilatiedebiet,nee,number,nee,5 minuten,Dataleverancier,Gateway / Portal,m3/uur (momentaan),ja
+Entiteit,Variabele,Key,Eenheid,Leverancier,ETD  intern,ETD extern,Type variabele,Vereist,Resolutie,Wie vult?,Bron,Cumulatief,Momentaan,Definitie,AVG gevoelig,Test,KNMI
+Metadata,ProjectIdBSV,ja,,nee,ja,ja,integer,ja,vaste waarde,ETD,Stroomversnelling,nee,nee,code toegekend door Stroomversnelling,nee,Bestaat in BSVMetadata,
+Metadata,ProjectIdLeverancier,ja,,ja,ja,nee,string,ja,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,code toegekend door dataleverancier,ja,elke dataleverancier code heeft een ProjectIdBSV,
+Metadata,HuisIdBSV,ja,,nee,ja,ja,integer,ja,vaste waarde,ETD,Stroomversnelling,nee,nee,code toegekend door Stroomversnelling,nee,Bestaat in BSVMetadata,
+Metadata,HuisIdLeverancier,ja,,ja,ja,nee,string,ja,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,code toegekend door dataleverancier,ja,elke dataleverancier code heeft een HuisIdBSV,
+Metadata,Weerstation,nee,,ja,nee,ja,string,ja,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,dichtstbijzijnde KNMI weerstation,nee,Bestaat in lijst van KNMI weerstations,
+Metadata,Oppervlakte,nee,,ja,nee,ja,integer,ja,vaste waarde,Dataleverancier,BAG / EP-online / Energielabel / Vabi,nee,nee,"Ag, oftewel m2 gebruiksoppervlak",nee,Controleer drempelwaarde,
+Metadata,Compactheid,nee,,ja,nee,ja,number,ja,vaste waarde,Dataleverancier,EP-online / Energielabel,nee,nee,"Als/Ag, oftewel m2 verliesoppervlak / m2 gebruiksoppervlak",nee,Controleer drempelwaarde,
+Metadata,Warmtebehoefte,nee,,ja,nee,ja,number,ja,vaste waarde,Dataleverancier,EP-online / Energielabel,nee,nee,"kWh_th/m2/jr, volgens NTA8800",nee,Controleer drempelwaarde,
+Metadata,PrimairFossielGebruik,nee,,ja,nee,ja,number,ja,vaste waarde,Dataleverancier,EP-online / Energielabel,nee,nee,"kWh/m2/jr, volgens NTA8800",nee,Controleer drempelwaarde,
+Metadata,Eigenaarschap,nee,,ja,nee,ja,number,ja,vaste waarde,Dataleverancier,EP-online / Energielabel,nee,nee,"Kiezen uit: Woningcorporatie, Particulier, Particuliere Verhuur, Overheid, Anders",nee,,
+Metadata,Nieuwheid,nee,,ja,nee,ja,number,ja,vaste waarde,Dataleverancier,EP-online / Energielabel,nee,nee,"Kiezen uit: Nieuwbouw, Renovatie",nee,,
+Metadata,Bouwjaar,nee,,ja,nee,ja,integer,ja,vaste waarde,Dataleverancier,BAG/Vabi,nee,nee,Oorspronkelijk bouwjaar,nee,Is het een jaar getal,
+Metadata,Renovatiejaar,nee,,ja,nee,ja,integer,ja,vaste waarde,Dataleverancier,Vabi,nee,nee,Jaar van renovatie,nee,Is het een jaar getal,
+Metadata,WoningType,nee,,ja,nee,ja,string,ja,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Wat voor woningbouw is het? Kiezen uit: EGW, MGW",nee,EGW of MGW,
+Metadata,WoningTypeDetail,nee,,ja,nee,ja,string,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Wat voor woningbouw is het? Kiezen uit: Tussenwoning, Hoekwoning, 2-onder-1-kap, Vrijstaand, Portieketage, Galerij, Anders",nee,"Tussenwoning, Hoekwoning, 2-onder-1-kap, Vrijstaand, Portieketage, Galerij, Anders",
+Metadata,WarmteopwekkerType,nee,,ja,nee,ja,string,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,Merk en productcode van warmtepomp of andere warmteopwekker,nee,Geen test of LLM test?,
+Metadata,WarmtepompKoudemiddel,nee,,ja,nee,ja,string,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,Het door een eventuele warmtepomp gebruikte koudemiddel,nee,,
+Metadata,WarmtepompVermogenTh,nee,,ja,nee,ja,number,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"In kW, met één decimaal. Het door de fabrikant in reclame-uitingen vermelde thermische vermogen van de warmtepomp(combinatie). ",nee,,
+Metadata,WarmtepompElElement,nee,,ja,nee,ja,boolean,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Ja/Nee. Of de warmtepomp (inclusief boilervat/thermische opslag) een elektrisch element heeft, oftewel een booster.",nee,,
+Metadata,WarmtepompElAansluiting,nee,,ja,nee,ja,string,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Kiezen uit: 1) 16A, 2)2x16A, 3) Grotere aansluiting. Dit betreft de aansluiting van warmtepomp inclusief boiler/thermische opslag. ",nee,,
+Metadata,WarmtepompBron,nee,,ja,nee,ja,string,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Kiezen uit: 1) Lucht, 2) Bodem verticaal, 3) Bodem horizontaal, 4), Bronnet, 5) PVT, 6) Anders",nee,,
+Metadata,WarmteopwekkerCategorie,nee,,ja,nee,ja,string,ja,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Hoe wordt verwarmd? Kiezen uit: Hybride warmtepomp, Lucht-water warmtepomp, Water-water warmtepomp, Lucht-lucht warmtepomp, Anders",nee,"Hybride warmtepomp, Lucht-water warmtepomp, Water-water warmtepomp, Lucht-lucht warmtepomp, Anders",
+Metadata,Warmteopwekker,nee,,ja,nee,ja,string,ja,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Hoe wordt verwarmd? Kiezen uit: Collectief, Individueel",nee,"Collectief, Individueel",
+Metadata,BoilervatVolume,nee,,ja,nee,ja,number,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,In liter. Volume van het boilervat of volume-equivalent van thermische opslag.,nee,,
+Metadata,AfgiftesysteemCategorie,nee,,ja,nee,ja,string,ja,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Hoe wordt warmte aan de woning afgegeven? Kiezen uit: Radiator, LT Radiator, Convector, LT Convector, Vloerverwarming, Lucht, Infrarood, Anders",nee,,
+Metadata,Ventilatiesysteem,nee,,ja,nee,ja,string,ja,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Hoe wordt geventileerd? Kiezen uit: Natuurlijke ventilatie, Type C, Type D, Type E",nee,"Natuurlijke ventilatie, Type C, Type D, Type E",
+Metadata,Kookinstallatie,nee,,ja,nee,ja,string,ja,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Hoe wordt gekookt? Kiezen uit: Gas, Inductie, Anders",nee,"Gas, Inductie, Anders",
+Metadata,PVJaarbundel,nee,,ja,nee,ja,string,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,Contractueel aan bewoner gegarandeerde PV opwek (indien van toepassing). ,nee,?,
+Metadata,PVMerk,nee,,ja,nee,ja,string,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,Merk van de geplaatste PV panelen.,nee,?,
+Metadata,PVType,nee,,ja,nee,ja,string,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,Producttype van de geplaatste PV panelen; productnummer,nee,?,
+Metadata,PVAantalPanelen,nee,,ja,nee,ja,integer,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,Aantal geplaatste PV panelen.,nee,?,
+Metadata,PVWattpiekPerPaneel,nee,,ja,nee,ja,number,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,Wattpiek per paneel van de geplaatste panelen.,nee,?,
+Metadata,EPV,nee,,ja,nee,ja,string,ja,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Wordt EPV geïnd? Kiezen uit: EPV 1.0, EPV 2.0 Basis, EPV 2.0 Hoogwaardig, Nee, Niet bekend",nee,"EPV 1.0, EPV 2.0 Basis, EPV 2.0 Hoogwaardig, Nee, Niet bekend",
+Metadata,GasgebruikVoorRenovatie,nee,,ja,nee,nee,integer,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Indien bekend, wat was het jaarlijkse gasgebruik voor renovatie?",ja,Controleer drempelwaarde,
+Metadata,ElektriciteitVoorRenovatie,nee,,ja,nee,nee,integer,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Indien bekend, wat was het jaarlijkse elektriciteitsgebruik voor renovatie?",ja,Controleer drempelwaarde,
+Metadata,DakType,nee,,ja,nee,ja,string,nee,vaste waarde,Dataleverancier,Dataleverancier,nee,nee,"Wat voor dak? Kiezen uit: Plat, Zadel of Anders",nee,"Plat, Zadel of Anders",
+Metadata,Meenemen,nee,,nee,ja,nee,,ja,,ETD,,nee,nee,Nemen we dit huis op in de data-analyse? Kiezen uit: TRUE of FALSE,nee,TRUE of FALSE,
+Metadata,Notities,nee,,nee,ja,nee,,nee,,ETD,,nee,nee,Notities over data; bijvoorbeeld reden om niet mee te nemen,nee,Als Meenemen = TRUE; dan moet er een notitie zijn (niet leeg),
+Metadata,Dataleverancier,nee,,nee,ja,nee,,ja,,ETD,,nee,nee,Naam dataleverancier,nee,?,
+MetadataBerekend,VerliesOppervlak,nee,,nee,nee,ja,number,nee,vaste waarde,Berekend,Berekend,nee,nee,Compactheid * Oppervlakte,nee,? ,
+Prestatiedata,ReadingDate,nee,,ja,nee,ja,date,ja,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,Format: YYYY-MM-DD HH:MM:SS,ja,Vereist; Controleer datum / leesbaarheid,
+Prestatiedata,ElektriciteitNetgebruikHoog,nee,kWh,ja,nee,ja,number,ja,5 minuten,Dataleverancier,Slimme meter,ja,nee,kWh,ja,"Vereist; Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,ElektriciteitNetgebruikLaag,nee,kWh,ja,nee,ja,number,ja,5 minuten,Dataleverancier,Slimme meter,ja,nee,kWh,ja,"Vereist; Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,ElektriciteitTerugleveringHoog,nee,kWh,ja,nee,ja,number,ja,5 minuten,Dataleverancier,Slimme meter,ja,nee,kWh,ja,"Vereist; Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,ElektriciteitTerugleveringLaag,nee,kWh,ja,nee,ja,number,ja,5 minuten,Dataleverancier,Slimme meter,ja,nee,kWh,ja,"Vereist; Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,ElektriciteitVermogen,nee,W,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,W,ja,Controleer drempelwaarde,
+Prestatiedata,SlimmemeterVoltageL1,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,V (volt) over fase 1,ja,,
+Prestatiedata,SlimmemeterVoltageL2,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,V (volt) over fase 2,ja,,
+Prestatiedata,SlimmemeterVoltageL3,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,V (volt) over fase 3,ja,,
+Prestatiedata,SlimmemeterStroomsterkteL1,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,A (ampère) over fase 1,ja,,
+Prestatiedata,SlimmemeterStroomsterkteL2,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,A (ampère) over fase 2,ja,,
+Prestatiedata,SlimmemeterStroomsterkteL3,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,A (ampère) over fase 3,ja,,
+Prestatiedata,Gasgebruik,nee,m3,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,ja,nee,m3,ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,ElektriciteitsgebruikWTW,nee,kWh,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh,ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,ElektriciteitsgebruikWarmtepomp,nee,kWh,ja,nee,ja,number,ja,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (door losse MID-kwaliteit kWh meter),ja,"Vereist; Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,ElektriciteitsgebruikWarmtepompIntern,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (door interne kWh meter),ja,,
+Prestatiedata,ElektriciteitsgebruikBooster,nee,kWh,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (elektrisch element in warmtepomp),ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,ElektriciteitsgebruikBoilervat,nee,kWh,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (spiraal in boilervat),ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,ElektriciteitsgebruikRadiator,nee,kWh,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (radiator),ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,TemperatuurBoilervat,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,"graden C (sensor in boilervat, vlakbij uitgang)",ja,Temperatuur kan niet snel toenemen,
+Prestatiedata,TemperatuurWarmTapwater,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,"graden C (sensor in leiding, vlakbij uitgang boilervat)",ja,Controleer drempelwaarde (temperatuur kan snel toenemen),
+Prestatiedata,TemperatuurWoonkamer,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door thermostaat),ja,Controleer drempelwaarde,
+Prestatiedata,TemperatuurSetpointWoonkamer,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C,ja,Controleer drempelwaarde,
+Prestatiedata,TemperatuurBinnenWTW,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door ventilatiesysteem),ja,,
+Prestatiedata,TemperatuurBuitenWTW,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door ventilatiesysteem),nee,,
+Prestatiedata,TemperatuurBuitenWarmtepomp,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door de warmtepomp),nee,,
+Prestatiedata,TemperatuurAfgifteAanvoer,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C,ja,,
+Prestatiedata,TemperatuurAfgifteRetour,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C,ja,,
+Prestatiedata,WarmteproductieWarmtepomp,nee,GJ,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,GJ (=WarmteproductieRuimteverwarming + WarmteproductieTapwater),ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,WarmteproductieRuimteverwarming,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,GJ,ja,,
+Prestatiedata,WarmteproductieWarmTapwater,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,GJ,ja,,
+Prestatiedata,WatergebruikWarmtepomp,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,"Debiet, in liter (=WatergebruikWarmTapwater + WatergebruikRuimteverwarming)",ja,,
+Prestatiedata,WatergebruikWarmTapwater,nee,liter,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,"Debiet, in liter",ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,WatergebruikRuimteverwarming,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,"Debiet, in liter (water blijft in circuit, 'gebruik' is eigenlijk geen goede term)",ja,,
+Prestatiedata,Mode,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,"0 = idle (stand-by)
+1 = warm tapwater
+2 = ruimteverwarming
+3 = ruimtekoeling
+4 = storing
+5 = ontdooicyclus
+6 = legionellacyclus",ja,Codes 3 en 4 zelf toegevoegd. Niet in data gezien. Niet bekend of dit compliant is met werkelijke warmtepompwaardes.,
+Prestatiedata,Zon-opwekMomentaan,nee,kW,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,kW (momentaan),ja,Controleer drempelwaarde,
+Prestatiedata,Zon-opwekTotaal,nee,kWh,ja,nee,ja,number,ja,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh,ja,"Vereist; Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
+Prestatiedata,CO2,nee,ppm,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,ppm (momentaan),ja,Controleer drempelwaarde,
+Prestatiedata,Luchtvochtigheid,nee,%,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,% relatieve luchtvochtigheid (momentaan),ja,Controleer drempelwaarde,
+Prestatiedata,Ventilatiedebiet,nee,m3 / uur,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,m3/uur (momentaan),ja,Controleer drempelwaarde,
+Omgevingsdata,ElektriciteitsprijsExcl,nee,,ja,nee,ja,number,nee,1 uur,Dataleverancier / ETD,Gateway / Portal,nee,ja,euro / kWh (EPEX prijs),nee,,
+Omgevingsdata,ElektriciteitsprijsIncl,nee,,ja,nee,ja,number,nee,1 uur,Dataleverancier / ETD,Gateway / Portal,nee,ja,"euro / kWh (all-in prijs, i.e. EPEX prijs plus btw, toeslagen)",nee,,
+Omgevingsdata,Windrichting,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Windrichting (in graden) gemiddeld over de laatste 10 minuten van het afgelopen uur (360=noord, 90=oost, 180=zuid, 270=west, 0=windstil 990=veranderlijk",nee,,DD
+Omgevingsdata,WindsnelheidUur,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Uurgemiddelde windsnelheid (in 0.1 m/s),nee,,FH
+Omgevingsdata,Windsnelheid10min,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Windsnelheid (in 0.1 m/s) gemiddeld over de laatste 10 minuten van het afgelopen uur,nee,,FF
+Omgevingsdata,WindsnelheidMax,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Hoogste windstoot (in 0.1 m/s) over het afgelopen uurvak ,nee,,FX
+Omgevingsdata,TemperatuurBuitenWeerstation,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Temperatuur (in 0.1 graden Celsius) op 1.50 m hoogte tijdens de waarneming ,nee,,T
+Omgevingsdata,TemperatuurBuitenMin6u,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Minimumtemperatuur (in 0.1 graden Celsius) op 10 cm hoogte in de afgelopen 6 uur ,nee,,T10N
+Omgevingsdata,TemperatuurDauwpunt,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Dauwpuntstemperatuur (in 0.1 graden Celsius) op 1.50 m hoogte tijdens de waarneming ,nee,,TD
+Omgevingsdata,ZonDuur,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Duur van de zonneschijn (in 0.1 uren) per uurvak, berekend uit globale straling (-1 for <0.05 uur) ",nee,,SQ
+Omgevingsdata,ZonStraling,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Globale straling (in J/cm2) per uurvak ,nee,,Q
+Omgevingsdata,NeerslagDuur,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Duur van de neerslag (in 0.1 uur) per uurvak ,nee,,DR
+Omgevingsdata,NeerslagHoeveelheid,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Uursom van de neerslag (in 0.1 mm) (-1 voor <0.05 mm) ,nee,,RH
+Omgevingsdata,Luchtdruk,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Luchtdruk (in 0.1 hPa) herleid naar zeeniveau, tijdens de waarneming ",nee,,P
+Omgevingsdata,Zicht,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Horizontaal zicht tijdens de waarneming (0=minder dan 100m, 1=100-200m, 2=200-300m,..., 49=4900-5000m, 50=5-6km, 56=6-7km, 57=7-8km, ..., 79=29-30km, 80=30-35km, 81=35-40km,..., 89=meer dan 70km) ",nee,,VV
+Omgevingsdata,Bewolking,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Bewolking (bedekkingsgraad van de bovenlucht in achtsten), tijdens de waarneming (9=bovenlucht onzichtbaar) ",nee,,N
+Omgevingsdata,LuchtvochtigheidWeerstation,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Relatieve vochtigheid (in procenten) op 1.50 m hoogte tijdens de waarneming ,nee,,U
+Omgevingsdata,Weercode,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Weercode (00-99), visueel(WW) of automatisch(WaWa) waargenomen, voor het actuele weer of het weer in het afgelopen uur. ",nee,,WW
+Omgevingsdata,WeercodeWaarneming,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Weercode indicator voor de wijze van waarnemen op een bemand of automatisch station (1=bemand gebruikmakend van code uit visuele waarnemingen, 2,3=bemand en weggelaten (geen belangrijk weersverschijnsel, geen gegevens), 4=automatisch en opgenomen (gebruikmakend van code uit visuele waarnemingen), 5,6=automatisch en weggelaten (geen belangrijk weersverschijnsel, geen gegevens), 7=automatisch gebruikmakend van code uit automatische waarnemingen) ",nee,,IX
+Omgevingsdata,Mist,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Mist 0=niet voorgekomen, 1=wel voorgekomen in het voorgaande uur en/of tijdens de waarneming ",nee,,M
+Omgevingsdata,Regen,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Regen 0=niet voorgekomen, 1=wel voorgekomen in het voorgaande uur en/of tijdens de waarneming ",nee,,R
+Omgevingsdata,Sneeuw,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Sneeuw 0=niet voorgekomen, 1=wel voorgekomen in het voorgaande uur en/of tijdens de waarneming ",nee,,S
+Omgevingsdata,Onweer,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Onweer 0=niet voorgekomen, 1=wel voorgekomen in het voorgaande uur en/of tijdens de waarneming ",nee,,O
+Omgevingsdata,IJsvorming,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Ijsvorming 0=niet voorgekomen, 1=wel voorgekomen in het voorgaande uur en/of tijdens de waarneming ",nee,,Y
+PrestatiedataBerekend,ElektriciteitNetgebruikHoogDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitNetgebruikHoog.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitNetgebruikLaagDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitNetgebruikLaag.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitTerugleveringHoogDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitTerugleveringHoog.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitTerugleveringLaagDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitTerugleveringLaag.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,GasgebruikDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,Gasgebruik.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikWTWDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikWTW.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikWarmtepompDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikWarmtepomp.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikBoosterDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikBooster.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikBoilervatDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikBoilervat.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,WarmteproductieWarmtepompDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,WarmteproductieWarmtepomp.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,WatergebruikWarmTapwaterDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,WatergebruikWarmTapwater.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,Zon-opwekTotaalDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,Zon-opwekTotaal.diff(),ja,Controleer drempelwaarde,
+PrestatiedataBerekend,TerugleveringTotaalNetto,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitTerugleveringLaagDiff + ElektriciteitTerugleveringHoogDiff,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikTotaalNetto,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitNetgebruikLaagDiff  + ElektriciteitNetgebruikHoogDiff,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,Netuitwisseling,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikTotaalNetto - TerugleveringTotaalNetto,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikTotaalWarmtepomp,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikWarmtepompDiff + ElektriciteitsgebruikBoosterDiff,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikTotaalGebouwgebonden,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikTotaalWarmtepomp + ElektriciteitsgebruikBoilervatDiff + ElektriciteitsgebruikWTWDiff + ElektriciteitsgebruikRadiatorDiff,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ZonopwekBruto,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,Zon-opwekTotaalDiff,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikTotaalHuishoudelijk,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,Netuitwisseling + ZonopwekBruto - ElektriciteitsgebruikTotaalGebouwgebonden,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,Zelfgebruik,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ZonopwekBruto - TerugleveringTotaalNetto,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikTotaalBruto,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikTotaalNetto + Zelfgebruik,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikRadiatorDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikRadiator.diff(),ja,Controleer drempelwaarde,

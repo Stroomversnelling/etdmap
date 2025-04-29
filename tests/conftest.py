@@ -109,7 +109,9 @@ def raw_data_fixture(tmp_path_factory):
                 diff_col = f"{col}Diff"
                 if diff_col in thresholds["Variabele"].values:
                     min_diff = thresholds.loc[thresholds["Variabele"] == diff_col, "Min"].values[0]
-                    max_diff = thresholds.loc[thresholds["Variabele"] == diff_col, "Max"].values[0] or default_max_value
+                    max_diff = thresholds.loc[thresholds["Variabele"] == diff_col, "Max"].values[0]
+                    if pd.isna(max_diff):
+                        max_diff = default_max_value
 
                     diffs = pd.Series(rng.uniform(min_diff, max_diff, size=num_records - 1), dtype="float64")
                     cumulative = pd.concat([pd.Series([0]), diffs.cumsum()], ignore_index=True)

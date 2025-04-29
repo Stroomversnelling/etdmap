@@ -4,7 +4,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
 
-from etdmap.data_model import cumulative_columns, model_column_order, model_column_type
+from etdmap.data_model import cumulative_columns, model_column_order, model_column_type, load_thresholds_as_dict
 from etdmap.index_helpers import get_mapped_data, read_index
 
 
@@ -845,3 +845,73 @@ def get_mapped_data_stats(multi=False, max_workers=2):
 
     except Exception as e:
         logging.error(f"Failed to complete the main process: {str(e)}", exc_info=True)
+
+def apply_thresholds_to_df(
+    df
+):
+    """
+    Apply thresholds to columns and update imputation flags.
+
+    This function applies lower and upper bounds to a column in the
+    DataFrame. Values outside these bounds are replaced with pd.NA.
+    """
+
+    thresholds_dict = load_thresholds_as_dict()
+
+    logging.info("Checking and removing any values outside of column thresholds.")
+    for col in df.columns:
+        if col in thresholds_dict:
+            df = apply_threshold_to_col(
+                df=df,
+                col=col,
+                lower_bound=thresholds_dict[col]["Min"],
+                upper_bound=thresholds_dict[col]["Max"]
+            )
+
+    return df
+
+def apply_threshold_to_col(
+    df,
+    col,
+    lower_bound,
+    upper_bound
+):
+    """
+    Apply thresholds to a column.
+
+    This function applies lower and upper bounds to a column in the
+    DataFrame. Values outside these bounds are replaced with pd.NA.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The input DataFrame containing the data.
+    col : str
+        The name of the column to apply thresholds to.
+    lower_bound : float
+        The lower threshold for the column.
+    upper_bound : float
+        The upper threshold for the column.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The DataFrame with thresholds applied.
+
+    Notes
+    -----
+    This function modifies the input DataFrame in-place and also returns it.
+    Values outside the thresholds are replaced with pd.NA.
+    """
+    mask = ((df[col] < lower_bound) | (df[col] > upper_bound)) & df[
+        col
+    ].notna()
+
+    n_out_of_bounds = mask.sum()
+
+    if n_out_of_bounds > 0:
+        logging.info(f"Removing {n_out_of_bounds} values from {col} based on thresholds.")
+
+    df.loc[mask, col] = pd.NA
+
+    return df

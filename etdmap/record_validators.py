@@ -193,7 +193,7 @@ def validate_300sec(df: DataFrame) -> Series:
 
 def validate_elektriciteitgebruik(df: DataFrame) -> Series:
     """
-    Validate that ElektriciteitsgebruikHuishoudelijk is less than or equal to the sum of Zon-opwekTotaal,
+    Validate that ElektriciteitsgebruikTotaalHuishoudelijk is less than or equal to the sum of Zon-opwekTotaal,
     ElektriciteitNetgebruikHoog, and ElektriciteitNetgebruikLaag.
 
     Parameters
@@ -207,7 +207,7 @@ def validate_elektriciteitgebruik(df: DataFrame) -> Series:
         A boolean Series indicating which rows meet the condition.
     """
     columns = [
-        'ElektriciteitsgebruikHuishoudelijk',
+        'ElektriciteitsgebruikTotaalHuishoudelijk',
         'Zon-opwekTotaal',
         'ElektriciteitNetgebruikHoog',
         'ElektriciteitNetgebruikLaag',
@@ -215,7 +215,7 @@ def validate_elektriciteitgebruik(df: DataFrame) -> Series:
 
     def condition_func(df: pd.DataFrame) -> bool:
         return (
-            df['ElektriciteitsgebruikHuishoudelijk']
+            df['ElektriciteitsgebruikTotaalHuishoudelijk']
             <= df['Zon-opwekTotaal']
             + df['ElektriciteitNetgebruikHoog']
             + df['ElektriciteitNetgebruikLaag']

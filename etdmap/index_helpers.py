@@ -321,18 +321,63 @@ def update_meenemen() -> pd.DataFrame:
 
     index_df, index_path = read_index()
 
-    # index_df.drop(columns=["Meenemen"], inplace=True)
-
     bsv_metadata_df = get_bsv_metadata()
 
-    # bsv_meenemen = bsv_metadata_df[["HuisIdBSV", "Meenemen"]]
-    # index_df = index_df.merge(bsv_meenemen, on=["HuisIdBSV"])
-    bsv_metadata_df.set_index("HuisIdBSV", inplace=True)
-    index_df.set_index('HuisIdBSV', inplace=True)
-    columns_for_update = bsv_metadata_df.columns.intersection(allowed_supplier_metadata_columns)
+    # Validate that all households have a corresponding row
+    index_key_columns = ["HuisIdBSV", "HuisIdLeverancier", "Dataleverancier"]
 
-    index_df.update(bsv_metadata_df.loc[:, columns_for_update])
-    index_df.reset_index(inplace=True)
+    metadata_keys_df = (
+        bsv_metadata_df[index_key_columns]
+        .sort_values(index_key_columns)
+        .reset_index(drop=True)
+    )
+    index_keys_df = (
+        index_df[index_key_columns]
+        .sort_values(index_key_columns)
+        .reset_index(drop=True)
+    )
+
+
+    # 1) value level differences
+    comparison = metadata_keys_df.compare(
+        index_keys_df,
+        result_names=('bsv_metadata', 'index'),
+    )
+
+    # 2) missing/extra key‐rows
+    merge_df = metadata_keys_df.merge(
+        index_keys_df,
+        on=index_key_columns,
+        how='outer',
+        indicator=True,
+    )
+    row_mismatches = merge_df[merge_df["_merge"] != "both"]
+
+    if not comparison.empty or not row_mismatches.empty:
+        logging.warning("Value mismatches:\n%s", comparison)
+        logging.warning("Key row mismatches:\n%s", row_mismatches)
+        raise Exception(
+            f"Mismatching index and bsv metadata values: "
+            f"{len(comparison)} value diff rows, "
+            f"{len(row_mismatches)} key row mismatches."
+        )
+
+    if bsv_metadata_df["Meenemen"].isna().sum() > 0:
+        raise Exception("Not all rows in the BSV metadata file have defined Meenemen")
+
+    bsv_meenemen = bsv_metadata_df[["HuisIdBSV", "Meenemen"]]
+
+    index_df.drop(columns=["Meenemen"], inplace=True)
+    index_df = index_df.merge(bsv_meenemen, on=["HuisIdBSV"])
+
+
+    #bsv_metadata_df.set_index("HuisIdBSV", inplace=True)
+    #index_df.set_index('HuisIdBSV', inplace=True)
+    #columns_for_update = bsv_metadata_df.columns.intersection(allowed_supplier_metadata_columns)
+
+    #index_df.update(bsv_metadata_df.loc[:, columns_for_update])
+    #index_df.reset_index(inplace=True)
+
     save_index_to_parquet(index_df=index_df)
 
     return index_df
@@ -343,7 +388,7 @@ def add_supplier_metadata_to_index(
     metadata_df: pd.DataFrame,
     data_leverancier=None,
 ) -> pd.DataFrame:
-    """Adds metadata columns to the index matching on the HuisIdLeverancier column.
+    """Adds metadata columns to the index matching on the HuisIdLeverancier column. It also adds the ProjectIdBSV.
 
     Parameters
     ----------
@@ -382,7 +427,7 @@ def add_supplier_metadata_to_index(
     )
 
     # Shared columns
-    shared_columns = metadata_df.columns.intersection(bsv_metadata_columns).intersection(index_df.columns)
+    # shared_columns = metadata_df.columns.intersection(bsv_metadata_columns).intersection(index_df.columns)
 
     # Make sure data supplier is defined
     if "Dataleverancier" not in metadata_df.columns:
@@ -390,6 +435,9 @@ def add_supplier_metadata_to_index(
             raise Exception("Data source not identified. Cannot add metadata.")
         else:
             metadata_df["Dataleverancier"] = data_leverancier
+
+    # Make sure all combinations of HuisIdBSV, HuisIdLeverancier, ProjectIdLeverancier and Dataleverancier are identical between the files
+
 
     # Define protected columns and drop them from provider metadata
     protected_columns = ["HuisIdBSV", "ProjectIdBSV"]
@@ -412,23 +460,24 @@ def add_supplier_metadata_to_index(
         how="left",
     )
 
-
     # Add new columns with pd.NA if they do not already exist in index_df
     for column in metadata_df.columns:
         if column not in index_df.columns:
             index_df[column] = pd.NA
 
+    index_key_columns = ["HuisIdLeverancier", "Dataleverancier"]
+
     # Update existing records
     index_df.set_index(
-        ["HuisIdLeverancier", "Dataleverancier"],
+        index_key_columns,
         inplace=True,
     )
     metadata_df.set_index(
-        ["HuisIdLeverancier", "Dataleverancier"],
+        index_key_columns,
         inplace=True,
     )
 
-    columns_for_update = metadata_df.columns.intersection(allowed_supplier_metadata_columns)
+    columns_for_update = metadata_df.columns.intersection([*allowed_supplier_metadata_columns, "ProjectIdBSV"])
     index_df.update(metadata_df.loc[:, columns_for_update])
     index_df.reset_index(inplace=True)
 

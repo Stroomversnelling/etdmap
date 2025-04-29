@@ -48,7 +48,7 @@ required_model_columns = [
     "ElektriciteitsgebruikWarmtepomp",
     "ElektriciteitsgebruikBooster",
     "ElektriciteitsgebruikBoilervat",
-    "ElektriciteitsgebruikHuishoudelijk",
+    "ElektriciteitsgebruikTotaalHuishoudelijk",
     "TemperatuurWarmTapwater",
     "TemperatuurWoonkamer",
     "TemperatuurSetpointWoonkamer",
@@ -95,13 +95,13 @@ def test_thresholdscsv():
     # we want to seperate this value from missing values,
     # so prevent reading n/a as nan by pandas (default)
     # custom_na_values = ['n/a']
-    tresholds_csv = pd.read_csv(
+    thresholds_csv = pd.read_csv(
         Path(r'.\etdmap\data\thresholds.csv'),
         # na_values=custom_na_values,
         )
     numeric_cols_etdmodel = set(
-        etdmodel_csv[etdmodel_csv['Type variabele']=='number'].Variabele)
-    threshold_params = set(tresholds_csv.Variabele)
+        etdmodel_csv[(etdmodel_csv['Type variabele']=='number')&(etdmodel_csv['Entiteit']=='Prestatiedata')].Variabele)
+    threshold_params = set(thresholds_csv.Variabele)
 
     # Check if all numeric columns in the datamodel are represented
     # in the thresholds.csv
@@ -118,14 +118,14 @@ def test_thresholdscsv():
         numeric_check = pd.notna(pd.to_numeric(val, errors='coerce'))
         return numeric_check or str_value_check
 
-    check_min = tresholds_csv['Min'].apply(is_numeric_or_na)
-    check_max = tresholds_csv['Max'].apply(is_numeric_or_na)
+    check_min = thresholds_csv['Min'].apply(is_numeric_or_na)
+    check_max = thresholds_csv['Max'].apply(is_numeric_or_na)
     assert check_min.all()
     assert check_max.all()
 
     # Check cummulative columns:
     cumm_columns_thresholds = set(
-        tresholds_csv[tresholds_csv['VariabelType']=='cumulatief'].Variabele
+        thresholds_csv[thresholds_csv['VariabelType']=='cumulatief'].Variabele
         )
     # Check if all cummulative columns in the etdmap.data_model
     # are also specified in the thresholds.csv
