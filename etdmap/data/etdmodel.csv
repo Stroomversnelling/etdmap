@@ -45,34 +45,34 @@ Prestatiedata,ElektriciteitNetgebruikLaag,nee,kWh,ja,nee,ja,number,ja,5 minuten,
 Prestatiedata,ElektriciteitTerugleveringHoog,nee,kWh,ja,nee,ja,number,ja,5 minuten,Dataleverancier,Slimme meter,ja,nee,kWh,ja,"Vereist; Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
 Prestatiedata,ElektriciteitTerugleveringLaag,nee,kWh,ja,nee,ja,number,ja,5 minuten,Dataleverancier,Slimme meter,ja,nee,kWh,ja,"Vereist; Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
 Prestatiedata,ElektriciteitVermogen,nee,W,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,W,ja,Controleer drempelwaarde,
-Prestatiedata,SlimmemeterVoltageL1,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,V (volt) over fase 1,ja,,
-Prestatiedata,SlimmemeterVoltageL2,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,V (volt) over fase 2,ja,,
-Prestatiedata,SlimmemeterVoltageL3,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,V (volt) over fase 3,ja,,
-Prestatiedata,SlimmemeterStroomsterkteL1,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,A (ampère) over fase 1,ja,,
-Prestatiedata,SlimmemeterStroomsterkteL2,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,A (ampère) over fase 2,ja,,
-Prestatiedata,SlimmemeterStroomsterkteL3,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,A (ampère) over fase 3,ja,,
+Prestatiedata,SlimmemeterVoltageL1,nee,V,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,V (volt) over fase 1,ja,,
+Prestatiedata,SlimmemeterVoltageL2,nee,V,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,V (volt) over fase 2,ja,,
+Prestatiedata,SlimmemeterVoltageL3,nee,V,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,V (volt) over fase 3,ja,,
+Prestatiedata,SlimmemeterStroomsterkteL1,nee,A,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,A (ampère) over fase 1,ja,,
+Prestatiedata,SlimmemeterStroomsterkteL2,nee,A,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,A (ampère) over fase 2,ja,,
+Prestatiedata,SlimmemeterStroomsterkteL3,nee,A,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,nee,ja,A (ampère) over fase 3,ja,,
 Prestatiedata,Gasgebruik,nee,m3,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Slimme meter,ja,nee,m3,ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
 Prestatiedata,ElektriciteitsgebruikWTW,nee,kWh,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh,ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
 Prestatiedata,ElektriciteitsgebruikWarmtepomp,nee,kWh,ja,nee,ja,number,ja,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (door losse MID-kwaliteit kWh meter),ja,"Vereist; Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
-Prestatiedata,ElektriciteitsgebruikWarmtepompIntern,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (door interne kWh meter),ja,,
+Prestatiedata,ElektriciteitsgebruikWarmtepompIntern,nee,kWh,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (door interne kWh meter),ja,,
 Prestatiedata,ElektriciteitsgebruikBooster,nee,kWh,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (elektrisch element in warmtepomp),ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
 Prestatiedata,ElektriciteitsgebruikBoilervat,nee,kWh,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (spiraal in boilervat),ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
 Prestatiedata,ElektriciteitsgebruikRadiator,nee,kWh,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,kWh (radiator),ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
-Prestatiedata,TemperatuurBoilervat,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,"graden C (sensor in boilervat, vlakbij uitgang)",ja,Temperatuur kan niet snel toenemen,
+Prestatiedata,TemperatuurBoilervat,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,"graden C (sensor in boilervat, vlakbij uitgang)",ja,Temperatuur kan niet snel toenemen,
 Prestatiedata,TemperatuurWarmTapwater,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,"graden C (sensor in leiding, vlakbij uitgang boilervat)",ja,Controleer drempelwaarde (temperatuur kan snel toenemen),
 Prestatiedata,TemperatuurWoonkamer,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door thermostaat),ja,Controleer drempelwaarde,
 Prestatiedata,TemperatuurSetpointWoonkamer,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C,ja,Controleer drempelwaarde,
-Prestatiedata,TemperatuurBinnenWTW,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door ventilatiesysteem),ja,,
-Prestatiedata,TemperatuurBuitenWTW,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door ventilatiesysteem),nee,,
-Prestatiedata,TemperatuurBuitenWarmtepomp,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door de warmtepomp),nee,,
-Prestatiedata,TemperatuurAfgifteAanvoer,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C,ja,,
-Prestatiedata,TemperatuurAfgifteRetour,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C,ja,,
+Prestatiedata,TemperatuurBinnenWTW,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door ventilatiesysteem),ja,,
+Prestatiedata,TemperatuurBuitenWTW,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door ventilatiesysteem),nee,,
+Prestatiedata,TemperatuurBuitenWarmtepomp,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C (zoals gerapporteerd door de warmtepomp),nee,,
+Prestatiedata,TemperatuurAfgifteAanvoer,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C,ja,,
+Prestatiedata,TemperatuurAfgifteRetour,nee,graden C,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,graden C,ja,,
 Prestatiedata,WarmteproductieWarmtepomp,nee,GJ,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,GJ (=WarmteproductieRuimteverwarming + WarmteproductieTapwater),ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
-Prestatiedata,WarmteproductieRuimteverwarming,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,GJ,ja,,
-Prestatiedata,WarmteproductieWarmTapwater,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,GJ,ja,,
-Prestatiedata,WatergebruikWarmtepomp,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,"Debiet, in liter (=WatergebruikWarmTapwater + WatergebruikRuimteverwarming)",ja,,
+Prestatiedata,WarmteproductieRuimteverwarming,nee,GJ,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,GJ,ja,,
+Prestatiedata,WarmteproductieWarmTapwater,nee,GJ,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,GJ,ja,,
+Prestatiedata,WatergebruikWarmtepomp,nee,liter,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,"Debiet, in liter (=WatergebruikWarmTapwater + WatergebruikRuimteverwarming)",ja,,
 Prestatiedata,WatergebruikWarmTapwater,nee,liter,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,"Debiet, in liter",ja,"Controleer drempelwaarde (jaarlijks/5-min diff), cumulatief",
-Prestatiedata,WatergebruikRuimteverwarming,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,"Debiet, in liter (water blijft in circuit, 'gebruik' is eigenlijk geen goede term)",ja,,
+Prestatiedata,WatergebruikRuimteverwarming,nee,liter,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,ja,nee,"Debiet, in liter (water blijft in circuit, 'gebruik' is eigenlijk geen goede term)",ja,,
 Prestatiedata,Mode,nee,,ja,nee,ja,number,nee,5 minuten,Dataleverancier,Gateway / Portal,nee,ja,"0 = idle (stand-by)
 1 = warm tapwater
 2 = ruimteverwarming
@@ -89,19 +89,19 @@ Omgevingsdata,ElektriciteitsprijsExcl,nee,,ja,nee,ja,number,nee,1 uur,Datalevera
 Omgevingsdata,ElektriciteitsprijsIncl,nee,,ja,nee,ja,number,nee,1 uur,Dataleverancier / ETD,Gateway / Portal,nee,ja,"euro / kWh (all-in prijs, i.e. EPEX prijs plus btw, toeslagen)",nee,,
 Omgevingsdata,Windrichting,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Windrichting (in graden) gemiddeld over de laatste 10 minuten van het afgelopen uur (360=noord, 90=oost, 180=zuid, 270=west, 0=windstil 990=veranderlijk",nee,,DD
 Omgevingsdata,WindsnelheidUur,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Uurgemiddelde windsnelheid (in 0.1 m/s),nee,,FH
-Omgevingsdata,Windsnelheid10min,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Windsnelheid (in 0.1 m/s) gemiddeld over de laatste 10 minuten van het afgelopen uur,nee,,FF
-Omgevingsdata,WindsnelheidMax,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Hoogste windstoot (in 0.1 m/s) over het afgelopen uurvak ,nee,,FX
-Omgevingsdata,TemperatuurBuitenWeerstation,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Temperatuur (in 0.1 graden Celsius) op 1.50 m hoogte tijdens de waarneming ,nee,,T
-Omgevingsdata,TemperatuurBuitenMin6u,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Minimumtemperatuur (in 0.1 graden Celsius) op 10 cm hoogte in de afgelopen 6 uur ,nee,,T10N
-Omgevingsdata,TemperatuurDauwpunt,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Dauwpuntstemperatuur (in 0.1 graden Celsius) op 1.50 m hoogte tijdens de waarneming ,nee,,TD
-Omgevingsdata,ZonDuur,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Duur van de zonneschijn (in 0.1 uren) per uurvak, berekend uit globale straling (-1 for <0.05 uur) ",nee,,SQ
-Omgevingsdata,ZonStraling,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Globale straling (in J/cm2) per uurvak ,nee,,Q
-Omgevingsdata,NeerslagDuur,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Duur van de neerslag (in 0.1 uur) per uurvak ,nee,,DR
-Omgevingsdata,NeerslagHoeveelheid,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Uursom van de neerslag (in 0.1 mm) (-1 voor <0.05 mm) ,nee,,RH
-Omgevingsdata,Luchtdruk,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Luchtdruk (in 0.1 hPa) herleid naar zeeniveau, tijdens de waarneming ",nee,,P
+Omgevingsdata,Windsnelheid10min,nee,m/s,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Windsnelheid (in 0.1 m/s) gemiddeld over de laatste 10 minuten van het afgelopen uur,nee,,FF
+Omgevingsdata,WindsnelheidMax,nee,m/s,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Hoogste windstoot (in 0.1 m/s) over het afgelopen uurvak ,nee,,FX
+Omgevingsdata,TemperatuurBuitenWeerstation,nee,graden C,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Temperatuur (in 0.1 graden Celsius) op 1.50 m hoogte tijdens de waarneming ,nee,,T
+Omgevingsdata,TemperatuurBuitenMin6u,nee,graden C,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Minimumtemperatuur (in 0.1 graden Celsius) op 10 cm hoogte in de afgelopen 6 uur ,nee,,T10N
+Omgevingsdata,TemperatuurDauwpunt,nee,graden C,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Dauwpuntstemperatuur (in 0.1 graden Celsius) op 1.50 m hoogte tijdens de waarneming ,nee,,TD
+Omgevingsdata,ZonDuur,nee,0.1 uren,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Duur van de zonneschijn (in 0.1 uren) per uurvak, berekend uit globale straling (-1 for <0.05 uur) ",nee,,SQ
+Omgevingsdata,ZonStraling,nee,J/cm2,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Globale straling (in J/cm2) per uurvak ,nee,,Q
+Omgevingsdata,NeerslagDuur,nee,0.1 uren,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Duur van de neerslag (in 0.1 uur) per uurvak ,nee,,DR
+Omgevingsdata,NeerslagHoeveelheid,nee,0.1 mm,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Uursom van de neerslag (in 0.1 mm) (-1 voor <0.05 mm) ,nee,,RH
+Omgevingsdata,Luchtdruk,nee,0.1 hPa,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Luchtdruk (in 0.1 hPa) herleid naar zeeniveau, tijdens de waarneming ",nee,,P
 Omgevingsdata,Zicht,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Horizontaal zicht tijdens de waarneming (0=minder dan 100m, 1=100-200m, 2=200-300m,..., 49=4900-5000m, 50=5-6km, 56=6-7km, 57=7-8km, ..., 79=29-30km, 80=30-35km, 81=35-40km,..., 89=meer dan 70km) ",nee,,VV
 Omgevingsdata,Bewolking,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Bewolking (bedekkingsgraad van de bovenlucht in achtsten), tijdens de waarneming (9=bovenlucht onzichtbaar) ",nee,,N
-Omgevingsdata,LuchtvochtigheidWeerstation,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Relatieve vochtigheid (in procenten) op 1.50 m hoogte tijdens de waarneming ,nee,,U
+Omgevingsdata,LuchtvochtigheidWeerstation,nee,procenten,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,Relatieve vochtigheid (in procenten) op 1.50 m hoogte tijdens de waarneming ,nee,,U
 Omgevingsdata,Weercode,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Weercode (00-99), visueel(WW) of automatisch(WaWa) waargenomen, voor het actuele weer of het weer in het afgelopen uur. ",nee,,WW
 Omgevingsdata,WeercodeWaarneming,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Weercode indicator voor de wijze van waarnemen op een bemand of automatisch station (1=bemand gebruikmakend van code uit visuele waarnemingen, 2,3=bemand en weggelaten (geen belangrijk weersverschijnsel, geen gegevens), 4=automatisch en opgenomen (gebruikmakend van code uit visuele waarnemingen), 5,6=automatisch en weggelaten (geen belangrijk weersverschijnsel, geen gegevens), 7=automatisch gebruikmakend van code uit automatische waarnemingen) ",nee,,IX
 Omgevingsdata,Mist,nee,,nee,nee,ja,number,nee,1 uur,ETD (vanuit KNMI),KNMI,nee,ja,"Mist 0=niet voorgekomen, 1=wel voorgekomen in het voorgaande uur en/of tijdens de waarneming ",nee,,M
@@ -124,8 +124,8 @@ PrestatiedataBerekend,Zon-opwekTotaalDiff,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,Zon
 PrestatiedataBerekend,TerugleveringTotaalNetto,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitTerugleveringLaagDiff + ElektriciteitTerugleveringHoogDiff,ja,Controleer drempelwaarde,
 PrestatiedataBerekend,ElektriciteitsgebruikTotaalNetto,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitNetgebruikLaagDiff  + ElektriciteitNetgebruikHoogDiff,ja,Controleer drempelwaarde,
 PrestatiedataBerekend,Netuitwisseling,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikTotaalNetto - TerugleveringTotaalNetto,ja,Controleer drempelwaarde,
-PrestatiedataBerekend,ElektriciteitsgebruikTotaalWarmtepomp,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikWarmtepompDiff + ElektriciteitsgebruikBoosterDiff,ja,Controleer drempelwaarde,
-PrestatiedataBerekend,ElektriciteitsgebruikTotaalGebouwgebonden,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikTotaalWarmtepomp + ElektriciteitsgebruikBoilervatDiff + ElektriciteitsgebruikWTWDiff + ElektriciteitsgebruikRadiatorDiff,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikTotaalWarmtepomp,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikWarmtepompDiff + ElektriciteitsgebruikBoosterDiff + ElektriciteitsgebruikBoilervatDiff,ja,Controleer drempelwaarde,
+PrestatiedataBerekend,ElektriciteitsgebruikTotaalGebouwgebonden,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ElektriciteitsgebruikTotaalWarmtepomp + ElektriciteitsgebruikWTWDiff + ElektriciteitsgebruikRadiatorDiff,ja,Controleer drempelwaarde,
 PrestatiedataBerekend,ZonopwekBruto,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,Zon-opwekTotaalDiff,ja,Controleer drempelwaarde,
 PrestatiedataBerekend,ElektriciteitsgebruikTotaalHuishoudelijk,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,Netuitwisseling + ZonopwekBruto - ElektriciteitsgebruikTotaalGebouwgebonden,ja,Controleer drempelwaarde,
 PrestatiedataBerekend,Zelfgebruik,nee,,nee,nee,ja,,nee,,ETD,,nee,nee,ZonopwekBruto - TerugleveringTotaalNetto,ja,Controleer drempelwaarde,
