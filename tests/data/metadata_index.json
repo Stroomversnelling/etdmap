@@ -1,0 +1,517 @@
+{
+    "num_rows": 10,
+    "num_columns": 73,
+    "column_details": {
+        "HuisIdLeverancier": {
+            "statistics": {
+                "min": "Huis01",
+                "max": "Huis10",
+                "null_count": 0
+            }
+        },
+        "Dataleverancier": {
+            "statistics": {
+                "min": "etdmap",
+                "max": "etdmap",
+                "null_count": 0
+            }
+        },
+        "HuisIdBSV": {
+            "statistics": {
+                "min": "1",
+                "max": "10",
+                "null_count": 0
+            }
+        },
+        "ProjectIdLeverancier": {
+            "statistics": {
+                "min": "Project01",
+                "max": "Project02",
+                "null_count": 0
+            }
+        },
+        "ProjectIdBSV": {
+            "statistics": {
+                "min": "1",
+                "max": "2",
+                "null_count": 0
+            }
+        },
+        "Meenemen": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "Notities": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "HuisCode": {
+            "statistics": {
+                "min": "1.0",
+                "max": "10.0",
+                "null_count": 0
+            }
+        },
+        "validate_monitoring_data_counts": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_energiegebruik_warmteopwekker": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_approximately_one_year_of_records": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_columns_exist": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_no_readingdate_gap": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitNetgebruikHoog": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitNetgebruikHoogDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitNetgebruikLaag": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitNetgebruikLaagDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitTerugleveringHoog": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitTerugleveringHoogDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitTerugleveringLaag": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitTerugleveringLaagDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_Gasgebruik": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_GasgebruikDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikWTW": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_ElektriciteitsgebruikWTWDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikWarmtepomp": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_ElektriciteitsgebruikWarmtepompDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikBooster": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_ElektriciteitsgebruikBoosterDiff": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikBoilervat": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_ElektriciteitsgebruikBoilervatDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikRadiator": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_ElektriciteitsgebruikRadiatorDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_WarmteproductieWarmtepomp": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_WarmteproductieWarmtepompDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_WatergebruikWarmTapwater": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_WatergebruikWarmTapwaterDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_Zon-opwekTotaal": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_Zon-opwekTotaalDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikWarmtepompIntern": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikWarmtepompInternDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_WarmteproductieRuimteverwarming": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_WarmteproductieRuimteverwarmingDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_WarmteproductieWarmTapwater": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_WarmteproductieWarmTapwaterDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_WatergebruikWarmtepomp": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_WatergebruikWarmtepompDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_WatergebruikRuimteverwarming": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_WatergebruikRuimteverwarmingDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_cumulative_diff_ok": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "Weerstation": {
+            "statistics": {
+                "min": "DE BILT",
+                "max": "DE BILT",
+                "null_count": 0
+            }
+        },
+        "Oppervlakte": {
+            "statistics": {
+                "min": "100",
+                "max": "100",
+                "null_count": 0
+            }
+        },
+        "PlatOfZadelDak": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": null
+            }
+        },
+        "Compactheid": {
+            "statistics": {
+                "min": "1.5",
+                "max": "1.5",
+                "null_count": 0
+            }
+        },
+        "Warmtebehoefte": {
+            "statistics": {
+                "min": "70",
+                "max": "70",
+                "null_count": 0
+            }
+        },
+        "PrimairFossielGebruik": {
+            "statistics": {
+                "min": "-5",
+                "max": "-5",
+                "null_count": 0
+            }
+        },
+        "Bouwjaar": {
+            "statistics": {
+                "min": "1967",
+                "max": "1967",
+                "null_count": 0
+            }
+        },
+        "Renovatiejaar": {
+            "statistics": {
+                "min": "2020",
+                "max": "2020",
+                "null_count": 0
+            }
+        },
+        "WoningType": {
+            "statistics": {
+                "min": "EGW",
+                "max": "EGW",
+                "null_count": 0
+            }
+        },
+        "WoningTypeDetail": {
+            "statistics": {
+                "min": "Tussenwoning",
+                "max": "Tussenwoning",
+                "null_count": 0
+            }
+        },
+        "WarmteopwekkerType": {
+            "statistics": {
+                "min": "Mitsubishi Ecodan xxx",
+                "max": "Mitsubishi Ecodan xxx",
+                "null_count": 0
+            }
+        },
+        "WarmteopwekkerCategorie": {
+            "statistics": {
+                "min": "Lucht-water warmtepomp",
+                "max": "Lucht-water warmtepomp",
+                "null_count": 0
+            }
+        },
+        "Warmteopwekker": {
+            "statistics": {
+                "min": "Individueel",
+                "max": "Individueel",
+                "null_count": 0
+            }
+        },
+        "Ventilatiesysteem": {
+            "statistics": {
+                "min": "Type D",
+                "max": "Type D",
+                "null_count": 0
+            }
+        },
+        "Kookinstallatie": {
+            "statistics": {
+                "min": "Inductie",
+                "max": "Inductie",
+                "null_count": 0
+            }
+        },
+        "PVJaarbundel": {
+            "statistics": {
+                "min": "6300",
+                "max": "6300",
+                "null_count": 0
+            }
+        },
+        "PVMerk": {
+            "statistics": {
+                "min": "Pietje",
+                "max": "Pietje",
+                "null_count": 0
+            }
+        },
+        "PVType": {
+            "statistics": {
+                "min": "Productnummer",
+                "max": "Productnummer",
+                "null_count": 0
+            }
+        },
+        "PVAantalPanelen": {
+            "statistics": {
+                "min": "14",
+                "max": "14",
+                "null_count": 0
+            }
+        },
+        "PVWattpiekPerPaneel": {
+            "statistics": {
+                "min": "335",
+                "max": "335",
+                "null_count": 0
+            }
+        },
+        "EPV": {
+            "statistics": {
+                "min": "EPV 1.0",
+                "max": "EPV 1.0",
+                "null_count": 0
+            }
+        },
+        "GasgebruikVoorRenovatie": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": null
+            }
+        },
+        "ElektriciteitVoorRenovatie": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": null
+            }
+        }
+    }
+}

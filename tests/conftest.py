@@ -1,14 +1,42 @@
+import json
 import logging
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
 from numpy.random import PCG64, Generator
 
 from etdmap.data_model import cumulative_columns, load_thresholds
 from etdmap.index_helpers import bsv_metadata_columns, metadata_dtypes
 
+
+# set paths
+def load_config(config_path):
+        with open(config_path, 'r') as file:
+            return yaml.safe_load(file)
+
+test_config_path = Path("config_test.yaml")
+if os.path.isfile(test_config_path):
+    config = load_config(test_config_path)
+else:
+        raise FileNotFoundError("no file named 'config_test.yaml'")
+
+file_names = [
+    "index.parquet",
+    "household_1_table.parquet",
+    "household_2_table.parquet",
+    "household_3_table.parquet",
+    "household_4_table.parquet",
+    "household_5_table.parquet",
+    "household_6_table.parquet",
+    "household_7_table.parquet",
+    "household_8_table.parquet",
+    "household_9_table.parquet",
+    "household_10_table.parquet",
+]
 
 def pytest_addoption(parser):
     parser.addoption("--copy-data", action="store_true", help="Copy data to a persistent folder")
@@ -304,3 +332,10 @@ def reset_cumulative_column(household_df, columns, reset_time, check_negative = 
 
     return household_df
 
+@pytest.fixture
+def load_metadata():
+    def _load_metadata(filepath):
+        with open(filepath, "r") as f:
+            return json.load(f)
+    # return inner function as ficture
+    return _load_metadata
