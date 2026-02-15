@@ -83,6 +83,8 @@ model_column_order = [
     'TemperatuurBuitenWarmtepomp',
     'TemperatuurAfgifteAanvoer',
     'TemperatuurAfgifteRetour',
+    'TemperatuurTapwaterAanvoer',
+    'TemperatuurTapwaterRetour',
     'WarmteproductieRuimteverwarming',
     'WarmteproductieWarmTapwater',
     'WatergebruikWarmtepomp',
@@ -126,6 +128,8 @@ model_column_type = {
     'TemperatuurBuitenWarmtepomp': 'Float64',
     'TemperatuurAfgifteAanvoer': 'Float64',
     'TemperatuurAfgifteRetour': 'Float64',
+    'TemperatuurTapwaterAanvoer': 'Float64',
+    'TemperatuurTapwaterRetour': 'Float64',
     'WarmteproductieRuimteverwarming': 'Float64',
     'WarmteproductieWarmTapwater': 'Float64',
     'WatergebruikWarmtepomp': 'Float64',
@@ -166,11 +170,11 @@ def load_thresholds():
 
     dtype_dict = {
         "Variabele": "string",
-        "VariabelType": "string",
+        "ThresholdType": "string",
         "Eenheid": "string",
         "Min": "Float64",
         "Max": "Float64",
-        "Toelichting": "string"
+        "ThresholdToelichting": "string"
     }
 
     df = pd.read_csv(

@@ -364,7 +364,7 @@ record_flag_conditions = {
 }
 
 columns_5min_momentaan = thresholds_df[
-    thresholds_df['VariabelType'].isin(['5-minute', 'momentaan'])
+    thresholds_df['ThresholdType'].isin(['5-minute', 'momentaan'])
     ]['Variabele']
 
 create_validate_momentaan(columns_5min_momentaan, record_flag_conditions)

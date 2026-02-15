@@ -374,7 +374,7 @@ thresholds_df = load_thresholds()
 thresholds_dict = load_thresholds_as_dict()
 
 cumulative_columns_thresholds = thresholds_df[
-    thresholds_df['VariabelType']=='cumulatief']
+    thresholds_df['ThresholdType']=='cumulatief']
 
 # print(cumulative_columns_threholds.columns)
 

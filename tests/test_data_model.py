@@ -125,7 +125,7 @@ def test_thresholdscsv():
 
     # Check cummulative columns:
     cumm_columns_thresholds = set(
-        thresholds_csv[thresholds_csv['VariabelType']=='cumulatief'].Variabele
+        thresholds_csv[thresholds_csv['ThresholdType']=='cumulatief'].Variabele
         )
     # Check if all cummulative columns in the etdmap.data_model
     # are also specified in the thresholds.csv
