@@ -83,21 +83,15 @@ def test_columns_etdmodelcsv():
 
 def test_thresholdscsv():
     """
-    Check thresholds.csv for columns, numeric values and comulatief.
+    Check thresholds.csv for numeric and cumulative colums:
 
-    Check if thresholds exist for all numeric columns in datamodel.
-    Check if all thresholds are numeric (not nan) or n.a. in thresholds.csv
-    Check if the cummulative types match the cumulative_columns from
-    etdmap.data_model
+    - Check if thresholds exist for all numeric columns in datamodel.
+    - Check if all thresholds are numeric in thresholds.csv
+    - Check if the cumulative types match the cumulative_columns from etdmap.data_model
     """
     etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    # n/a is used to specify that it is not applicable
-    # we want to seperate this value from missing values,
-    # so prevent reading n/a as nan by pandas (default)
-    # custom_na_values = ['n/a']
     thresholds_csv = pd.read_csv(
         Path(r'.\etdmap\data\thresholds.csv'),
-        # na_values=custom_na_values,
         )
     numeric_cols_etdmodel = set(
         etdmodel_csv[(etdmodel_csv['Type variabele']=='number')&(etdmodel_csv['Entiteit']=='Prestatiedata')].Variabele)
@@ -107,33 +101,21 @@ def test_thresholdscsv():
     # in the thresholds.csv
     assert numeric_cols_etdmodel.issubset(threshold_params)
 
-    # check if all columns have numeric min & max values, or are
-    # n.a. (not applicable)
-    def is_numeric_or_na(val):
-        # Note: originally n.a. was spelled n/a in the csv.
-        # these strings are automatically replaced by NAN values
-        # Since we want to compare with missing values (also NAN)
-        # n/a was renamed to n.a.
-        str_value_check = str(val).lower() == 'n.a.'
-        numeric_check = pd.notna(pd.to_numeric(val, errors='coerce'))
-        return numeric_check or str_value_check
-
-    check_min = thresholds_csv['Min'].apply(is_numeric_or_na)
-    check_max = thresholds_csv['Max'].apply(is_numeric_or_na)
-    assert check_min.all()
-    assert check_max.all()
+    assert pd.to_numeric(thresholds_csv['Min'], errors='coerce').notna().equals(thresholds_csv['Min'].notna()), "Min has non-numeric non-missing values (text?)"
+    assert pd.to_numeric(thresholds_csv['Max'], errors='coerce').notna().equals(thresholds_csv['Max'].notna()), "Max has non-numeric non-missing values (text?)"
 
     # Check cummulative columns:
     cumm_columns_thresholds = set(
         thresholds_csv[thresholds_csv['ThresholdType']=='cumulatief'].Variabele
         )
-    # Check if all cummulative columns in the etdmap.data_model
+
+    # Check if all cumulative columns in the etdmap.data_model
     # are also specified in the thresholds.csv
     assert set(cumulative_columns).issubset(cumm_columns_thresholds)
-    # Notify if more cummulative columns are specified in the thresholds:
+    # Notify if more cumulative columns are specified in the thresholds:
     if cumm_columns_thresholds - set(cumulative_columns):
         logging.warning(
-            f"More cummulative columns are defined in thresholds.csv"
+            f"More cumulative columns are defined in thresholds.csv"
             f"then in etdmap.data_model cumulative_columns. "
             f"The following columns are found, but not required: "
             f"{cumm_columns_thresholds - set(cumulative_columns)}"

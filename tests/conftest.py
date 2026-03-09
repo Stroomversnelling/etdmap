@@ -14,6 +14,33 @@ from etdmap.index_helpers import bsv_metadata_columns, metadata_dtypes
 
 
 # set paths
+def _clean_mapped_folder(mapped_folder_path):
+    """Remove generated files from mapped folder to ensure clean test state."""
+    from pathlib import Path
+    mapped_folder = Path(mapped_folder_path)
+    if mapped_folder.exists():
+        for f in mapped_folder.glob("household_*.parquet"):
+            f.unlink()
+        index_file = mapped_folder / "index.parquet"
+        if index_file.exists():
+            index_file.unlink()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def clean_mapped_folder_before_tests():
+    """
+    Clean mapped folder before etdmap tests run.
+
+    This ensures tests start from a clean state without leftover files
+    from previous test runs. The mapped files are regenerated as part
+    of testing the mapping logic.
+    """
+    test_config_path = Path("config_test.yaml")
+    if os.path.isfile(test_config_path):
+        with open(test_config_path, 'r') as file:
+            config = yaml.safe_load(file)
+        _clean_mapped_folder(config['etdmap_configuration']['mapped_folder_path'])
+    yield
 def load_config(config_path):
         with open(config_path, 'r') as file:
             return yaml.safe_load(file)

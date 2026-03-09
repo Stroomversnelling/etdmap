@@ -514,6 +514,199 @@ def fill_down_infrequent_devices(
     return df
 
 
+def snap_readings_to_grid(
+    df: pd.DataFrame,
+    date_column: str = 'ReadingDate',
+    freq_minutes: int = 5,
+    max_deviation_seconds: float = None,
+    context: str = '',
+) -> pd.DataFrame:
+    """
+    Snap timestamps to the nearest freq-minute grid slot and merge rows
+    that fall on the same slot.
+
+    Intended for datasets where different sensor streams in the same table
+    have different time offsets (e.g. columns A-C arrive at HH:MM:22 every
+    5 minutes while columns D-F arrive at HH:MM:00 every 15 minutes).
+    Both sets of rows snap to the same 5-minute slot and their column values
+    are merged by taking the first non-NA value per column.
+
+    Within a slot, when multiple rows are present, each column independently
+    selects the row whose timestamp is closest to that column's characteristic
+    offset (the most common signed offset observed for that column across all
+    rows where it is non-null).  This is implemented as a K-pass vectorized
+    merge where K is the number of distinct characteristic offsets (typically
+    2-3 for O-Nexus data).
+
+    Per-column characteristic offsets matter especially for cumulative columns.
+    If a cumulative column (e.g. ElektriciteitNetgebruikHoogCum) always arrives
+    at +22 s and we snapped it using a +0 s reference, adjacent slots would
+    alternately draw from the +22 s stream and the +0 s stream.  The resulting
+    diffs would alternate between ~4 min 38 s and ~5 min 22 s of physical
+    consumption — a ±7.3% error per slot that self-cancels over longer windows
+    but pollutes 5-minute diff analysis.  Using the per-column characteristic
+    offset ensures each cumulative column always draws from its own stream
+    across all slots, so diffs always span a consistent physical interval.
+
+    This function does no fill-down or fill-up.  It only snaps and merges.
+    Call ensure_intervals afterwards to pad any remaining missing grid slots.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame.  The date_column must already be datetime dtype.
+    date_column : str
+        Name of the datetime column.  Default 'ReadingDate'.
+    freq_minutes : int
+        Grid slot size in minutes.  Default 5.
+    max_deviation_seconds : float, optional
+        Log a warning if any reading deviates from its nearest slot by more
+        than this many seconds.  Default: half the slot size (150 s for 5-min).
+    context : str
+        Optional prefix for log messages, e.g. a household identifier.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per grid slot, columns merged from all input rows that
+        mapped to that slot.  The date_column contains exact grid timestamps.
+    """
+    ctx = (context + ': ') if context else ''
+    freq_seconds = freq_minutes * 60
+    if max_deviation_seconds is None:
+        max_deviation_seconds = freq_seconds / 2.0  # 150 s for 5-min grid
+
+    df = df.copy()
+
+    # ------------------------------------------------------------------
+    # 1. Snap each timestamp to the nearest freq-minute grid slot
+    # ------------------------------------------------------------------
+    df['_SnappedSlot'] = df[date_column].dt.round(f'{freq_minutes}min')
+
+    # ------------------------------------------------------------------
+    # 2. Signed offset from the snapped slot (seconds, rounded to 1 s)
+    # ------------------------------------------------------------------
+    raw_offsets = (df[date_column] - df['_SnappedSlot']).dt.total_seconds()
+    offset_rounded = raw_offsets.round(0)
+
+    max_dev = raw_offsets.abs().max()
+    logging.debug(
+        f"{ctx}snap_readings_to_grid: max deviation from nearest "
+        f"{freq_minutes}-min slot = {max_dev:.2f}s "
+        f"(tolerance {max_deviation_seconds:.0f}s)"
+    )
+    if max_dev > max_deviation_seconds:
+        logging.warning(
+            f"{ctx}snap_readings_to_grid: some readings deviate by more than "
+            f"{max_deviation_seconds:.0f}s from their nearest {freq_minutes}-min "
+            f"slot (max={max_dev:.2f}s).  This may indicate irregular data."
+        )
+
+    value_cols = [
+        c for c in df.columns
+        if c not in [date_column, '_SnappedSlot']
+    ]
+
+    # ------------------------------------------------------------------
+    # 3. Per-column characteristic offset
+    #    For each value column, the most common signed offset (in seconds)
+    #    among all rows where that column is non-null.  This identifies
+    #    which sensor stream "owns" each column.
+    # ------------------------------------------------------------------
+    col_modal: dict = {}
+    for col in value_cols:
+        notna_mask = df[col].notna()
+        if notna_mask.any():
+            counts = offset_rounded[notna_mask].value_counts()
+            col_modal[col] = float(counts.index[0])
+        else:
+            col_modal[col] = 0.0
+
+    # Group columns that share the same characteristic offset
+    cols_by_modal: dict = {}
+    for col, modal in col_modal.items():
+        cols_by_modal.setdefault(modal, []).append(col)
+
+    # ------------------------------------------------------------------
+    # 3b. Per-column offset diagnostics (DEBUG)
+    #     Group summary: which columns share each characteristic offset.
+    #     Column detail: modal offset + fraction of non-null values that
+    #     actually fall on that offset — a low percentage (< ~80 %) signals
+    #     an irregular/staggered column that may sit near a group boundary.
+    # ------------------------------------------------------------------
+    if logging.getLogger().isEnabledFor(logging.DEBUG):
+        group_lines = []
+        for modal_val, cols in sorted(cols_by_modal.items()):
+            group_lines.append(
+                f"  offset {modal_val:+.0f}s ({len(cols)} col(s)): {cols}"
+            )
+        logging.debug(
+            f"{ctx}snap_readings_to_grid: characteristic offset groups "
+            f"({len(cols_by_modal)} group(s)):\n" + "\n".join(group_lines)
+        )
+
+        col_lines = []
+        for col in value_cols:
+            notna_mask = df[col].notna()
+            n_notna = int(notna_mask.sum())
+            if n_notna > 0:
+                n_at_modal = int(
+                    (offset_rounded[notna_mask] == col_modal[col]).sum()
+                )
+                pct = 100.0 * n_at_modal / n_notna
+                col_lines.append(
+                    f"  {col}: modal={col_modal[col]:+.0f}s  "
+                    f"{n_at_modal}/{n_notna} = {pct:.0f}% at modal"
+                )
+            else:
+                col_lines.append(f"  {col}: all-NA (modal assigned 0s)")
+        logging.debug(
+            f"{ctx}snap_readings_to_grid: per-column offset detail:\n"
+            + "\n".join(col_lines)
+        )
+
+    # ------------------------------------------------------------------
+    # 4. Slot diagnostics
+    # ------------------------------------------------------------------
+    slot_counts = df['_SnappedSlot'].value_counts()
+    multi_row_slots = int((slot_counts > 1).sum())
+    if multi_row_slots > 0:
+        logging.debug(
+            f"{ctx}snap_readings_to_grid: {multi_row_slots} grid slot(s) have "
+            f"multiple rows (max {int(slot_counts.max())} per slot) — merging."
+        )
+
+    # ------------------------------------------------------------------
+    # 5. K-pass vectorized merge
+    #    One pass per distinct characteristic offset group (K ≈ 2-3).
+    #    Within each pass, sort by distance from the group's characteristic
+    #    offset so that groupby.first() picks the most precisely-timed
+    #    non-NA value per column (evaluated independently per column).
+    # ------------------------------------------------------------------
+    slot_index = df['_SnappedSlot'].sort_values().unique()
+    result = pd.DataFrame({date_column: slot_index})
+
+    for modal_val, cols in sorted(cols_by_modal.items()):
+        dist = (raw_offsets - modal_val).abs()
+        subset = df[['_SnappedSlot'] + cols].copy()
+        subset['_dist'] = dist.values
+        subset = subset.sort_values(['_SnappedSlot', '_dist'])
+        group_result = (
+            subset.groupby('_SnappedSlot', sort=True)[cols]
+            .first()
+            .reset_index()
+            .rename(columns={'_SnappedSlot': date_column})
+        )
+        result = result.merge(group_result, on=date_column, how='left')
+
+    logging.info(
+        f"{ctx}snap_readings_to_grid: {len(df)} rows → {len(result)} grid slots "
+        f"({len(cols_by_modal)} offset group(s), {multi_row_slots} slot(s) with "
+        f"multiple rows merged)"
+    )
+    return result
+
+
 def ensure_intervals(
     df: pd.DataFrame,
     date_column: str = 'ReadingDate',

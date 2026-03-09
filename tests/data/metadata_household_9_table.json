@@ -1,6 +1,6 @@
 {
     "num_rows": 105120,
-    "num_columns": 134,
+    "num_columns": 138,
     "column_details": {
         "ReadingDate": {
             "statistics": {
@@ -241,6 +241,20 @@
             }
         },
         "TemperatuurAfgifteRetour": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 105120
+            }
+        },
+        "TemperatuurTapwaterAanvoer": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 105120
+            }
+        },
+        "TemperatuurTapwaterRetour": {
             "statistics": {
                 "min": null,
                 "max": null,
@@ -633,6 +647,20 @@
             }
         },
         "validate_TemperatuurWoonkamer": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 105120
+            }
+        },
+        "validate_TemperatuurTapwaterAanvoer": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 105120
+            }
+        },
+        "validate_TemperatuurTapwaterRetour": {
             "statistics": {
                 "min": null,
                 "max": null,
