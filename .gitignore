@@ -18,6 +18,8 @@ test_output.txt
 
 # gitignore exceptions to above extensions
 !.\data\thresholds.csv
+!.\data\catalog.parquet
+!.\data\Rule.csv
 !.\config_test_template.yaml
 
 # Byte-compiled / optimized / DLL files
