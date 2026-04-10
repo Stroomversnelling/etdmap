@@ -141,8 +141,8 @@ def validate_columns(df: DataFrame, columns: list, condition_func) -> Series:
         condition[valid_mask] = condition_func(df.loc[valid_mask, columns])
         return condition
     else:
-        logging.warning(
-            f"Cannot validate columns {columns}: At least one is not available in the DataFrame."
+        logging.debug(
+            f"[record_validators] Cannot validate {columns}: column(s) not in DataFrame — returning NA."
         )
         return pd.Series(pd.NA, dtype='boolean', index=df.index)
 
@@ -162,7 +162,7 @@ def validate_reading_date_uniek(df: DataFrame) -> Series:
         A boolean Series indicating which rows have unique ReadingDate values.
     """
     # df['ReadingDate'] should only have unique values
-    return ~df.duplicated(subset=['ReadingDate'])
+    return (~df.duplicated(subset=['ReadingDate'])).astype('boolean')
 
 
 def validate_300sec(df: DataFrame) -> Series:
@@ -341,7 +341,7 @@ def create_validate_cumulative(
     for col in cumulative_columns:
         logging.info(f"Creating {col} outliers check")
         def validate_cumulative_outliers(df: DataFrame, cum_col=col) -> Series:
-            logging.info(f"Checking {cum_col} outliers")
+            logging.debug(f"[record_validators] Checking {cum_col} outliers")
             try:
                 result = validate_columns(df, [cum_col + 'Diff'], validate_not_outliers)
                 return result
@@ -353,8 +353,9 @@ def create_validate_cumulative(
 
 thresholds_df = load_thresholds()
 thresholds_dict = load_thresholds_as_dict()
-# Combine all specific validators into the dictionary
-record_flag_conditions = {
+
+# Category 1: hand-written record quality checks
+record_quality_flag_conditions = {
     'validate_reading_date_uniek': validate_reading_date_uniek,
     'validate_300sec': validate_300sec,
     #'validate_zonopwek_totaal_tegen_gebruik': validate_zonopwek_totaal_tegen_gebruik,
@@ -363,9 +364,20 @@ record_flag_conditions = {
     'validate_thresholds_combined': validate_thresholds_combined,
 }
 
+# Category 2: per-column momentaan / 5-minute threshold checks
+momentaan_flag_conditions: dict = {}
 columns_5min_momentaan = thresholds_df[
     thresholds_df['ThresholdType'].isin(['5-minute', 'momentaan'])
-    ]['Variabele']
+]['Variabele']
+create_validate_momentaan(columns_5min_momentaan, momentaan_flag_conditions)
 
-create_validate_momentaan(columns_5min_momentaan, record_flag_conditions)
-create_validate_cumulative(cumulative_columns, record_flag_conditions)
+# Category 3: cumulative diff outlier checks (negative / statistical)
+cumulative_diff_flag_conditions: dict = {}
+create_validate_cumulative(cumulative_columns, cumulative_diff_flag_conditions)
+
+# Combined dict (backwards-compatible export used by run_standard_pipeline)
+record_flag_conditions = {
+    **record_quality_flag_conditions,
+    **momentaan_flag_conditions,
+    **cumulative_diff_flag_conditions,
+}

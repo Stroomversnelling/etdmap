@@ -6,6 +6,12 @@ import pandas as pd
 
 from etdmap.data_model import cumulative_columns, model_column_order, model_column_type, load_thresholds_as_dict
 from etdmap.index_helpers import get_mapped_data, read_index
+from etdmap.record_validators import (
+    record_flag_conditions,
+    record_quality_flag_conditions,
+    momentaan_flag_conditions,
+    cumulative_diff_flag_conditions,
+)
 
 
 def rearrange_model_columns(
@@ -88,21 +94,23 @@ def rearrange_model_columns(
                     raise ValueError(f"{context}Failed to coerce column '{col}' type: {e!s}")  # noqa: B904
 
     if add_columns:
-        # Add all model columns and keep any additional columns from the original DataFrame
+        # Track which columns exist before reindex — reindex adds missing model columns as
+        # float64 with np.nan, not Float64 with pd.NA. We fix these immediately after.
+        existing_cols = set(household_df.columns)
         household_df = household_df.reindex(
             columns=model_column_order
             + [col for col in household_df.columns if col not in model_column_order],
         )
         for col in model_column_order:
-            if col not in household_df.columns:
-                logging.warning(
-                    f"{context}Missing column {col} added "
-                    'and filled with NA values.',
-                )
-                household_df[col] = pd.Series(
-                    pd.NA,
-                    dtype=model_column_type[col],
-                    index=household_df.index,
+            if col not in existing_cols:
+                if col not in model_column_type:
+                    logging.warning(
+                        f"{context}Model column '{col}' has no dtype in model_column_type "
+                        f"(Type variabele missing in etdmodel.csv). Defaulting to Float64."
+                    )
+                household_df[col] = pd.array(
+                    [pd.NA] * len(household_df),
+                    dtype=model_column_type.get(col, "Float64"),
                 )
     else:
         # Keep only columns that are in both model_column_order and the original DataFrame
@@ -110,7 +118,13 @@ def rearrange_model_columns(
             [col for col in model_column_order if col in household_df.columns]
             + [col for col in household_df.columns if col not in model_column_order]
         ]
-    return household_df
+
+    # ADR 5: coerce any remaining float64 extra (non-model) columns to Float64 so that
+    # all missing values in the output use pd.NA, never np.nan.
+    for col in household_df.columns:
+        if col not in model_column_order and str(household_df[col].dtype) == "float64":
+            household_df[col] = household_df[col].astype("Float64")
+
     return household_df
 
 # Check for any gaps greater than one hour
@@ -240,6 +254,125 @@ def validate_cumulative_variables(
     return result
 
 
+def _apply_negative_diff_corrections(group, col, context_string):
+    """
+    Vectorized correction of negative diffs in one cumulative column.
+
+    Replaces the ``for rd in reading_dates:`` loop in ``add_diff_columns`` with a
+    single-pass helper-column approach:
+
+    1. Build ``_next_val`` / ``_next_date`` for every row simultaneously using
+       ``.where().shift(-1).bfill()`` — O(N).
+    2. Classify each negative-diff row into one of three cases using bitwise masks.
+    3. Mark the rows to set to NA:
+       - Case 1/2 (range blanking): sweep-line via concat/groupby/cumsum — O(K log K + N).
+       - Case no_next (all remaining): direct positional mark.
+       - Case 3 (meter reset): vectorised searchsorted + boolean index.
+    4. Apply a single ``group.loc[..., col] = pd.NA`` at the end.
+
+    Modifies *group* in-place.  Helper columns live only on the local ``fg`` copy.
+
+    Parameters
+    ----------
+    group : pd.DataFrame
+        Per-household DataFrame, sorted by ReadingDate.  Must already contain
+        ``col`` and ``col + 'Diff'`` columns.
+    col : str
+        Name of the cumulative column being corrected.
+    context_string : str
+        Prefix for log messages (e.g. ``"HH-42: "``).
+    """
+    fg = group[['ReadingDate', col]].dropna().copy()
+    fg[col + 'Diff_no_gap'] = fg[col].diff().round(10)
+
+    is_neg = fg[col + 'Diff_no_gap'] < 0
+    if not is_neg.any():
+        return  # nothing to correct
+
+    # --- helper columns: next non-zero diff value and date (single O(N) pass) ---
+    is_nonzero = fg[col + 'Diff_no_gap'] != 0
+    nonzero_vals  = fg[col + 'Diff_no_gap'].where(is_nonzero)
+    nonzero_dates = fg['ReadingDate'].where(is_nonzero)
+    fg['_next_val']  = nonzero_vals.shift(-1).bfill()
+    fg['_next_date'] = nonzero_dates.shift(-1).bfill()
+
+    # --- case classification (pure bitwise, no loops) ---
+    has_next = fg['_next_val'].notna()
+
+    case_1_or_2 = is_neg & has_next & (
+        (fg['_next_val'] >= -fg[col + 'Diff_no_gap']) |  # meter jumps back up
+        (fg['_next_val'] < 0)                             # two consecutive negatives
+    )
+    case_3       = is_neg & has_next & ~case_1_or_2       # meter reset
+    case_no_next = is_neg & ~has_next                     # no recovery
+
+    # positional index over group rows (group itself may have any index label)
+    # Use epoch nanoseconds (int64) for searchsorted to avoid tz-aware vs tz-naive
+    # comparison errors — O-Nexus ReadingDate arrives as datetime64[ns, UTC] and
+    # pd.to_datetime coercion in rearrange_model_columns does not always strip tz.
+    group_dates_ns = group['ReadingDate'].astype('int64').reset_index(drop=True)
+    fg_dates_ns    = fg['ReadingDate'].astype('int64')
+    n = len(group_dates_ns)
+    na_mask = pd.Series(False, index=range(n))
+
+    # --- Case 1/2: sweep-line range marking ---
+    if case_1_or_2.any():
+        starts_ns = fg_dates_ns.loc[case_1_or_2]
+        ends_ns   = fg.loc[case_1_or_2, '_next_date'].astype('int64')
+        si_arr    = group_dates_ns.searchsorted(starts_ns.values)
+        ei_arr    = group_dates_ns.searchsorted(ends_ns.values)
+
+        # +1 at each range start, -1 at each range end; groupby handles duplicates
+        events = pd.concat([
+            pd.Series(1,  index=si_arr),
+            pd.Series(-1, index=ei_arr[ei_arr < n]),
+        ]).groupby(level=0).sum().reindex(range(n), fill_value=0)
+
+        na_mask |= events.cumsum() > 0
+        logging.debug(
+            f"{context_string}Case 1/2: marking {case_1_or_2.sum()} interval(s) "
+            f"as NA in '{col}'"
+        )
+
+    # --- Case no_next: all rows from earliest unrecovered date onward ---
+    if case_no_next.any():
+        earliest_ns = int(fg_dates_ns.loc[case_no_next].min())
+        si = int(group_dates_ns.searchsorted(earliest_ns))
+        na_mask.iloc[si:] = True
+        earliest_disp = fg.loc[case_no_next, 'ReadingDate'].min()
+        logging.warning(
+            f"{context_string}Removing all values in '{col}' after {earliest_disp} — "
+            f"no subsequent increases after the negative diff."
+        )
+
+    # --- Case 3: meter reset — mark single row only if original diff is negative ---
+    if case_3.any():
+        case_3_dates_ns = fg_dates_ns.loc[case_3]
+        si_3      = group_dates_ns.searchsorted(case_3_dates_ns.values)
+        diff_vals = group.iloc[si_3][col + 'Diff']
+        is_neg_diff = (diff_vals < 0).fillna(False)
+        is_na_diff  = diff_vals.isna()
+        is_error    = ~is_neg_diff & ~is_na_diff
+
+        if is_error.any():
+            case_3_dates_disp = fg.loc[case_3, 'ReadingDate']
+            for rd in case_3_dates_disp.values[is_error.values]:
+                logging.error(
+                    f"{context_string}Negative gap jump at {rd}. Diff is not "
+                    f"negative, and not <NA>. Check for errors, e.g duplicate "
+                    f"reading dates!"
+                )
+        na_mask.iloc[si_3[is_neg_diff.values]] = True
+        if is_na_diff.any():
+            logging.debug(
+                f"{context_string}Negative gap jump(s) in '{col}'. "
+                f"Diff is NA, not removing any values."
+            )
+
+    # --- single assignment — one O(N) pandas operation ---
+    group.loc[group.index[na_mask.values], col] = pd.NA
+
+
 def add_diff_columns(
     data: pd.DataFrame,
     id_column: str = None,
@@ -248,7 +381,110 @@ def add_diff_columns(
     drop_unvalidated: bool = False,
 ) -> pd.DataFrame:
     """
-    Add difference columns for cumulative variables and handle some data inconsistencies.
+    Add difference columns for cumulative variables and handle data inconsistencies.
+
+    Vectorized implementation using helper-column sweep-line approach.
+    Negative-diff corrections are applied by ``_apply_negative_diff_corrections``
+    which replaces the original per-date loop with pandas vectorised operations.
+
+    See ``add_diff_columns_legacy`` for the original loop-based implementation
+    (kept until this version has been fully validated in production).
+
+    Parameters
+    ----------
+    data : pd.DataFrame or pd.core.groupby.DataFrameGroupBy
+    id_column : str, optional
+    validate_func : callable, optional
+    context : str, optional
+    drop_unvalidated : bool, optional
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+    if not context == '':
+        context_string = context + ': '
+    else:
+        context_string = context
+
+    data = data.sort_values('ReadingDate')
+
+    def calculate_diff(group):
+        valid_result = validate_func(group=group, context=context)
+        if not all(valid_result.values()):
+            invalid = [key for key, value in valid_result.items() if value is False]
+            if drop_unvalidated:
+                logging.error(
+                    f"{context_string}Some cumulative columns did "
+                    f"not pass validation ({invalid}). Dropping group/data.",
+                )
+                return pd.DataFrame()
+            else:
+                logging.warning(
+                    f"{context_string}Some cumulative columns did not "
+                    f"pass validation ({invalid}). Keeping group/data.",
+                )
+
+        for col in cumulative_columns:
+            if col not in group.columns:
+                logging.warning(
+                    f"{context_string}Cumulative column '{col}' not found. "
+                    'No Diff column created.',
+                )
+                continue
+
+            logging.debug(f"{context_string}Calculating diff for {col}")
+            group[col + 'Diff'] = group[col].diff().round(10)
+            group.loc[group.index[0], col + 'Diff'] = 0
+
+            if not valid_result['no_negative_diff']:
+                _apply_negative_diff_corrections(group, col, context_string)
+
+                logging.debug(
+                    f"{context_string}Re-calculating diff for {col} after corrections."
+                )
+                group[col + 'Diff'] = group[col].diff().round(10)
+                group.loc[group.index[0], col + 'Diff'] = 0
+
+                if (group[col + 'Diff'] < 0).any(skipna=True):
+                    logging.warning(
+                        f"{context_string}Removed zeros but diff still has negative "
+                        f"values in '{col}'! Check data and consider removing.",
+                    )
+
+        return group
+
+    if isinstance(data, pd.core.groupby.DataFrameGroupBy):
+        return data.apply(calculate_diff).reset_index(drop=True)
+    elif isinstance(data, pd.DataFrame):
+        if id_column is not None:
+            return (
+                data.groupby(id_column, group_keys=False)
+                .apply(calculate_diff)
+                .reset_index(drop=True)
+            )
+        else:
+            return calculate_diff(data)
+    else:
+        raise TypeError(
+            f"{context_string}Input data must be a pandas DataFrame "
+            f"or a pandas GroupBy object.",
+        )
+
+
+def add_diff_columns_legacy(
+    data: pd.DataFrame,
+    id_column: str = None,
+    validate_func=validate_cumulative_variables,
+    context: str = '',
+    drop_unvalidated: bool = False,
+) -> pd.DataFrame:
+    """
+    Original loop-based implementation of add_diff_columns (kept for validation).
+
+    Uses a ``for rd in reading_dates:`` loop with per-date DataFrame filters — O(N²)
+    for columns with many negative diffs (e.g. solar with daily resets).
+    Retained until ``add_diff_columns`` (vectorized) has been fully validated in production.
 
     This function calculates the difference between consecutive readings for cumulative columns,
     validates the data, and handles various inconsistencies such as negative differences and unexpected zeros.
@@ -522,14 +758,20 @@ def snap_readings_to_grid(
     context: str = '',
 ) -> pd.DataFrame:
     """
-    Snap timestamps to the nearest freq-minute grid slot and merge rows
-    that fall on the same slot.
+    General utility for merging multiple sensor streams with different time
+    offsets into a single row per grid slot. Handles any number of streams
+    automatically via per-column characteristic offset detection.
 
-    Intended for datasets where different sensor streams in the same table
-    have different time offsets (e.g. columns A-C arrive at HH:MM:22 every
+    Use this whenever a dataset has columns that arrive at different timestamps
+    within the same grid period (e.g. columns A-C arrive at HH:MM:22 every
     5 minutes while columns D-F arrive at HH:MM:00 every 15 minutes).
     Both sets of rows snap to the same 5-minute slot and their column values
     are merged by taking the first non-NA value per column.
+
+    For datasets with multiple separate input files per sensor group, concatenate
+    all files into one DataFrame first (leaving columns from other files as NaN),
+    then call this function. This is equivalent to Factory Zero's Timestep-based
+    sheet merge, but works on datetime columns rather than integer offsets.
 
     Within a slot, when multiple rows are present, each column independently
     selects the row whose timestamp is closest to that column's characteristic
@@ -970,27 +1212,23 @@ def get_raw_data_stats(raw_data_folder_path, multi=False, max_workers=2):
     file_extension = 'parquet'
     summary_data = []
 
-    try:
-        files = os.listdir(raw_data_folder_path)
+    files = os.listdir(raw_data_folder_path)
 
-        if multi:
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                args_list = [(file, raw_data_folder_path) for file in files if file.endswith(f".{file_extension}")]
-                results = executor.map(process_raw_data_file, args_list)
-                summary_data = [item for sublist in results for item in sublist]
-        else:
-            for file in files:
-                if not file.endswith(f".{file_extension}"):
-                    continue
-                summary_data.extend(
-                    process_raw_data_file((file, raw_data_folder_path))
-                )
+    if multi:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            args_list = [(file, raw_data_folder_path) for file in files if file.endswith(f".{file_extension}")]
+            results = executor.map(process_raw_data_file, args_list)
+            summary_data = [item for sublist in results for item in sublist]
+    else:
+        for file in files:
+            if not file.endswith(f".{file_extension}"):
+                continue
+            summary_data.extend(
+                process_raw_data_file((file, raw_data_folder_path))
+            )
 
-        df_raw_stats = pd.DataFrame(summary_data)
-        return df_raw_stats
-
-    except Exception as e:
-        logging.error(f"Failed to complete the main process: {str(e)}", exc_info=True)
+    df_raw_stats = pd.DataFrame(summary_data)
+    return df_raw_stats
 
 def get_mapped_data_stats(multi=False, max_workers=2):
     """
@@ -1015,29 +1253,22 @@ def get_mapped_data_stats(multi=False, max_workers=2):
     - It logs errors if there are issues retrieving or processing the data.
     """
     summary_data = []
-    try:
-        index_df, _ = read_index()
+    index_df, _ = read_index()
 
-        if multi:
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                results = executor.map(collect_mapped_data_stats, index_df["HuisIdBSV"])
-                summary_data = [item for sublist in results for item in sublist]
-        else:
-            for huis_id in index_df["HuisIdBSV"]:
-                logging.info(f"Collecting stats for HuisIdBSV = {huis_id}")
-                result = collect_mapped_data_stats(huis_id)
-                summary_data.extend(result)
+    if multi:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            results = executor.map(collect_mapped_data_stats, index_df["HuisIdBSV"])
+            summary_data = [item for sublist in results for item in sublist]
+    else:
+        for huis_id in index_df["HuisIdBSV"]:
+            logging.info(f"Collecting stats for HuisIdBSV = {huis_id}")
+            result = collect_mapped_data_stats(huis_id)
+            summary_data.extend(result)
 
-        data_summary = pd.DataFrame(summary_data)
-
-        data_summary = data_summary.rename(columns={"Identifier": "HuisIdBSV"})
-
-        data_summary = pd.merge(data_summary, index_df, how="left", on="HuisIdBSV")
-
-        return data_summary
-
-    except Exception as e:
-        logging.error(f"Failed to complete the main process: {str(e)}", exc_info=True)
+    data_summary = pd.DataFrame(summary_data)
+    data_summary = data_summary.rename(columns={"Identifier": "HuisIdBSV"})
+    data_summary = pd.merge(data_summary, index_df, how="left", on="HuisIdBSV")
+    return data_summary
 
 def apply_thresholds_to_df(
     df
@@ -1051,7 +1282,6 @@ def apply_thresholds_to_df(
 
     thresholds_dict = load_thresholds_as_dict()
 
-    logging.info("Checking and removing any values outside of column thresholds.")
     for col in df.columns:
         if col in thresholds_dict:
             df = apply_threshold_to_col(
@@ -1101,10 +1331,188 @@ def apply_threshold_to_col(
     ].notna()
 
     n_out_of_bounds = mask.sum()
-
-    if n_out_of_bounds > 0:
-        logging.info(f"Removing {n_out_of_bounds} values from {col} based on thresholds.")
-
     df.loc[mask, col] = pd.NA
 
     return df
+
+
+def run_standard_pipeline(
+    df: pd.DataFrame,
+    huis_code: int,
+    huis_id: str,
+    mapped_folder_path,
+    context: str = "",
+) -> dict:
+    """
+    Standard per-household processing pipeline shared by all ETD supplier mappers.
+
+    Call this after all supplier-specific preprocessing is complete: column rename,
+    unit conversion, ReadingDate derived, identifier columns dropped, and any
+    supplier-specific grid snapping (e.g. snap_readings_to_grid for O-Nexus).
+
+    Steps:
+      1. Validate ReadingDate present — raise KeyError if missing
+      2. Coerce ReadingDate to datetime if not already; raise ValueError if any rows fail
+      3. Sort by ReadingDate
+      4. ensure_intervals
+      5. Log model column type mismatches at DEBUG
+      6. rearrange_model_columns(add_columns=True)
+      7. add_diff_columns
+      8. Apply record_flag_conditions (try/except per flag; pd.NA on error)
+      9. apply_thresholds_to_df
+     10. Save to {mapped_folder_path}/household_{huis_code}_table.parquet
+
+    Note: fill_down_infrequent_devices is intentionally NOT part of this pipeline.
+    Filling down is a supplier-specific imputation choice — for some data sources
+    (e.g. cumulative meter readings) filling down is wrong and linear interpolation
+    or other strategies are needed. Apply it explicitly in the supplier mapper before
+    calling this function.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Household time-series data with BSV column names.
+    huis_code : int
+        BSV household ID (HuisIdBSV).
+    huis_id : str
+        Supplier household ID (HuisIdLeverancier).
+    mapped_folder_path : str or Path
+        Destination folder for the processed parquet file.
+    context : str
+        Optional log prefix, e.g. '{huis_id}/{huis_code}'.
+
+    Returns
+    -------
+    dict
+        {'HuisIdLeverancier': huis_id, 'HuisIdBSV': huis_code}
+    """
+    ctx = f"{context}: " if context else ""
+    new_file_path = os.path.join(
+        mapped_folder_path, f"household_{huis_code}_table.parquet"
+    )
+    logging.info(
+        f"[run_standard_pipeline] {ctx}Processing household -> {new_file_path}"
+    )
+
+    # ------------------------------------------------------------------
+    # 1. Validate ReadingDate present
+    # ------------------------------------------------------------------
+    if "ReadingDate" not in df.columns:
+        raise KeyError(
+            f"[run_standard_pipeline] {ctx}'ReadingDate' column not found. "
+            f"Available columns: {list(df.columns)}. "
+            f"Ensure derive_and_normalize_reading_date() (or equivalent) was called before this function."
+        )
+
+    # ------------------------------------------------------------------
+    # 2. Coerce ReadingDate to datetime
+    # ------------------------------------------------------------------
+    if not pd.api.types.is_datetime64_any_dtype(df["ReadingDate"]):
+        logging.debug(f"[run_standard_pipeline] {ctx}Coercing 'ReadingDate' to datetime.")
+        df = df.copy()
+        df["ReadingDate"] = pd.to_datetime(df["ReadingDate"], errors="coerce")
+        n_bad = int(df["ReadingDate"].isna().sum())
+        if n_bad > 0:
+            raise ValueError(
+                f"[run_standard_pipeline] {ctx}{n_bad} ReadingDate value(s) could not be "
+                f"parsed. Every row must have a valid ReadingDate."
+            )
+
+    # ------------------------------------------------------------------
+    # 3. Sort by ReadingDate
+    # ------------------------------------------------------------------
+    df = df.sort_values("ReadingDate").reset_index(drop=True)
+    logging.debug(
+        f"[run_standard_pipeline] {ctx}Sorted by ReadingDate. "
+        f"Range: {df['ReadingDate'].min()} to {df['ReadingDate'].max()}"
+    )
+
+    # ------------------------------------------------------------------
+    # 4. Ensure 5-minute intervals
+    # ------------------------------------------------------------------
+    df = ensure_intervals(df)
+
+    # ------------------------------------------------------------------
+    # 5. Log model column type mismatches (DEBUG)
+    # ------------------------------------------------------------------
+    for column in df.columns:
+        if column in model_column_type and df[column].dtype != model_column_type[column]:
+            logging.debug(
+                f"[run_standard_pipeline] {ctx}Column '{column}' "
+                f"has dtype {df[column].dtype}, expected {model_column_type[column]}."
+            )
+    for column in model_column_type:
+        if column not in df.columns:
+            logging.debug(
+                f"[run_standard_pipeline] {ctx}Model column '{column}' "
+                f"not present — will be added as NaN by rearrange_model_columns."
+            )
+
+    # ------------------------------------------------------------------
+    # 6. Rearrange columns to match ETD model order; add missing as NaN
+    # ------------------------------------------------------------------
+    df = rearrange_model_columns(household_df=df, add_columns=True, context=context)
+
+    # ------------------------------------------------------------------
+    # 7. Add diff columns (5-minute differences for cumulative variables)
+    # ------------------------------------------------------------------
+    df = add_diff_columns(df, context=context)
+
+    # ------------------------------------------------------------------
+    # 8. Apply record-level validation flags
+    # ------------------------------------------------------------------
+    for flag, condition in record_flag_conditions.items():
+        df[flag] = condition(df)
+
+    # Count flag failures per category (False = failed validation)
+    thresholds_dict = load_thresholds_as_dict()
+
+    def _count_failures(flag_dict):
+        return {
+            flag: int((df[flag] == False).sum())  # noqa: E712
+            for flag in flag_dict
+            if flag in df.columns and (df[flag] == False).any()  # noqa: E712
+        }
+
+    flag_counts = {
+        "record_quality":   _count_failures(record_quality_flag_conditions),
+        "momentaan":        _count_failures(momentaan_flag_conditions),
+        "cumulative_diff":  _count_failures(cumulative_diff_flag_conditions),
+    }
+
+    # ------------------------------------------------------------------
+    # 9. Apply threshold filters — track removals before/after
+    # ------------------------------------------------------------------
+    _thresh_cols = [c for c in thresholds_dict if c in df.columns]
+    _pre = {c: int(df[c].notna().sum()) for c in _thresh_cols}
+    df = apply_thresholds_to_df(df)
+    threshold_counts = {
+        c: _pre[c] - int(df[c].notna().sum())
+        for c in _thresh_cols
+        if int(df[c].notna().sum()) < _pre[c]
+    }
+
+    # Per-household summary at DEBUG (full detail in log file)
+    _all_flag_failures = {k: v for cat in flag_counts.values() for k, v in cat.items()}
+    if _all_flag_failures or threshold_counts:
+        _parts = []
+        if _all_flag_failures:
+            _parts.append("flags: " + ", ".join(f"{k}={v}" for k, v in sorted(_all_flag_failures.items())))
+        if threshold_counts:
+            _parts.append("thresholds: " + ", ".join(f"{k}={v}" for k, v in sorted(threshold_counts.items())))
+        logging.debug(f"[run_standard_pipeline] {ctx}Validation: " + "; ".join(_parts))
+
+    # ------------------------------------------------------------------
+    # 10. Save
+    # ------------------------------------------------------------------
+    df.to_parquet(new_file_path, engine="pyarrow")
+    logging.info(
+        f"[run_standard_pipeline] {ctx}Saved to {new_file_path} "
+        f"({len(df)} rows, {len(df.columns)} columns)"
+    )
+
+    return {
+        "HuisIdLeverancier": huis_id,
+        "HuisIdBSV": huis_code,
+        "_validation_summary": {"flags": flag_counts, "thresholds": threshold_counts},
+    }

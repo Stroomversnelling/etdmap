@@ -4,7 +4,6 @@ data_summary.csv
 *.log
 */*.log
 *.csv
-!etdmodel.csv
 *.xlsx
 *.ipynb
 *.html
@@ -17,10 +16,11 @@ test_output.txt
 *_files
 
 # gitignore exceptions to above extensions
-!.\data\thresholds.csv
-!.\data\catalog.parquet
-!.\data\Rule.csv
-!.\config_test_template.yaml
+!etdmap/data/etdmodel.csv
+!etdmap/data/thresholds.csv
+!etdmap/data/catalog.parquet
+!etdmap/data/Rule.csv
+!config_test_template.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

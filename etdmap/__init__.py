@@ -8,6 +8,7 @@ from . import (
     index_helpers,
     mapping_clock_helpers,
     record_validators,
+    supplier_validators,
 )
 
 # Explicitly export modules and functions
@@ -18,11 +19,12 @@ __all__ = [
     "dataset_validators",
     "index_helpers",
     "mapping_clock_helpers",
+    "record_validators",
+    "supplier_validators",
     # Specific imports from etdmap
     "options",
     "read_index",
     "read_metadata",
-    "record_validators",
     "update_index",
 ]
 

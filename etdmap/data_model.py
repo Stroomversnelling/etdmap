@@ -2,169 +2,59 @@ from importlib.resources import files
 
 import pandas as pd
 
-# Required columns and columns used in analyzing variables
-data_analysis_columns = [
-    "ReadingDate",
-    "Ventilatiedebiet",
-    "CO2",
-    "ElektriciteitNetgebruikHoog",
-    "ElektriciteitNetgebruikLaag",
-    "ElektriciteitTerugleveringHoog",
-    "ElektriciteitTerugleveringLaag",
-    "ElektriciteitVermogen",
-    "ElektriciteitsgebruikWTW",
-    "ElektriciteitsgebruikWarmtepomp",
-    "ElektriciteitsgebruikBooster",
-    "ElektriciteitsgebruikBoilervat",
-    "TemperatuurWarmTapwater",
-    "TemperatuurWoonkamer",
-    "WarmteproductieWarmtepomp",
-    "TemperatuurSetpointWoonkamer",
-    "Zon-opwekMomentaan",
-    "Zon-opwekTotaal",
-    "Luchtvochtigheid",
-]
-
-
-cumulative_columns = [
-    'ElektriciteitNetgebruikHoog',
-    'ElektriciteitNetgebruikLaag',
-    'ElektriciteitTerugleveringHoog',
-    'ElektriciteitTerugleveringLaag',
-    'Gasgebruik',
-    'ElektriciteitsgebruikWTW',
-    'ElektriciteitsgebruikWarmtepomp',
-    'ElektriciteitsgebruikBooster',
-    'ElektriciteitsgebruikBoilervat',
-    'ElektriciteitsgebruikRadiator',
-    'WarmteproductieWarmtepomp',
-    'WatergebruikWarmTapwater',
-    'Zon-opwekTotaal',
-    'ElektriciteitsgebruikWarmtepompIntern',
-    'WarmteproductieRuimteverwarming',
-    'WarmteproductieWarmTapwater',
-    'WatergebruikWarmtepomp',
-    'WatergebruikRuimteverwarming',
-]
-
-model_column_order = [
-    'ReadingDate',
-    'ElektriciteitNetgebruikHoog',
-    'ElektriciteitNetgebruikLaag',
-    'ElektriciteitTerugleveringHoog',
-    'ElektriciteitTerugleveringLaag',
-    'ElektriciteitVermogen',
-    'Gasgebruik',
-    'ElektriciteitsgebruikWTW',
-    'ElektriciteitsgebruikWarmtepomp',
-    'ElektriciteitsgebruikBooster',
-    'ElektriciteitsgebruikBoilervat',
-    'ElektriciteitsgebruikRadiator',
-    'TemperatuurWarmTapwater',
-    'TemperatuurWoonkamer',
-    'TemperatuurSetpointWoonkamer',
-    'WarmteproductieWarmtepomp',
-    'WatergebruikWarmTapwater',
-    'Zon-opwekMomentaan',
-    'Zon-opwekTotaal',
-    'CO2',
-    'Luchtvochtigheid',
-    'Ventilatiedebiet',
-    'SlimmemeterVoltageL1',
-    'SlimmemeterVoltageL2',
-    'SlimmemeterVoltageL3',
-    'SlimmemeterStroomsterkteL1',
-    'SlimmemeterStroomsterkteL2',
-    'SlimmemeterStroomsterkteL3',
-    'ElektriciteitsgebruikWarmtepompIntern',
-    'TemperatuurBoilervat',
-    'TemperatuurBinnenWTW',
-    'TemperatuurBuitenWTW',
-    'TemperatuurBuitenWarmtepomp',
-    'TemperatuurAfgifteAanvoer',
-    'TemperatuurAfgifteRetour',
-    'TemperatuurTapwaterAanvoer',
-    'TemperatuurTapwaterRetour',
-    'WarmteproductieRuimteverwarming',
-    'WarmteproductieWarmTapwater',
-    'WatergebruikWarmtepomp',
-    'WatergebruikRuimteverwarming',
-    'Mode',
-]
-model_column_type = {
-    'ReadingDate': 'datetime64[ns]',  # pandas datetime column
-    'ElektriciteitNetgebruikHoog': 'Float64',
-    'ElektriciteitNetgebruikLaag': 'Float64',
-    'ElektriciteitTerugleveringHoog': 'Float64',
-    'ElektriciteitTerugleveringLaag': 'Float64',
-    'ElektriciteitVermogen': 'Float64',
-    'Gasgebruik': 'Float64',
-    'ElektriciteitsgebruikWTW': 'Float64',
-    'ElektriciteitsgebruikWarmtepomp': 'Float64',
-    'ElektriciteitsgebruikBooster': 'Float64',
-    'ElektriciteitsgebruikBoilervat': 'Float64',
-    'ElektriciteitsgebruikRadiator': 'Float64',
-    # 'ElektriciteitsgebruikHuishoudelijk': 'Float64',
-    'TemperatuurWarmTapwater': 'Float64',
-    'TemperatuurWoonkamer': 'Float64',
-    'TemperatuurSetpointWoonkamer': 'Float64',
-    'WarmteproductieWarmtepomp': 'Float64',
-    'WatergebruikWarmTapwater': 'Float64',
-    'Zon-opwekMomentaan': 'Float64',
-    'Zon-opwekTotaal': 'Float64',
-    'CO2': 'Float64',
-    'Luchtvochtigheid': 'Float64',
-    'Ventilatiedebiet': 'Float64',
-    'SlimmemeterVoltageL1': 'Float64',
-    'SlimmemeterVoltageL2': 'Float64',
-    'SlimmemeterVoltageL3': 'Float64',
-    'SlimmemeterStroomsterkteL1': 'Float64',
-    'SlimmemeterStroomsterkteL2': 'Float64',
-    'SlimmemeterStroomsterkteL3': 'Float64',
-    'ElektriciteitsgebruikWarmtepompIntern': 'Float64',
-    'TemperatuurBoilervat': 'Float64',
-    'TemperatuurBinnenWTW': 'Float64',
-    'TemperatuurBuitenWTW': 'Float64',
-    'TemperatuurBuitenWarmtepomp': 'Float64',
-    'TemperatuurAfgifteAanvoer': 'Float64',
-    'TemperatuurAfgifteRetour': 'Float64',
-    'TemperatuurTapwaterAanvoer': 'Float64',
-    'TemperatuurTapwaterRetour': 'Float64',
-    'WarmteproductieRuimteverwarming': 'Float64',
-    'WarmteproductieWarmTapwater': 'Float64',
-    'WatergebruikWarmtepomp': 'Float64',
-    'WatergebruikRuimteverwarming': 'Float64',
-    'Mode': 'Float64',
+# Maps Grist/CSV "Type variabele" values to pandas dtype strings.
+# This mapping belongs in code, not data — it's a fixed translation layer.
+_DTYPE_MAP = {
+    "number": "Float64",
+    "date": "datetime64[ns]",
+    "integer": "Int64",
+    "string": "string",
+    "boolean": "boolean",
 }
 
-allowed_supplier_metadata_columns = [
-    "ProjectIdLeverancier", "HuisIdLeverancier", "Weerstation", "Oppervlakte",
-    "Compactheid", "Warmtebehoefte", "PrimairFossielGebruik", "Bouwjaar", "Renovatiejaar",
-    "WoningType", "WoningTypeDetail", "WarmteopwekkerType", "WarmteopwekkerCategorie",
-    "Warmteopwekker", "Ventilatiesysteem", "Kookinstallatie", "PVJaarbundel", "PVMerk",
-    "PVType", "PVAantalPanelen", "PVWattpiekPerPaneel", "EPV", "GasgebruikVoorRenovatie",
-    "ElektriciteitVoorRenovatie",
-    'Eigenaarschap',
-    'Nieuwheid',
-    'WarmtepompKoudemiddel',
-    'WarmtepompVermogenTh',
-    'WarmtepompElElement',
-    'WarmtepompElAansluiting',
-    'WarmtepompBron',
-    'BoilervatVolume',
-    'AfgiftesysteemCategorie',
-    'DakType'
-]
 
-
-def load_thresholds():
+def load_etdmodel() -> pd.DataFrame:
     """
-    Load thresholds from a CSV file.
+    Load the ETD model definition from CSV.
+
+    By default loads the bundled etdmap/data/etdmodel.csv. To use a custom
+    model file, set etdmap.options.etdmodel_csv_path before importing this module:
+
+        import etdmap
+        etdmap.options.etdmodel_csv_path = "/path/to/my_model.csv"
+
+    The CSV can be updated by any tooling that writes to that path — the
+    derived structures (cumulative_columns, model_column_order, etc.) update
+    automatically on next import.
 
     Returns
     -------
     pandas.DataFrame
-        A DataFrame containing the thresholds data.
+        Full model DataFrame with all columns present in the CSV.
+    """
+    from etdmap import options
+
+    if options.etdmodel_csv_path is not None:
+        csv_path = options.etdmodel_csv_path
+    else:
+        csv_path = files("etdmap.data").joinpath("etdmodel.csv")
+
+    return pd.read_csv(csv_path, dtype_backend="numpy_nullable")
+
+
+def load_thresholds() -> pd.DataFrame:
+    """
+    Load thresholds from the bundled thresholds.csv.
+
+    This file includes both primary-column thresholds and Diff-column thresholds
+    (e.g. ElektriciteitNetgebruikHoogDiff) that are derived from cumulative columns
+    and are not rows in etdmodel.csv. It can be regenerated from etdmodel.csv using
+    the sync tooling in your workflow repository.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: Variabele, ThresholdType, Eenheid, Min, Max, ThresholdToelichting
     """
     thresholds_file = files("etdmap.data").joinpath("thresholds.csv")
 
@@ -174,65 +64,116 @@ def load_thresholds():
         "Eenheid": "string",
         "Min": "Float64",
         "Max": "Float64",
-        "ThresholdToelichting": "string"
+        "ThresholdToelichting": "string",
     }
 
-    df = pd.read_csv(
+    return pd.read_csv(
         thresholds_file,
         dtype=dtype_dict,
-        na_values=["n.a.", "NA", "N/A", ""],  # Specify values to be treated as NA
-        keep_default_na=True  # Keep pandas' default NA values
+        na_values=["n.a.", "NA", "N/A", ""],
+        keep_default_na=True,
     )
 
-    return df
 
 def load_thresholds_as_dict() -> dict:
     """
-    Load thresholds from the package thresholds CSV file and convert to a dictionary.
-
-    Returns
-    -------
-    dict
-        A dictionary containing the thresholds data.
+    Load thresholds and return as {variable_name: {"Min": ..., "Max": ...}}.
     """
     thresholds_dict = {}
-    thresholds_df = load_thresholds()
-    for _, row in thresholds_df.iterrows():
-        col = row['Variabele']
-        thresholds_dict[col] = {}
-        thresholds_dict[col]['Min'] = row['Min']
-        thresholds_dict[col]['Max'] = row['Max']
+    for _, row in load_thresholds().iterrows():
+        col = row["Variabele"]
+        thresholds_dict[col] = {"Min": row["Min"], "Max": row["Max"]}
     return thresholds_dict
 
-def load_etdmodel():
-    """
-    Load ETD model from the package ETD model definition CSV file.
 
-    Returns
-    -------
-    pandas.DataFrame
-        A DataFrame containing the ETD model data.
-    """
-    etdmodel_file = files("etdmap.data").joinpath("etdmodel.csv")
+# ---------------------------------------------------------------------------
+# Derived structures — built once at import time from load_etdmodel().
+# Change the CSV (or set etdmap.options.etdmodel_csv_path) to update these.
+# ---------------------------------------------------------------------------
 
-    dtype_dict = {
-        "Entiteit": "string",
-        "Variabele": "string",
-        "Key": "string",
-        "Type variabele": "string",
-        "Vereist": "string",
-        "Resolutie": "string",
-        "Wie vult?": "string",
-        "Bron": "string",
-        "Definitie": "string",
-        "AVG gevoelig": "string"
+def _build_derived_structures():
+    df = load_etdmodel()
+
+    # Sort Prestatiedata rows by Volgorde when available, fall back to CSV row order.
+    # Volgorde is an explicit integer sequence column that defines the canonical
+    # ordering of performance variables. Maintain it in whatever tool manages
+    # the CSV so ordering is intentional and stable, not an artifact of row insertion.
+    perf = df[df["Entiteit"] == "Prestatiedata"].copy()
+    if "Volgorde" in perf.columns and perf["Volgorde"].notna().any():
+        perf = perf.sort_values("Volgorde", na_position="last")
+
+    # Cumulative meter-reading columns.
+    # Exclude date-type columns (ReadingDate may be flagged Cumulatief in some
+    # CSV versions — filtering by type is more robust than filtering by name).
+    # The order of this list does not affect correctness.
+    cumulative = df[
+        (df["Cumulatief"] == "ja") & (df["Type variabele"] != "date")
+    ]["Variabele"].tolist()
+
+    # All performance-data columns in Volgorde order — used to validate column
+    # presence and to reorder output parquet files.
+    col_order = perf["Variabele"].tolist()
+
+    # pandas dtype per performance column, derived from "Type variabele".
+    col_types = {
+        row["Variabele"]: _DTYPE_MAP.get(str(row["Type variabele"]), "Float64")
+        for _, row in perf.iterrows()
+        if pd.notna(row["Type variabele"])
     }
 
-    df = pd.read_csv(
-        etdmodel_file,
-        dtype=dtype_dict,
-        na_values=["n.a.", "NA", "N/A", ""],  # Specify values to be treated as NA
-        keep_default_na=True  # Keep pandas' default NA values
-    )
+    # Columns suppliers are allowed to provide in their metadata files.
+    supplier_meta = df[
+        (df["Wie vult?"] == "Dataleverancier") & (df["Entiteit"] == "Metadata")
+    ]["Variabele"].tolist()
 
-    return df
+    return cumulative, col_order, col_types, supplier_meta
+
+
+(
+    cumulative_columns,
+    model_column_order,
+    model_column_type,
+    allowed_supplier_metadata_columns,
+) = _build_derived_structures()
+
+# data_analysis_columns: the full set of performance columns used to validate
+# that required variables are present in a mapped household file.
+# Currently equal to model_column_order (all Prestatiedata rows).
+# Once the "Vereist" column in etdmodel.csv is correctly populated for all
+# relevant columns, this can be narrowed to only Vereist=="ja" rows.
+data_analysis_columns = model_column_order
+
+# Preferred variables for aggregation workflows (etdtransform, reporting pipelines).
+# Keeps aggregation runs fast by skipping momentaan variables and cumulative base columns
+# that are rarely needed in standard project-level analysis.
+# This mirrors the active entries in etdtransform/aggregate.py aggregation_variables.
+#
+# Includes both Diff columns (from raw mapped parquet files) and derived computed totals
+# produced by the transform pipeline (e.g. ZonopwekBruto, ElektriciteitsgebruikTotaalNetto).
+# Not all column names follow the *Diff pattern — derived totals have their own names.
+#
+# TODO: replace with a filter on an 'Aggregeren' column in etdmodel.csv once
+# that column is added to the Grist data model.
+preferred_aggregation_columns: list[str] = [
+    # Electricity grid exchange — Diff variables (raw per-interval consumption)
+    "ElektriciteitNetgebruikHoogDiff",
+    "ElektriciteitNetgebruikLaagDiff",
+    "ElektriciteitTerugleveringHoogDiff",
+    "ElektriciteitTerugleveringLaagDiff",
+    # Heat pump sub-system electricity — Diff variables
+    "ElektriciteitsgebruikWTWDiff",
+    "ElektriciteitsgebruikWarmtepompDiff",
+    "ElektriciteitsgebruikBoosterDiff",
+    "ElektriciteitsgebruikBoilervatDiff",
+    "ElektriciteitsgebruikRadiatorDiff",
+    # Derived computed totals (produced by etdtransform, not present in raw parquet)
+    "ZonopwekBruto",
+    "TerugleveringTotaalNetto",
+    "ElektriciteitsgebruikTotaalNetto",
+    "Netuitwisseling",
+    "ElektriciteitsgebruikTotaalWarmtepomp",
+    "ElektriciteitsgebruikTotaalGebouwgebonden",
+    "ElektriciteitsgebruikTotaalHuishoudelijk",
+    "Zelfgebruik",
+    "ElektriciteitsgebruikTotaalBruto",
+]

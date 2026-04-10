@@ -41,7 +41,7 @@ dev = ["pre-commit"]
 packages = ["etdmap"]
 
 [tool.setuptools.package-data]
-etdmap = ["data/*.csv"]  # Include all CSV files in the `etdmap/data/` directory
+etdmap = ["data/*.csv", "data/*.parquet"]
 
 [tool.ruff]
 line-length = 88

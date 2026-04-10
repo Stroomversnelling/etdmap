@@ -1,0 +1,12 @@
+target,expression,rhs_vars,physical_model
+TerugleveringTotaalNetto,ElektriciteitTerugleveringLaagDiff + ElektriciteitTerugleveringHoogDiff,"ElektriciteitTerugleveringLaagDiff, ElektriciteitTerugleveringHoogDiff","Universeel, All-Electric, Hybride"
+ElektriciteitsgebruikTotaalNetto,ElektriciteitNetgebruikLaagDiff  + ElektriciteitNetgebruikHoogDiff,"ElektriciteitNetgebruikLaagDiff, ElektriciteitNetgebruikHoogDiff","Universeel, All-Electric, Hybride"
+Netuitwisseling,ElektriciteitsgebruikTotaalNetto - TerugleveringTotaalNetto,"ElektriciteitsgebruikTotaalNetto, TerugleveringTotaalNetto","Universeel, All-Electric, Hybride"
+ElektriciteitsgebruikTotaalWarmtepomp,ElektriciteitsgebruikWarmtepompDiff + ElektriciteitsgebruikBoosterDiff + ElektriciteitsgebruikBoilervatDiff,"ElektriciteitsgebruikWarmtepompDiff, ElektriciteitsgebruikBoosterDiff, ElektriciteitsgebruikBoilervatDiff","Universeel, All-Electric, Hybride"
+ElektriciteitsgebruikTotaalGebouwgebonden,ElektriciteitsgebruikTotaalWarmtepomp + ElektriciteitsgebruikWTWDiff + ElektriciteitsgebruikRadiatorDiff,"ElektriciteitsgebruikTotaalWarmtepomp, ElektriciteitsgebruikWTWDiff, ElektriciteitsgebruikRadiatorDiff","Universeel, All-Electric, Hybride"
+ElektriciteitsgebruikTotaalHuishoudelijk,Netuitwisseling + ZonopwekBruto - ElektriciteitsgebruikTotaalGebouwgebonden,"Netuitwisseling, ZonopwekBruto, ElektriciteitsgebruikTotaalGebouwgebonden","Universeel, All-Electric, Hybride"
+Zelfgebruik,ZonopwekBruto - TerugleveringTotaalNetto,"ZonopwekBruto, TerugleveringTotaalNetto","Universeel, All-Electric, Hybride"
+ElektriciteitsgebruikTotaalBruto,ElektriciteitsgebruikTotaalNetto + Zelfgebruik,"Zelfgebruik, ElektriciteitsgebruikTotaalNetto","Universeel, All-Electric, Hybride"
+ElektriciteitsgebruikWTWDiff,-ElektriciteitsgebruikRadiatorDiff + ElektriciteitsgebruikTotaalGebouwgebonden - ElektriciteitsgebruikTotaalWarmtepomp,"ElektriciteitsgebruikRadiatorDiff, ElektriciteitsgebruikTotaalGebouwgebonden, ElektriciteitsgebruikTotaalWarmtepomp","Universeel, All-Electric, Hybride"
+TerugleveringTotaalNetto,ElektriciteitTerugleveringDiff,ElektriciteitTerugleveringDiff,"Universeel, All-Electric, Hybride"
+ElektriciteitsgebruikTotaalNetto,ElektriciteitNetgebruikDiff,ElektriciteitNetgebruikDiff,"Universeel, All-Electric, Hybride"

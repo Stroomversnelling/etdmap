@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import NamedTuple
 
 import pandas as pd
 
@@ -10,10 +11,26 @@ from etdmap.data_model import (
 )
 from etdmap.dataset_validators import dataset_flag_conditions
 
+class HouseholdKey(NamedTuple):
+    """Composite key uniquely identifying a household within a supplier dataset.
+
+    HuisIdLeverancier alone is never unique — the same address string can exist
+    in multiple projects. Always use both fields together.
+    """
+    project_id_leverancier: str
+    huis_id_leverancier: str
+
+
+# Standard BSV column name constants.
+# Import these in supplier mapping scripts rather than redefining them locally.
+BSV_HOUSE_COL = "HuisIdLeverancier"
+BSV_ID_COL = "HuisIdBSV"
+BSV_PROJECT_COL = "ProjectIdLeverancier"
+
 bsv_metadata_columns = [
-    "HuisIdLeverancier",
-    "HuisIdBSV",
-    "ProjectIdLeverancier",
+    BSV_HOUSE_COL,
+    BSV_ID_COL,
+    BSV_PROJECT_COL,
     "ProjectIdBSV",
     "Dataleverancier",
     "Meenemen",
@@ -182,10 +199,70 @@ def get_household_id_pairs(
     return household_id_pairs
 
 
+def assign_bsv_ids(
+    index_df: pd.DataFrame,
+    data_provider: str,
+    household_keys: list,
+) -> dict:
+    """Assign HuisIdBSV to (ProjectIdLeverancier, HuisIdLeverancier) pairs.
+
+    Looks up existing assignments from the index by composite key. New pairs
+    receive sequential integers starting from max(HuisIdBSV) + 1 globally
+    (across all suppliers), so HuisIdBSV is unique across the entire dataset.
+
+    Parameters
+    ----------
+    index_df : pd.DataFrame
+        The current index DataFrame.
+    data_provider : str
+        The supplier name (Dataleverancier).
+    household_keys : list[HouseholdKey]
+        Ordered list of (project_id_leverancier, huis_id_leverancier) pairs
+        to assign. Duplicates are safe — each unique key gets one ID.
+
+    Returns
+    -------
+    dict[HouseholdKey, int]
+        Mapping from each HouseholdKey to its HuisIdBSV.
+    """
+    provider_rows = index_df[index_df["Dataleverancier"] == data_provider]
+
+    existing = {}
+    if not provider_rows.empty and "ProjectIdLeverancier" in provider_rows.columns:
+        lookup = (
+            provider_rows
+            .set_index(["ProjectIdLeverancier", "HuisIdLeverancier"])["HuisIdBSV"]
+            .dropna()
+            .to_dict()
+        )
+        existing = {HouseholdKey(str(p), str(h)): int(v) for (p, h), v in lookup.items()}
+
+    valid_ids = index_df["HuisIdBSV"].dropna()
+    next_id = int(valid_ids.max()) + 1 if not valid_ids.empty else 1
+
+    result = {}
+    for key in household_keys:
+        if key in result:
+            continue  # already assigned in this batch
+        if key in existing:
+            result[key] = existing[key]
+        else:
+            result[key] = next_id
+            existing[key] = next_id
+            next_id += 1
+
+    logging.info(
+        f"[assign_bsv_ids] {data_provider}: {len(result)} household(s) assigned. "
+        f"Next available HuisIdBSV: {next_id}"
+    )
+    return result
+
+
 def update_index(
     index_df: pd.DataFrame,
     new_entry: dict,
     data_provider: str,
+    save: bool = True,
 ) -> pd.DataFrame:
     """Update the index with new entries and recalculate or add flag columns for dataset validators.
 
@@ -210,11 +287,24 @@ def update_index(
         new_entry["ProjectIdLeverancier"] = str(new_entry["ProjectIdLeverancier"])
     new_entry["Dataleverancier"] = data_provider
 
-    if new_entry["HuisIdLeverancier"] in index_df["HuisIdLeverancier"].values:
-        index_df.loc[
-            index_df["HuisIdLeverancier"] == new_entry["HuisIdLeverancier"],
-            ["HuisIdBSV", "Dataleverancier"],
-        ] = (new_entry["HuisIdBSV"], data_provider)
+    huis_id = new_entry["HuisIdLeverancier"]
+    project_id = new_entry.get("ProjectIdLeverancier")
+    if not project_id:
+        raise ValueError(
+            f"update_index: 'ProjectIdLeverancier' is required but missing or empty "
+            f"for HuisIdLeverancier='{huis_id}'. All mappers must supply it."
+        )
+
+    mask = (
+        (index_df["HuisIdLeverancier"] == huis_id)
+        & (index_df["ProjectIdLeverancier"] == project_id)
+    )
+
+    if mask.any():
+        index_df.loc[mask, ["HuisIdBSV", "Dataleverancier"]] = (
+            new_entry["HuisIdBSV"],
+            data_provider,
+        )
     else:
         new_entry_df = pd.DataFrame([new_entry])
         index_df = pd.concat([index_df, new_entry_df], ignore_index=True)
@@ -258,7 +348,8 @@ def update_index(
 
     index_df = update_meta_validators(index_df)
 
-    save_index_to_parquet(index_df=index_df)
+    if save:
+        save_index_to_parquet(index_df=index_df)
 
     return index_df
 
@@ -445,6 +536,24 @@ def add_supplier_metadata_to_index(
         columns=[col for col in protected_columns if col in metadata_df.columns],
     )
 
+    # Validate that ProjectIdLeverancier is populated in both metadata sources
+    # before the join — a null here means a silent failure (null != null in join keys).
+    null_project_supplier = metadata_df["ProjectIdLeverancier"].isna().sum() if "ProjectIdLeverancier" in metadata_df.columns else len(metadata_df)
+    if null_project_supplier > 0:
+        raise ValueError(
+            f"add_supplier_metadata_to_index [{data_leverancier}]: "
+            f"{null_project_supplier} row(s) in the supplier metadata file have "
+            f"no ProjectIdLeverancier. Fill these in before running."
+        )
+
+    null_project_bsv = bsv_metadata_filtered_df["ProjectIdLeverancier"].isna().sum() if "ProjectIdLeverancier" in bsv_metadata_filtered_df.columns else len(bsv_metadata_filtered_df)
+    if null_project_bsv > 0:
+        raise ValueError(
+            f"add_supplier_metadata_to_index [{data_leverancier}]: "
+            f"{null_project_bsv} row(s) in the BSV metadata file have "
+            f"no ProjectIdLeverancier. Fill these in before running."
+        )
+
     # # bsv_metadata_df (do not change bsv_metadata_df)
     metadata_df = metadata_df.merge(
         bsv_metadata_filtered_df[
@@ -460,22 +569,46 @@ def add_supplier_metadata_to_index(
         how="left",
     )
 
+    # After the join, any NaN in HuisIdBSV means a row had no match in the BSV
+    # metadata — either the household is missing from the BSV file, or
+    # ProjectIdLeverancier/HuisIdLeverancier don't align. Catch this now
+    # rather than silently writing nothing to the index.
+    unmatched = metadata_df["HuisIdBSV"].isna()
+    if unmatched.any():
+        bad_rows = metadata_df.loc[unmatched, ["HuisIdLeverancier", "ProjectIdLeverancier"]].to_dict("records")
+        raise ValueError(
+            f"add_supplier_metadata_to_index [{data_leverancier}]: "
+            f"{unmatched.sum()} supplier metadata row(s) did not match any entry "
+            f"in the BSV metadata file. Check HuisIdLeverancier and "
+            f"ProjectIdLeverancier alignment. Unmatched: {bad_rows}"
+        )
+
+    null_bsv_project_id = metadata_df["ProjectIdBSV"].isna().sum()
+    if null_bsv_project_id > 0:
+        raise ValueError(
+            f"add_supplier_metadata_to_index [{data_leverancier}]: "
+            f"{null_bsv_project_id} row(s) have no ProjectIdBSV in the BSV "
+            f"metadata file. Assign ProjectIdBSV for all households before running."
+        )
+
     # Add new columns with pd.NA if they do not already exist in index_df
     for column in metadata_df.columns:
         if column not in index_df.columns:
             index_df[column] = pd.NA
 
-    index_key_columns = ["HuisIdLeverancier", "Dataleverancier"]
+    index_key_columns = ["HuisIdLeverancier", "ProjectIdLeverancier", "Dataleverancier"]
 
     # Update existing records
     index_df.set_index(
         index_key_columns,
         inplace=True,
     )
+    index_df.sort_index(inplace=True)
     metadata_df.set_index(
         index_key_columns,
         inplace=True,
     )
+    metadata_df.sort_index(inplace=True)
 
     columns_for_update = metadata_df.columns.intersection([*allowed_supplier_metadata_columns, "ProjectIdBSV"])
     index_df.update(metadata_df.loc[:, columns_for_update])

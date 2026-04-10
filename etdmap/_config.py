@@ -70,12 +70,25 @@ bsv_metadata_file = Option(
     callback=None,
 )
 
+etdmodel_csv_path = Option(
+    key="etdmodel_csv_path",
+    default_value=None,
+    doc=(
+        "Override path to the ETD model CSV file. When None (default), the bundled "
+        "etdmap/data/etdmodel.csv is used. Set this to use your own data model CSV, "
+        "e.g. etdmap.options.etdmodel_csv_path = '/path/to/my_model.csv'."
+    ),
+    validator=None,
+    callback=None,
+)
+
 # Set the option with default values
 options = Options(
     {
         "mapped_folder_path": mapped_folder_path,
         "aggregate_folder_path": aggregate_folder_path,
-        "bsv_metadata_file": bsv_metadata_file
+        "bsv_metadata_file": bsv_metadata_file,
+        "etdmodel_csv_path": etdmodel_csv_path,
     }
 )
 

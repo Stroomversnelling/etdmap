@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -159,8 +160,10 @@ def raw_data_fixture(tmp_path_factory):
                 "ReadingDate": timestamps,
             }
 
-            # Generate cumulative column data
-            for col in cumulative_columns:
+            # Generate cumulative column data.
+            # Each column uses an independent seed derived from household + column name
+            # so fixture data is stable regardless of the order of cumulative_columns.
+            for col in sorted(cumulative_columns):
                 diff_col = f"{col}Diff"
                 if diff_col in thresholds["Variabele"].values:
                     min_diff = thresholds.loc[thresholds["Variabele"] == diff_col, "Min"].values[0]
@@ -168,7 +171,9 @@ def raw_data_fixture(tmp_path_factory):
                     if pd.isna(max_diff):
                         max_diff = default_max_value
 
-                    diffs = pd.Series(rng.uniform(min_diff, max_diff, size=num_records - 1), dtype="float64")
+                    col_seed = int(hashlib.md5(f"{huis_id}_{col}".encode()).hexdigest(), 16) % (2**32)
+                    col_rng = Generator(PCG64(seed=col_seed))
+                    diffs = pd.Series(col_rng.uniform(min_diff, max_diff, size=num_records - 1), dtype="float64")
                     cumulative = pd.concat([pd.Series([0]), diffs.cumsum()], ignore_index=True)
                     household_data[col] = cumulative
                 else:

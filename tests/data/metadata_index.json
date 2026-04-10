@@ -9,6 +9,13 @@
                 "null_count": 0
             }
         },
+        "ProjectIdLeverancier": {
+            "statistics": {
+                "min": "Project01",
+                "max": "Project02",
+                "null_count": 0
+            }
+        },
         "Dataleverancier": {
             "statistics": {
                 "min": "etdmap",
@@ -20,13 +27,6 @@
             "statistics": {
                 "min": "1",
                 "max": "10",
-                "null_count": 0
-            }
-        },
-        "ProjectIdLeverancier": {
-            "statistics": {
-                "min": "Project01",
-                "max": "Project02",
                 "null_count": 0
             }
         },
@@ -191,6 +191,20 @@
                 "null_count": 0
             }
         },
+        "validate_ElektriciteitsgebruikWarmtepompIntern": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikWarmtepompInternDiff": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
         "validate_ElektriciteitsgebruikBooster": {
             "statistics": {
                 "min": null,
@@ -200,8 +214,8 @@
         },
         "validate_ElektriciteitsgebruikBoosterDiff": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -241,48 +255,6 @@
             }
         },
         "validate_WarmteproductieWarmtepompDiff": {
-            "statistics": {
-                "min": "True",
-                "max": "True",
-                "null_count": 0
-            }
-        },
-        "validate_WatergebruikWarmTapwater": {
-            "statistics": {
-                "min": "False",
-                "max": "False",
-                "null_count": 0
-            }
-        },
-        "validate_WatergebruikWarmTapwaterDiff": {
-            "statistics": {
-                "min": "True",
-                "max": "True",
-                "null_count": 0
-            }
-        },
-        "validate_Zon-opwekTotaal": {
-            "statistics": {
-                "min": null,
-                "max": null,
-                "null_count": 10
-            }
-        },
-        "validate_Zon-opwekTotaalDiff": {
-            "statistics": {
-                "min": "True",
-                "max": "True",
-                "null_count": 0
-            }
-        },
-        "validate_ElektriciteitsgebruikWarmtepompIntern": {
-            "statistics": {
-                "min": "False",
-                "max": "False",
-                "null_count": 0
-            }
-        },
-        "validate_ElektriciteitsgebruikWarmtepompInternDiff": {
             "statistics": {
                 "min": "True",
                 "max": "True",
@@ -331,6 +303,20 @@
                 "null_count": 0
             }
         },
+        "validate_WatergebruikWarmTapwater": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_WatergebruikWarmTapwaterDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
         "validate_WatergebruikRuimteverwarming": {
             "statistics": {
                 "min": null,
@@ -339,6 +325,20 @@
             }
         },
         "validate_WatergebruikRuimteverwarmingDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_Zon-opwekTotaal": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_Zon-opwekTotaalDiff": {
             "statistics": {
                 "min": "True",
                 "max": "True",

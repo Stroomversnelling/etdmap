@@ -89,11 +89,17 @@ def _process_data_fixture_file(huis_code, file_name, etd_test_fixture_path, mapp
 
     data_fixture_df.to_parquet(new_file_path, engine="pyarrow")
 
+    project_id = (
+        str(data_fixture_df["ProjectIdLeverancier"].iloc[0])
+        if "ProjectIdLeverancier" in data_fixture_df.columns
+        else "unknown"
+    )
+
     return {
         "HuisIdLeverancier": f'Huis{int(file_name.replace("household_", "").replace("_table.parquet", "")):02}',
-        # "ProjectId": 3,
+        "ProjectIdLeverancier": project_id,
         "HuisCode": huis_code,
-        "HuisIdBSV": huis_code
+        "HuisIdBSV": huis_code,
     }
 
 def _run_mapping_of_etd_fixtures(raw_data_fixture: str, limit_houses:int=20) -> None:
