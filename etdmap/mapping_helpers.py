@@ -1123,7 +1123,8 @@ def collect_column_stats(identifier, column_data):
     n_errors = column_data.isna().sum()
 
     # Initialize statistics variables
-    _min, _max, _mean, _median, _iqr, quantile_25, quantile_75, top5 = (
+    _min, _max, _mean, _std, _median, _iqr, quantile_25, quantile_75, top5 = (
+        None,
         None,
         None,
         None,
@@ -1141,6 +1142,7 @@ def collect_column_stats(identifier, column_data):
             _min = column_data.min()
             _max = column_data.max()
             _mean = column_data.mean()
+            _std = column_data.std()
             _median = column_data.median()
             quantile_25 = column_data.quantile(0.25)
             quantile_75 = column_data.quantile(0.75)
@@ -1161,6 +1163,7 @@ def collect_column_stats(identifier, column_data):
         "min": _min,
         "max": _max,
         "mean": _mean,
+        "std": _std,
         "median": _median,
         "iqr": _iqr,
         "quantile_25": quantile_25,
