@@ -82,6 +82,30 @@ etdmodel_csv_path = Option(
     callback=None,
 )
 
+supplier_mapping_csv_path = Option(
+    key="supplier_mapping_csv_path",
+    default_value=None,
+    doc=(
+        "Path to the ETD DatamodelLeverancier CSV (synced from Grist). Maps raw "
+        "supplier column names to BSV column names and drives "
+        "load_supplier_pipeline_config / map_raw_df in all supplier mappers."
+    ),
+    validator=None,
+    callback=None,
+)
+
+project_mapping_csv_path = Option(
+    key="project_mapping_csv_path",
+    default_value=None,
+    doc=(
+        "Path to the CSV that maps ProjectIdLeverancier values to ProjectIdBSV. "
+        "Used to resolve project identifiers for suppliers (e.g. O-Nexus) whose "
+        "households are not yet in the BSV metadata file at the time of mapping."
+    ),
+    validator=None,
+    callback=None,
+)
+
 # Set the option with default values
 options = Options(
     {
@@ -89,6 +113,8 @@ options = Options(
         "aggregate_folder_path": aggregate_folder_path,
         "bsv_metadata_file": bsv_metadata_file,
         "etdmodel_csv_path": etdmodel_csv_path,
+        "supplier_mapping_csv_path": supplier_mapping_csv_path,
+        "project_mapping_csv_path": project_mapping_csv_path,
     }
 )
 

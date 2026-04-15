@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 from typing import NamedTuple
 
 import pandas as pd
@@ -52,6 +53,8 @@ def get_bsv_metadata():
     """
     Reads and returns metadata from the BSV metadata file, ensuring that all required columns are present.
 
+    Supports both CSV (new) and Excel xlsx (legacy) formats, determined by the file extension.
+
     Returns
     -------
     DataFrame
@@ -64,14 +67,18 @@ def get_bsv_metadata():
 
     Notes
     -----
-    - The function relies on the `read_metadata` utility to read the file and check for required columns.
     - The path to the BSV metadata file is obtained from `etdmap.options.bsv_metadata_file`.
     - The required columns are defined in the `bsv_metadata_columns` list.
     """
-    return read_metadata(
-        etdmap.options.bsv_metadata_file,
-        required_columns=bsv_metadata_columns,
-    )
+    path = Path(etdmap.options.bsv_metadata_file)
+    if path.suffix.lower() == ".csv":
+        df = pd.read_csv(path, dtype=metadata_dtypes)
+    else:
+        df = read_metadata(str(path), required_columns=bsv_metadata_columns)
+    missing = [c for c in bsv_metadata_columns if c not in df.columns]
+    if missing:
+        raise ValueError(f"get_bsv_metadata: missing columns {missing} in {path}")
+    return df
 
 
 def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
@@ -474,6 +481,66 @@ def update_meenemen() -> pd.DataFrame:
     return index_df
 
 
+def validate_project_id_coverage(
+    metadata_df: pd.DataFrame,
+    data_leverancier: str,
+) -> None:
+    """Preflight check: every ProjectIdLeverancier in *metadata_df* must have a
+    matching row in the project mapping CSV for this supplier.
+
+    Call this immediately after loading the physical metadata file, before the
+    per-household mapping loop, so missing project entries are caught up-front
+    rather than at index-write time.
+
+    Parameters
+    ----------
+    metadata_df : pd.DataFrame
+        The supplier's physical metadata DataFrame. Must contain a
+        ``ProjectIdLeverancier`` column.
+    data_leverancier : str
+        Supplier name (e.g. ``'O-Nexus'``).  Used to filter the project CSV.
+
+    Raises
+    ------
+    ValueError
+        If ``etdmap.options.project_mapping_csv_path`` is not configured, or if
+        any ``ProjectIdLeverancier`` value in *metadata_df* is absent from the
+        project mapping CSV for this supplier.
+    """
+    project_mapping_csv_path = etdmap.options.project_mapping_csv_path
+    if project_mapping_csv_path is None:
+        raise ValueError(
+            f"validate_project_id_coverage [{data_leverancier}]: "
+            "etdmap.options.project_mapping_csv_path is not set. "
+            "Configure it in your overrides file."
+        )
+
+    project_df = pd.read_csv(Path(project_mapping_csv_path), dtype=str)
+    known = set(
+        project_df.loc[
+            project_df["Dataleverancier"] == data_leverancier, "ProjectIdLeverancier"
+        ]
+    )
+
+    if not known:
+        raise ValueError(
+            f"validate_project_id_coverage [{data_leverancier}]: "
+            f"No rows found for '{data_leverancier}' in project mapping CSV "
+            f"({project_mapping_csv_path}). Add the supplier before running."
+        )
+
+    metadata_projects = set(metadata_df["ProjectIdLeverancier"].dropna().unique())
+    missing = metadata_projects - known
+    if missing:
+        raise ValueError(
+            f"validate_project_id_coverage [{data_leverancier}]: "
+            f"{len(missing)} project(s) in the physical metadata have no entry in "
+            f"the project mapping CSV. Add them before running.\n"
+            f"  Missing: {sorted(missing)}\n"
+            f"  Known for {data_leverancier}: {sorted(known)}"
+        )
+
+
 def add_supplier_metadata_to_index(
     index_df: pd.DataFrame,
     metadata_df: pd.DataFrame,
@@ -511,15 +578,6 @@ def add_supplier_metadata_to_index(
 
     metadata_df = metadata_format(metadata_df)
 
-    bsv_metadata_df = get_bsv_metadata()
-
-    bsv_metadata_filtered_df = metadata_format(
-        bsv_metadata_df[bsv_metadata_df["Dataleverancier"] == data_leverancier].copy(),
-    )
-
-    # Shared columns
-    # shared_columns = metadata_df.columns.intersection(bsv_metadata_columns).intersection(index_df.columns)
-
     # Make sure data supplier is defined
     if "Dataleverancier" not in metadata_df.columns:
         if data_leverancier is None:
@@ -527,17 +585,14 @@ def add_supplier_metadata_to_index(
         else:
             metadata_df["Dataleverancier"] = data_leverancier
 
-    # Make sure all combinations of HuisIdBSV, HuisIdLeverancier, ProjectIdLeverancier and Dataleverancier are identical between the files
-
-
     # Define protected columns and drop them from provider metadata
     protected_columns = ["HuisIdBSV", "ProjectIdBSV"]
     metadata_df = metadata_df.drop(
         columns=[col for col in protected_columns if col in metadata_df.columns],
     )
 
-    # Validate that ProjectIdLeverancier is populated in both metadata sources
-    # before the join — a null here means a silent failure (null != null in join keys).
+    # Validate that ProjectIdLeverancier is populated before the join —
+    # a null here means a silent failure (null != null in join keys).
     null_project_supplier = metadata_df["ProjectIdLeverancier"].isna().sum() if "ProjectIdLeverancier" in metadata_df.columns else len(metadata_df)
     if null_project_supplier > 0:
         raise ValueError(
@@ -546,49 +601,47 @@ def add_supplier_metadata_to_index(
             f"no ProjectIdLeverancier. Fill these in before running."
         )
 
-    null_project_bsv = bsv_metadata_filtered_df["ProjectIdLeverancier"].isna().sum() if "ProjectIdLeverancier" in bsv_metadata_filtered_df.columns else len(bsv_metadata_filtered_df)
-    if null_project_bsv > 0:
+    # Load the project mapping CSV (Dataleverancier × ProjectIdLeverancier → ProjectIdBSV).
+    # This is a project-level mapping, not household-level — correct authority for ProjectIdBSV.
+    project_mapping_csv_path = etdmap.options.project_mapping_csv_path
+    if project_mapping_csv_path is None:
         raise ValueError(
             f"add_supplier_metadata_to_index [{data_leverancier}]: "
-            f"{null_project_bsv} row(s) in the BSV metadata file have "
-            f"no ProjectIdLeverancier. Fill these in before running."
+            "etdmap.options.project_mapping_csv_path is not set. "
+            "Configure it in your overrides file."
+        )
+    project_df = pd.read_csv(Path(project_mapping_csv_path), dtype=str)
+    project_df_filtered = project_df[
+        project_df["Dataleverancier"] == data_leverancier
+    ][["Dataleverancier", "ProjectIdLeverancier", "ProjectIdBSV"]].copy()
+    project_df_filtered["ProjectIdBSV"] = project_df_filtered["ProjectIdBSV"].astype(
+        pd.Int64Dtype()
+    )
+
+    if project_df_filtered.empty:
+        raise ValueError(
+            f"add_supplier_metadata_to_index [{data_leverancier}]: "
+            f"No rows found for '{data_leverancier}' in project mapping CSV "
+            f"({project_mapping_csv_path})."
         )
 
-    # # bsv_metadata_df (do not change bsv_metadata_df)
+    # Join ProjectIdBSV from the project mapping (project-level join, not household-level)
     metadata_df = metadata_df.merge(
-        bsv_metadata_filtered_df[
-            [
-                "HuisIdLeverancier",
-                "ProjectIdLeverancier",
-                "Dataleverancier",
-                "HuisIdBSV",
-                "ProjectIdBSV",
-            ]
-        ],
-        on=["HuisIdLeverancier", "ProjectIdLeverancier", "Dataleverancier"],
+        project_df_filtered,
+        on=["Dataleverancier", "ProjectIdLeverancier"],
         how="left",
     )
 
-    # After the join, any NaN in HuisIdBSV means a row had no match in the BSV
-    # metadata — either the household is missing from the BSV file, or
-    # ProjectIdLeverancier/HuisIdLeverancier don't align. Catch this now
-    # rather than silently writing nothing to the index.
-    unmatched = metadata_df["HuisIdBSV"].isna()
-    if unmatched.any():
-        bad_rows = metadata_df.loc[unmatched, ["HuisIdLeverancier", "ProjectIdLeverancier"]].to_dict("records")
-        raise ValueError(
-            f"add_supplier_metadata_to_index [{data_leverancier}]: "
-            f"{unmatched.sum()} supplier metadata row(s) did not match any entry "
-            f"in the BSV metadata file. Check HuisIdLeverancier and "
-            f"ProjectIdLeverancier alignment. Unmatched: {bad_rows}"
-        )
-
     null_bsv_project_id = metadata_df["ProjectIdBSV"].isna().sum()
     if null_bsv_project_id > 0:
+        bad_rows = metadata_df.loc[
+            metadata_df["ProjectIdBSV"].isna(), ["ProjectIdLeverancier", "Dataleverancier"]
+        ].drop_duplicates().to_dict("records")
         raise ValueError(
             f"add_supplier_metadata_to_index [{data_leverancier}]: "
-            f"{null_bsv_project_id} row(s) have no ProjectIdBSV in the BSV "
-            f"metadata file. Assign ProjectIdBSV for all households before running."
+            f"{null_bsv_project_id} row(s) have no ProjectIdBSV in the project "
+            f"mapping CSV. Add the missing project(s) before running. "
+            f"Unmatched: {bad_rows}"
         )
 
     # Add new columns with pd.NA if they do not already exist in index_df
