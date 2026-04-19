@@ -1,5 +1,5 @@
 """
-catalog_check.py — Pre-flight derivability check using the committed catalog parquet.
+catalog.py — Pre-flight derivability check using the committed catalog parquet.
 
 Checks whether all required target columns can be derived from the columns available
 in a mapped dataset, using the pre-built catalog in etdmap/data/catalog.parquet.
@@ -8,7 +8,7 @@ No SymPy dependency — all checks are pure pandas + set operations on the catal
 lhs / rhs_vars columns.
 
 Usage:
-    from etdmap.catalog_check import load_catalog, check_derivability
+    from etdmap.catalog import load_catalog, check_derivability
 
     catalog_df = load_catalog()
     report = check_derivability(
@@ -54,7 +54,7 @@ def load_catalog(catalog_path=None) -> pd.DataFrame:
 
     if not path.exists():
         raise FileNotFoundError(
-            f"[catalog_check] Catalog not found: {path}. "
+            f"[catalog] Catalog not found: {path}. "
             f"Run etdworkflow/sync_data_model.py to build catalog.parquet from Rule.csv."
         )
 

@@ -299,10 +299,9 @@ def _apply_negative_diff_corrections(group, col, context_string):
     # --- case classification (pure bitwise, no loops) ---
     has_next = fg['_next_val'].notna()
 
-    case_1_or_2 = is_neg & has_next & (
-        (fg['_next_val'] >= -fg[col + 'Diff_no_gap']) |  # meter jumps back up
-        (fg['_next_val'] < 0)                             # two consecutive negatives
-    )
+    case_1      = is_neg & has_next & (fg['_next_val'] >= -fg[col + 'Diff_no_gap'])  # meter jumps back up
+    case_2      = is_neg & has_next & (fg['_next_val'] < 0)                           # two consecutive negatives → error
+    case_1_or_2 = case_1 | case_2
     case_3       = is_neg & has_next & ~case_1_or_2       # meter reset
     case_no_next = is_neg & ~has_next                     # no recovery
 
@@ -317,6 +316,19 @@ def _apply_negative_diff_corrections(group, col, context_string):
 
     # --- Case 1/2: sweep-line range marking ---
     if case_1_or_2.any():
+        # Case 2: two consecutive negative diffs — genuine data error
+        if case_2.any():
+            for rd, next_date in zip(
+                fg.loc[case_2, 'ReadingDate'].values,
+                fg.loc[case_2, '_next_date'].values,
+            ):
+                logging.error(
+                    f"{context_string}Two negative diffs "
+                    f"one after the other between {rd} and "
+                    f"{next_date}. Will remove all "
+                    f"these values for {col}."
+                )
+
         starts_ns = fg_dates_ns.loc[case_1_or_2]
         ends_ns   = fg.loc[case_1_or_2, '_next_date'].astype('int64')
         si_arr    = group_dates_ns.searchsorted(starts_ns.values)

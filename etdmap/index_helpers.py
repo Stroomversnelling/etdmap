@@ -435,6 +435,49 @@ def update_meenemen() -> pd.DataFrame:
         .reset_index(drop=True)
     )
 
+    # compare indices:
+    # Check for missing HuisIdBSV in either direction
+    metadata_huisids = set(metadata_keys_df['HuisIdBSV'])
+    index_huisids = set(index_keys_df['HuisIdBSV'])
+
+    missing_in_metadata = index_huisids - metadata_huisids
+    missing_in_index = metadata_huisids - index_huisids
+
+    # Build error message if there are mismatches
+    if missing_in_metadata or missing_in_index:
+        error_msg = "Household mismatch detected between metadata and index.\n"
+
+        if missing_in_metadata:
+            # Retrieve ProjectIdBSV from the ORIGINAL index_df (not the filtered one)
+            missing_rows = index_df[index_df['HuisIdBSV'].isin(missing_in_metadata)][
+                ['HuisIdBSV', 'ProjectIdBSV']
+            ].sort_values('HuisIdBSV')
+
+            missing_str = "\n".join(
+                f"{row['HuisIdBSV']}\t{row['ProjectIdBSV']}"
+                for _, row in missing_rows.iterrows()
+            )
+            error_msg += f"HuisIdBSV missing in metadata:\n{missing_str}\n"
+
+        if missing_in_index:
+            # Retrieve ProjectIdBSV from the ORIGINAL bsv_metadata_df
+            missing_rows = bsv_metadata_df[bsv_metadata_df['HuisIdBSV'].isin(missing_in_index)][
+                ['HuisIdBSV', 'ProjectIdBSV']
+            ].sort_values('HuisIdBSV')
+
+            missing_str = "\n".join(
+                f"{row['HuisIdBSV']}\t{row['ProjectIdBSV']}"
+                for _, row in missing_rows.iterrows()
+            )
+            error_msg += f"HuisIdBSV missing in index:\n{missing_str}\n"
+
+        # Report row counts at the end
+        error_msg += f"\nRow counts: metadata_keys_df={metadata_keys_df.shape[0]}, index_keys_df={index_keys_df.shape[0]}\n"
+
+        raise ValueError(
+            error_msg + 
+            "Double check that the household table with Meenemen has been updated and has the exact same households as the index.parquet file. When adding new datasets, new household HuisIdBSV must be added."
+        )
 
     # 1) value level differences
     comparison = metadata_keys_df.compare(
