@@ -722,43 +722,40 @@ def add_diff_columns_legacy(
 
 def fill_down_infrequent_devices(
     df: pd.DataFrame,
-    columns=(
-        'ElektriciteitsgebruikBoilervat',
-        'ElektriciteitsgebruikRadiator',
-        'ElektriciteitsgebruikBooster',
-    )
-):
+    columns: tuple[str, ...] | list[str],
+) -> pd.DataFrame:
     """
     Fill down (forward fill) and then up (backward fill) values for specified columns.
 
-    This function is used to impute missing values for devices that report infrequently.
-    It first forward fills (ffill) the values, then backward fills (bfill) any remaining NAs,
-    and finally replaces any remaining NAs with 0.0.
+    Intended for cumulative columns from optional devices that report infrequently.
+    When the device is idle the cumulative meter holds its last value (forward-fill).
+    When the device is absent from a household the column is set to 0.0.
+
+    The column list is intentionally required -- it must be defined per project/mapper
+    script because the set of optional devices differs between data suppliers.
 
     Parameters
     ----------
     df : pd.DataFrame
         The input DataFrame containing the device data.
-    columns : tuple of str, optional
-        The names of the columns to fill. Default is
-        ('ElektriciteitsgebruikBoilervat', 'ElektriciteitsgebruikRadiator', 'ElektriciteitsgebruikBooster').
+    columns : tuple or list of str
+        Cumulative column names to fill. Must be provided by the caller; there is no
+        default. Only columns that exist in df are processed; others are silently skipped.
 
     Returns
     -------
     pd.DataFrame
-        The input DataFrame with the specified columns filled.
+        The input DataFrame with the specified columns filled in place.
 
     Notes
     -----
-    - This function may be problematic if the data source or devices are misbehaving,
-      as the imputation will still be performed.
-    - The imputation order is: forward fill, backward fill, then fill remaining NAs with 0.0.
+    Fill order: forward fill, then backward fill, then 0.0 for any remaining pd.NA
+    (households where the sensor was never present).
+    Only meaningful for cumulative variables -- do not apply to instantaneous sensors.
     """
-
     for col in columns:
         if col in df.columns:
             df[col] = df[col].ffill().bfill().fillna(0.0)
-
     return df
 
 

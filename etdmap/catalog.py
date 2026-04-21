@@ -8,7 +8,7 @@ No SymPy dependency — all checks are pure pandas + set operations on the catal
 lhs / rhs_vars columns.
 
 Usage:
-    from etdmap.catalog import load_catalog, check_derivability
+    from etdmap.catalog import load_catalog, check_derivability, rule_lhs_variables
 
     catalog_df = load_catalog()
     report = check_derivability(
@@ -24,6 +24,56 @@ from importlib.resources import files
 from pathlib import Path
 
 import pandas as pd
+
+
+def load_rules(rules_path=None) -> pd.DataFrame:
+    """
+    Load the base derivation rules from Rule.csv.
+
+    Parameters
+    ----------
+    rules_path : str or Path, optional
+        Override path. Defaults to the bundled etdmap/data/Rule.csv.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: target (str), expression (str), rhs_vars (str), physical_model (str)
+    """
+    if rules_path is not None:
+        path = Path(rules_path)
+    else:
+        path = Path(str(files("etdmap.data").joinpath("Rule.csv")))
+
+    if not path.exists():
+        raise FileNotFoundError(f"[catalog] Rule.csv not found: {path}")
+
+    return pd.read_csv(path, dtype=str)
+
+
+def _build_rule_variable_sets() -> tuple:
+    """Build lhs/rhs variable sets from Rule.csv at import time."""
+    try:
+        rules_df = load_rules()
+    except FileNotFoundError:
+        return set(), set(), set()
+
+    lhs = set(rules_df["target"].dropna().str.strip().unique())
+
+    rhs: set = set()
+    for cell in rules_df["rhs_vars"].dropna():
+        for var in cell.split(","):
+            var = var.strip()
+            if var:
+                rhs.add(var)
+
+    return lhs, rhs, lhs | rhs
+
+
+rule_lhs_variables: set
+rule_rhs_variables: set
+rule_all_variables: set
+rule_lhs_variables, rule_rhs_variables, rule_all_variables = _build_rule_variable_sets()
 
 
 def load_catalog(catalog_path=None) -> pd.DataFrame:

@@ -110,8 +110,11 @@ def _build_derived_structures():
         (df["Cumulatief"] == "ja") & (df["Type variabele"] != "date")
     ]["Variabele"].tolist()
 
-    # All performance-data columns in Volgorde order — used to validate column
-    # presence and to reorder output parquet files.
+    # Raw provider performance columns in Volgorde order — used to validate column
+    # presence and to reorder output parquet files for INCOMING mapped data.
+    # Scope: Entiteit == "Prestatiedata" ONLY.
+    # Do NOT use this as the derivation target universe — use all_perf_cols below.
+    # See etdmap/DECISIONS.md ADR-001 for the rationale.
     col_order = perf["Variabele"].tolist()
 
     # pandas dtype per performance column, derived from "Type variabele".
@@ -126,7 +129,18 @@ def _build_derived_structures():
         (df["Wie vult?"] == "Dataleverancier") & (df["Entiteit"] == "Metadata")
     ]["Variabele"].tolist()
 
-    return cumulative, col_order, col_types, supplier_meta
+    # All performance columns expected after the full pipeline has run:
+    # both raw provider columns (Prestatiedata) and ETD-derived columns
+    # (PrestatiedataBerekend). Used as the derivation target universe in
+    # add_calculated_columns_adaptive(). See etdmap/DECISIONS.md ADR-001.
+    perf_all = df[df["Entiteit"].str.startswith("Prestatiedata", na=False)].copy()
+    all_perf_cols = perf_all["Variabele"].tolist()
+
+    # Required subset: columns that must be present at end of pipeline.
+    # Missing any of these after derivation is a data quality error (logging.error).
+    required_perf_cols = perf_all[perf_all["Vereist"] == "ja"]["Variabele"].tolist()
+
+    return cumulative, col_order, col_types, supplier_meta, all_perf_cols, required_perf_cols
 
 
 (
@@ -134,13 +148,14 @@ def _build_derived_structures():
     model_column_order,
     model_column_type,
     allowed_supplier_metadata_columns,
+    all_performance_data_columns,
+    required_performance_data_columns,
 ) = _build_derived_structures()
 
-# data_analysis_columns: the full set of performance columns used to validate
-# that required variables are present in a mapped household file.
-# Currently equal to model_column_order (all Prestatiedata rows).
-# Once the "Vereist" column in etdmodel.csv is correctly populated for all
-# relevant columns, this can be narrowed to only Vereist=="ja" rows.
+# data_analysis_columns: columns validated by dataset_validators.
+# Currently an alias of model_column_order (all Prestatiedata rows).
+# TODO: narrow to Vereist=="ja" once that column is fully populated in etdmodel.csv.
+# A regression test in tests/test_data_model.py guards the current alias.
 data_analysis_columns = model_column_order
 
 # Preferred variables for aggregation workflows (etdtransform, reporting pipelines).

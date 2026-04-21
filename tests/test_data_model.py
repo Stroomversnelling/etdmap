@@ -6,6 +6,10 @@ import pytest
 
 from etdmap.data_model import (
     cumulative_columns,
+    data_analysis_columns,
+    model_column_order,
+    all_performance_data_columns,
+    required_performance_data_columns,
 )
 
 required_model_columns = [
@@ -120,6 +124,97 @@ def test_thresholdscsv():
             f"The following columns are found, but not required: "
             f"{cumm_columns_thresholds - set(cumulative_columns)}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for existing derived variables (etdmap/DECISIONS.md ADR-001)
+# ---------------------------------------------------------------------------
+
+def test_cumulative_columns_contains_no_date_types():
+    """Guard: the Type variabele != 'date' filter must hold."""
+    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
+    date_vars = set(etdmodel_csv[etdmodel_csv["Type variabele"] == "date"]["Variabele"])
+    overlap = set(cumulative_columns) & date_vars
+    assert not overlap, f"Date-typed columns found in cumulative_columns: {overlap}"
+
+
+def test_cumulative_columns_are_all_prestatiedata():
+    """Guard: every cumulative column must be Prestatiedata (not Berekend).
+
+    This documents the invariant that makes the missing Entiteit filter safe.
+    If this test ever fails, either the data model was changed or a computed
+    column was incorrectly flagged as cumulative.
+    """
+    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
+    entiteit_map = dict(zip(etdmodel_csv["Variabele"], etdmodel_csv["Entiteit"]))
+    for col in cumulative_columns:
+        assert entiteit_map.get(col) == "Prestatiedata", (
+            f"{col} is in cumulative_columns but has Entiteit={entiteit_map.get(col)!r}"
+        )
+
+
+def test_model_column_order_is_prestatiedata_only():
+    """Regression: model_column_order must not include PrestatiedataBerekend rows.
+
+    Callers such as mapping_helpers and dataset_validators expect only
+    provider-supplied (Prestatiedata) columns here.
+    """
+    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
+    entiteit_map = dict(zip(etdmodel_csv["Variabele"], etdmodel_csv["Entiteit"]))
+    for col in model_column_order:
+        assert entiteit_map.get(col) == "Prestatiedata", (
+            f"{col} is in model_column_order but has Entiteit={entiteit_map.get(col)!r}"
+        )
+
+
+def test_model_column_order_matches_volgorde_sort():
+    """Regression: model_column_order must equal Prestatiedata rows sorted by Volgorde."""
+    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
+    perf = etdmodel_csv[etdmodel_csv["Entiteit"] == "Prestatiedata"].copy()
+    if "Volgorde" in perf.columns and perf["Volgorde"].notna().any():
+        perf = perf.sort_values("Volgorde", na_position="last")
+    expected = perf["Variabele"].tolist()
+    assert model_column_order == expected, (
+        "model_column_order does not match Prestatiedata rows sorted by Volgorde"
+    )
+
+
+def test_data_analysis_columns_is_alias_of_model_column_order():
+    """Regression: data_analysis_columns is currently an alias of model_column_order.
+
+    If this changes intentionally, update this test and etdmap/DECISIONS.md ADR-001.
+    """
+    assert data_analysis_columns == model_column_order
+
+
+# ---------------------------------------------------------------------------
+# Tests for new derived variables
+# ---------------------------------------------------------------------------
+
+def test_all_performance_data_columns_includes_prestatiedata_berekend():
+    """all_performance_data_columns must include at least one PrestatiedataBerekend row."""
+    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
+    entiteit_map = dict(zip(etdmodel_csv["Variabele"], etdmodel_csv["Entiteit"]))
+    berekend = [c for c in all_performance_data_columns if entiteit_map.get(c) == "PrestatiedataBerekend"]
+    assert berekend, "all_performance_data_columns contains no PrestatiedataBerekend columns"
+
+
+def test_all_performance_data_columns_is_superset_of_model_column_order():
+    """all_performance_data_columns must include everything in model_column_order."""
+    assert set(model_column_order) <= set(all_performance_data_columns)
+
+
+def test_required_performance_data_columns_are_subset_of_all():
+    """required_performance_data_columns must be a subset of all_performance_data_columns."""
+    assert set(required_performance_data_columns) <= set(all_performance_data_columns)
+
+
+def test_required_cols_match_vereist_ja_in_model():
+    """required_performance_data_columns must exactly match Vereist=='ja' Prestatiedata* rows."""
+    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
+    perf_all = etdmodel_csv[etdmodel_csv["Entiteit"].str.startswith("Prestatiedata", na=False)]
+    expected = set(perf_all[perf_all["Vereist"] == "ja"]["Variabele"].tolist())
+    assert set(required_performance_data_columns) == expected
 
 
 if __name__ == "__main__":

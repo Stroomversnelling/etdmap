@@ -3,6 +3,7 @@ from etdmap.index_helpers import read_index, read_metadata, update_index
 
 from . import (
     _config,
+    catalog,
     data_model,
     dataset_validators,
     index_helpers,
@@ -15,6 +16,7 @@ from . import (
 __all__ = [
     # Modules
     "_config",
+    "catalog",
     "data_model",
     "dataset_validators",
     "index_helpers",

@@ -145,26 +145,26 @@ class TestFillDownInfrequentDevices:
     def test_forward_fills_gaps(self):
         col = self._FILL_COLS[0]
         df = self._make_df()
-        result = fill_down_infrequent_devices(df)
+        result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
         assert result[col].iloc[1] == 1.0  # ffilled
         assert result[col].iloc[2] == 1.0  # ffilled
 
     def test_backward_fills_leading_na(self):
         col = self._FILL_COLS[0]
         df = pd.DataFrame({col: [None, None, 5.0]})
-        result = fill_down_infrequent_devices(df)
+        result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
         assert result[col].iloc[0] == 5.0  # bfilled
 
     def test_all_na_replaced_with_zero(self):
         col = self._FILL_COLS[0]
         df = pd.DataFrame({col: [None, None, None]})
-        result = fill_down_infrequent_devices(df)
+        result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
         assert (result[col] == 0.0).all()
 
     def test_ignores_unknown_columns(self):
         df = pd.DataFrame({"NotAFillCol": [None, None, 3.0]})
-        result = fill_down_infrequent_devices(df)
-        # Should remain unchanged (column not in fill list)
+        result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
+        # NotAFillCol is not in the fill list -- should remain unchanged
         assert pd.isna(result["NotAFillCol"].iloc[0])
 
     def test_custom_columns_parameter(self):

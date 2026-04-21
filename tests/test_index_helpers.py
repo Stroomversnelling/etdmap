@@ -72,7 +72,10 @@ def _process_data_fixture_file(huis_code, file_name, etd_test_fixture_path, mapp
         household_df=data_fixture_df, add_columns=True, context=f"{huis_code}/{file_name}"
     )
 
-    data_fixture_df = mapping.fill_down_infrequent_devices(df=data_fixture_df)
+    data_fixture_df = mapping.fill_down_infrequent_devices(
+        df=data_fixture_df,
+        columns=("ElektriciteitsgebruikBoilervat", "ElektriciteitsgebruikRadiator", "ElektriciteitsgebruikBooster"),
+    )
 
     data_fixture_df = mapping.add_diff_columns(data_fixture_df, context=f"{huis_code}/{file_name}")
 

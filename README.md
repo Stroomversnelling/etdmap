@@ -111,12 +111,42 @@ from etdmap.record_validators import load_thresholds
 thresholds_df = load_thresholds()
 ```
 
-Additionally, there are some other dictionaries and lists that are currently used such as a list of `cumulative_columns` that can be used in other packages. Other useful definitions include `model_column_order`, which defines the order of columns in a model, and `model_column_type`, which provides the Pandas series types for each column.
+### Derived variables in data_model.py
 
-These are defined in `data_model.py`: 
+`data_model.py` exposes several module-level variables derived from `etdmodel.csv` at
+import time. Each is scoped to a specific subset of the model — see `DECISIONS.md` for
+the rationale.
+
+| Variable | Entity scope | Purpose |
+|---|---|---|
+| `cumulative_columns` | `Prestatiedata` (via `Cumulatief=="ja"`) | Columns representing cumulative meter readings. Used to compute Diff columns during mapping. |
+| `model_column_order` | `Prestatiedata` only, sorted by `Volgorde` | Canonical column order for provider-supplied raw files. Use this to validate and reorder incoming mapped parquet files. |
+| `model_column_type` | `Prestatiedata` only | Pandas dtype for each provider-supplied column. |
+| `data_analysis_columns` | `Prestatiedata` only (currently alias of `model_column_order`) | Columns validated by dataset validators. Will narrow to `Vereist=="ja"` when that column is fully populated. |
+| `allowed_supplier_metadata_columns` | `Metadata` where `Wie vult?=="Dataleverancier"` | Metadata columns suppliers are permitted to include in their files. |
+| `all_performance_data_columns` | `Prestatiedata` **and** `PrestatiedataBerekend` | Full set of performance columns expected after the complete pipeline runs (provider-supplied + ETD-derived). Use this — not `model_column_order` — when defining derivation targets. |
+| `required_performance_data_columns` | Subset of above, `Vereist=="ja"` | Columns that must be present at end of pipeline. Missing any is a data quality error. |
 
 ```python
-from etdmap.data_model import cumulative_columns, model_column_order, model_column_type
+from etdmap.data_model import (
+    cumulative_columns,
+    model_column_order,
+    model_column_type,
+    all_performance_data_columns,
+    required_performance_data_columns,
+)
+```
+
+The catalog module exposes the Rule.csv vocabulary for cross-checks:
+
+```python
+from etdmap.catalog import (
+    load_catalog,
+    load_rules,
+    rule_lhs_variables,   # set of all derivation target names
+    rule_rhs_variables,   # set of all input variable names used in rules
+    rule_all_variables,   # union of the above
+)
 ```
 
 ## Managing the mapped data files
