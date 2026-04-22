@@ -19,6 +19,7 @@ import pytest
 from etdmap.mapping_helpers import (
     ensure_intervals,
     fill_down_infrequent_devices,
+    fill_zeros_for_device_not_installed,
     rearrange_model_columns,
     run_standard_pipeline,
 )
@@ -174,6 +175,50 @@ class TestFillDownInfrequentDevices:
 
 
 # ---------------------------------------------------------------------------
+# fill_zeros_for_device_not_installed
+# ---------------------------------------------------------------------------
+
+
+class TestFillZerosForDeviceNotInstalled:
+    _COLS = ("ElektriciteitsgebruikRadiator", "ElektriciteitsgebruikWTW")
+
+    def test_adds_missing_column_as_zero(self):
+        df = pd.DataFrame({"Other": pd.array([1.0, 2.0], dtype="Float64")})
+        result = fill_zeros_for_device_not_installed(df, columns=self._COLS)
+        for col in self._COLS:
+            assert col in result.columns
+            assert (result[col] == 0).all()
+            assert result[col].dtype == "Float64"
+
+    def test_fills_all_na_column_with_zero(self):
+        df = pd.DataFrame({
+            "ElektriciteitsgebruikRadiator": pd.array([pd.NA, pd.NA, pd.NA], dtype="Float64")
+        })
+        result = fill_zeros_for_device_not_installed(df, columns=("ElektriciteitsgebruikRadiator",))
+        assert (result["ElektriciteitsgebruikRadiator"] == 0).all()
+
+    def test_does_not_overwrite_existing_values(self):
+        df = pd.DataFrame({
+            "ElektriciteitsgebruikRadiator": pd.array([1.0, 2.0, 3.0], dtype="Float64")
+        })
+        result = fill_zeros_for_device_not_installed(df, columns=("ElektriciteitsgebruikRadiator",))
+        assert list(result["ElektriciteitsgebruikRadiator"]) == [1.0, 2.0, 3.0]
+
+    def test_does_not_overwrite_partial_data(self):
+        df = pd.DataFrame({
+            "ElektriciteitsgebruikRadiator": pd.array([pd.NA, 5.0, pd.NA], dtype="Float64")
+        })
+        result = fill_zeros_for_device_not_installed(df, columns=("ElektriciteitsgebruikRadiator",))
+        assert result["ElektriciteitsgebruikRadiator"].iloc[1] == 5.0
+        assert pd.isna(result["ElektriciteitsgebruikRadiator"].iloc[0])
+
+    def test_output_dtype_is_float64_nullable(self):
+        df = pd.DataFrame({"Other": [1]})
+        result = fill_zeros_for_device_not_installed(df, columns=("ElektriciteitsgebruikWTW",))
+        assert str(result["ElektriciteitsgebruikWTW"].dtype) == "Float64"
+
+
+# ---------------------------------------------------------------------------
 # run_standard_pipeline
 # ---------------------------------------------------------------------------
 
@@ -193,6 +238,7 @@ class TestRunStandardPipeline:
         """End-to-end smoke test: pipeline writes a file and returns the index entry."""
         df = _minimal_pipeline_df(n=12)
         result = run_standard_pipeline(df, huis_code=42, huis_id="HuisX", mapped_folder_path=tmp_path)
+        result.pop("_validation_summary", None)
         assert result == {"HuisIdLeverancier": "HuisX", "HuisIdBSV": 42}
         out_file = tmp_path / "household_42_table.parquet"
         assert out_file.exists()

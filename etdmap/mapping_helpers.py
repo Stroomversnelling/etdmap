@@ -759,6 +759,55 @@ def fill_down_infrequent_devices(
     return df
 
 
+def fill_zeros_for_device_not_installed(
+    df: pd.DataFrame,
+    columns: tuple[str, ...] | list[str],
+) -> pd.DataFrame:
+    """
+    Add constant-zero cumulative columns for devices that are not installed in
+    this project or supplier export.
+
+    Use this when a device is physically absent (e.g. no electric radiator in a
+    heat-pump-only project) and the supplier therefore omits the column entirely.
+    A zero-value cumulative column produces a zero Diff after aggregation, which
+    satisfies catalog formulas that require the column as an input.
+
+    Difference from fill_down_infrequent_devices
+    --------------------------------------------
+    fill_down_infrequent_devices: the device IS present but reports rarely.
+      Forward/backward fill holds the last known cumulative value; remaining
+      NA (device never seen for a household) is set to 0.
+
+    fill_zeros_for_device_not_installed: the device is NOT present at all.
+      The entire column is set to 0 unconditionally. Do not use this for
+      devices that may be present in some households but absent in others --
+      use fill_down_infrequent_devices for that case.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The input DataFrame (pre-aggregation mapped output).
+    columns : tuple or list of str
+        Column names to add/fill with 0.  Columns already present with
+        non-NA values are NOT overwritten -- the function is a no-op for
+        those columns, so it is safe to call unconditionally.
+
+    Returns
+    -------
+    pd.DataFrame
+        The input DataFrame with the specified columns filled or added.
+
+    Notes
+    -----
+    Only meaningful for cumulative variables.
+    Requires Float64 dtype (pandas nullable) per ADR-005.
+    """
+    for col in columns:
+        if col not in df.columns or df[col].isna().all():
+            df[col] = pd.array([0] * len(df), dtype="Float64")
+    return df
+
+
 def snap_readings_to_grid(
     df: pd.DataFrame,
     date_column: str = 'ReadingDate',

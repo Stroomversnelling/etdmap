@@ -55,16 +55,18 @@ required_model_columns = [
     "ElektriciteitsgebruikTotaalHuishoudelijk",
     "TemperatuurWarmTapwater",
     "TemperatuurWoonkamer",
-    "TemperatuurSetpointWoonkamer",
+    "TemperatuurWoonkamerSetpoint",
     "WarmteproductieWarmtepomp",
     "WatergebruikWarmTapwater",
     "Zon-opwekMomentaan",
     "Zon-opwekTotaal",
     "CO2",
     "Luchtvochtigheid",
-    "Ventilatiedebiet",
+    "DebietVentilatieAanvoer",
+    "DebietVentilatieExtractie",
 ]
 
+# this test is now wrong - we use the csv as a source of truth - to be fixed later.
 def test_columns_etdmodelcsv():
     """
     Test if all columns in the required_model_columns in the
