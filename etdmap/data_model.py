@@ -86,6 +86,57 @@ def load_thresholds_as_dict() -> dict:
     return thresholds_dict
 
 
+def get_aggregation_config() -> dict:
+    """
+    Return per-variable resampling and aggregation config from etdmodel.csv.
+
+    Only includes variables where AggregatieMeenemen is True.
+
+    Returns
+    -------
+    dict[str, dict[str, str]]
+        Mapping of column name to::
+
+            {
+                "resample_method": str,   # ResamplingMethode: "sum", "avg", "max", ...
+                "aggregate_method": str,  # AggregatieMethode: "avg", "sum", ...
+            }
+
+    Raises
+    ------
+    ValueError
+        If any included variable is missing ResamplingMethode or AggregatieMethode
+        in the model (model data incomplete -- fail hard per ADR-003).
+    """
+    df = load_etdmodel()
+    included = df[df["AggregatieMeenemen"].fillna(False).astype(bool)]
+
+    config = {}
+    missing = []
+    for _, row in included.iterrows():
+        col = row["Variabele"]
+        resample = row.get("ResamplingMethode", None)
+        aggregate = row.get("AggregatieMethode", None)
+        if pd.isna(resample) or resample == "":
+            missing.append(f"{col}: ResamplingMethode")
+        if pd.isna(aggregate) or aggregate == "":
+            missing.append(f"{col}: AggregatieMethode")
+        if missing:
+            continue
+        config[str(col)] = {
+            "resample_method": str(resample),
+            "aggregate_method": str(aggregate),
+        }
+
+    if missing:
+        raise ValueError(
+            f"etdmodel.csv is incomplete -- AggregatieMeenemen=True variables"
+            f" missing required method columns: {missing}"
+        )
+
+    return config
+
+
 # ---------------------------------------------------------------------------
 # Derived structures — built once at import time from load_etdmodel().
 # Change the CSV (or set etdmap.options.etdmodel_csv_path) to update these.
