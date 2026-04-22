@@ -7,6 +7,7 @@ import pytest
 from etdmap.data_model import (
     cumulative_columns,
     data_analysis_columns,
+    get_aggregation_config,
     model_column_order,
     all_performance_data_columns,
     required_performance_data_columns,
@@ -99,13 +100,18 @@ def test_thresholdscsv():
     thresholds_csv = pd.read_csv(
         Path(r'.\etdmap\data\thresholds.csv'),
         )
-    numeric_cols_etdmodel = set(
-        etdmodel_csv[(etdmodel_csv['Type variabele']=='number')&(etdmodel_csv['Entiteit']=='Prestatiedata')].Variabele)
+    numeric_cols_with_range = set(
+        etdmodel_csv[
+            (etdmodel_csv['Type variabele'] == 'number') &
+            (etdmodel_csv['Entiteit'] == 'Prestatiedata') &
+            (etdmodel_csv['Min'].notna() | etdmodel_csv['Max'].notna())
+        ].Variabele
+    )
     threshold_params = set(thresholds_csv.Variabele)
 
-    # Check if all numeric columns in the datamodel are represented
-    # in the thresholds.csv
-    assert numeric_cols_etdmodel.issubset(threshold_params)
+    # Only require threshold entries for number columns that have Min or Max defined in the model.
+    # Columns without any range in the model (e.g. categorical codes) do not need threshold entries.
+    assert numeric_cols_with_range.issubset(threshold_params)
 
     assert pd.to_numeric(thresholds_csv['Min'], errors='coerce').notna().equals(thresholds_csv['Min'].notna()), "Min has non-numeric non-missing values (text?)"
     assert pd.to_numeric(thresholds_csv['Max'], errors='coerce').notna().equals(thresholds_csv['Max'].notna()), "Max has non-numeric non-missing values (text?)"
@@ -126,6 +132,50 @@ def test_thresholdscsv():
             f"The following columns are found, but not required: "
             f"{cumm_columns_thresholds - set(cumulative_columns)}"
             )
+
+
+# ---------------------------------------------------------------------------
+# get_aggregation_config
+# ---------------------------------------------------------------------------
+
+def test_get_aggregation_config_returns_known_columns():
+    config = get_aggregation_config()
+    assert isinstance(config, dict)
+    assert len(config) > 0
+    # A known Diff column must be present with the expected method values
+    assert "ElektriciteitNetgebruikHoogDiff" in config
+    entry = config["ElektriciteitNetgebruikHoogDiff"]
+    assert entry["resample_method"] == "sum"
+    assert entry["aggregate_method"] == "avg"
+
+
+def test_get_aggregation_config_raises_on_missing_resample_method(tmp_path, monkeypatch):
+    import etdmap
+    from pathlib import Path
+
+    model = pd.read_csv(Path("etdmap/data/etdmodel.csv"))
+    # Clear ResamplingMethode for a known included variable
+    model.loc[model["Variabele"] == "ElektriciteitNetgebruikHoogDiff", "ResamplingMethode"] = None
+    patched = tmp_path / "etdmodel_patched.csv"
+    model.to_csv(patched, index=False)
+
+    monkeypatch.setattr(etdmap.options, "etdmodel_csv_path", str(patched))
+    with pytest.raises(ValueError, match="ResamplingMethode"):
+        get_aggregation_config()
+
+
+def test_get_aggregation_config_raises_on_missing_aggregate_method(tmp_path, monkeypatch):
+    import etdmap
+    from pathlib import Path
+
+    model = pd.read_csv(Path("etdmap/data/etdmodel.csv"))
+    model.loc[model["Variabele"] == "ElektriciteitNetgebruikHoogDiff", "AggregatieMethode"] = None
+    patched = tmp_path / "etdmodel_patched.csv"
+    model.to_csv(patched, index=False)
+
+    monkeypatch.setattr(etdmap.options, "etdmodel_csv_path", str(patched))
+    with pytest.raises(ValueError, match="AggregatieMethode"):
+        get_aggregation_config()
 
 
 # ---------------------------------------------------------------------------
