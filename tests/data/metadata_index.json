@@ -1,6 +1,6 @@
 {
     "num_rows": 10,
-    "num_columns": 73,
+    "num_columns": 81,
     "column_details": {
         "HuisIdLeverancier": {
             "statistics": {
@@ -95,8 +95,8 @@
         },
         "validate_ElektriciteitNetgebruikHoog": {
             "statistics": {
-                "min": "True",
-                "max": "True",
+                "min": "False",
+                "max": "False",
                 "null_count": 0
             }
         },
@@ -109,8 +109,8 @@
         },
         "validate_ElektriciteitNetgebruikLaag": {
             "statistics": {
-                "min": "True",
-                "max": "True",
+                "min": "False",
+                "max": "False",
                 "null_count": 0
             }
         },
@@ -123,8 +123,8 @@
         },
         "validate_ElektriciteitTerugleveringHoog": {
             "statistics": {
-                "min": "True",
-                "max": "True",
+                "min": "False",
+                "max": "False",
                 "null_count": 0
             }
         },
@@ -137,8 +137,8 @@
         },
         "validate_ElektriciteitTerugleveringLaag": {
             "statistics": {
-                "min": "True",
-                "max": "True",
+                "min": "False",
+                "max": "False",
                 "null_count": 0
             }
         },
@@ -151,8 +151,8 @@
         },
         "validate_Gasgebruik": {
             "statistics": {
-                "min": "True",
-                "max": "True",
+                "min": "False",
+                "max": "False",
                 "null_count": 0
             }
         },
@@ -339,6 +339,62 @@
             }
         },
         "validate_Zon-opwekTotaalDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitNetgebruik": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitNetgebruikDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitTeruglevering": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitTerugleveringDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_Zon-opwekVerbruik": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_Zon-opwekVerbruikDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikOverigGG": {
+            "statistics": {
+                "min": "False",
+                "max": "False",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikOverigGGDiff": {
             "statistics": {
                 "min": "True",
                 "max": "True",

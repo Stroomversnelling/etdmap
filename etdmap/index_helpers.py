@@ -654,19 +654,40 @@ def add_supplier_metadata_to_index(
             "Configure it in your overrides file."
         )
     project_df = pd.read_csv(Path(project_mapping_csv_path), dtype=str)
-    project_df_filtered = project_df[
+    project_df_raw = project_df[
         project_df["Dataleverancier"] == data_leverancier
     ][["Dataleverancier", "ProjectIdLeverancier", "ProjectIdBSV"]].copy()
-    project_df_filtered["ProjectIdBSV"] = project_df_filtered["ProjectIdBSV"].astype(
+    project_df_raw["ProjectIdBSV"] = project_df_raw["ProjectIdBSV"].astype(
         pd.Int64Dtype()
     )
 
-    if project_df_filtered.empty:
+    if project_df_raw.empty:
         raise ValueError(
             f"add_supplier_metadata_to_index [{data_leverancier}]: "
             f"No rows found for '{data_leverancier}' in project mapping CSV "
             f"({project_mapping_csv_path})."
         )
+
+    # The CSV stores household-level data (one row per household), but we only
+    # need the project-level mapping (ProjectIdLeverancier -> ProjectIdBSV) here.
+    # Deduplicate to one row per project before the merge so we don't multiply
+    # metadata rows. Raise if the same supplier project maps to conflicting BSV
+    # project IDs — that is a data entry error.
+    conflicts = (
+        project_df_raw.dropna(subset=["ProjectIdBSV"])
+        .groupby(["Dataleverancier", "ProjectIdLeverancier"])["ProjectIdBSV"]
+        .nunique()
+    )
+    bad = conflicts[conflicts > 1]
+    if not bad.empty:
+        raise ValueError(
+            f"add_supplier_metadata_to_index [{data_leverancier}]: "
+            f"Conflicting ProjectIdBSV values for the same project in the mapping CSV. "
+            f"Affected: {bad.index.tolist()}"
+        )
+    project_df_filtered = project_df_raw.drop_duplicates(
+        subset=["Dataleverancier", "ProjectIdLeverancier"]
+    )
 
     # Join ProjectIdBSV from the project mapping (project-level join, not household-level)
     metadata_df = metadata_df.merge(
