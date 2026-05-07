@@ -276,7 +276,7 @@ By default, `add_diff_columns()` relies on the function `validate_cumulative_var
 
 The `validate_cumulative_variables` function checks for logical consistency in cumulative variables but may not cover all edge cases or handle complex data scenarios effectively. To customize this validation behaviour, one may write a custom wrapper function or new function with different checks and pass it to `add_diff_columns()` using the `validate_func` parameter. If this validation is not correctly implemented, problems may not be reported. If `drop_unvalidated` is `True` then function may drop valid data or keep invalid data. By default, `drop_unvalidated` is `False`: data which does not pass these tests is kept but problems are reported in the log. 
 
-_It is important to manually check the logs when adding new datasets. In addition, one should check the stats for each mapped column using the `get_mapped_data_stats()` function to ensure that the data meets the expected statistical properties._
+_It is important to manually check the logs when adding new datasets. In addition, one should check the stats for each mapped column using the `get_data_stats()` function to ensure that the data meets the expected statistical properties. Pass `raw_data_folder_path=<path>` to inspect a folder of raw parquets instead of mapped households._
 
 ## Filling data values for devices which report infrequently
 

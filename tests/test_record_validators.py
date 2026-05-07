@@ -15,7 +15,7 @@ def test_record_flag_conditions():
     1. Whether testsfuncs for all datananalysis columns are present
     2. CHeck whether Diff columns are there for all cumulative columns
     3. Whether special checks are present:
-        - "validate_reading_date_uniek"
+        - "validate_reading_date_unique"
         - "validate_300sec"
         - "validate_elektriciteitgebruik"
         - "validate_warmteproductie"
@@ -28,7 +28,7 @@ def test_record_flag_conditions():
     # check all momentaal column-checks are in record-validator keys
     assert all('validate_' + col in record_flag_conditions for col in columns_5min_momentaan)
     special_checks = (
-        "validate_reading_date_uniek",
+        "validate_reading_date_unique",
         "validate_300sec",
         "validate_elektriciteitgebruik",
         "validate_warmteproductie",

@@ -10,8 +10,12 @@ import pytest
 import yaml
 from numpy.random import PCG64, Generator
 
+import etdmap
+import etdmap.index_helpers as index_helpers
+import etdmap.mapping_helpers as mapping
 from etdmap.data_model import cumulative_columns, load_thresholds
-from etdmap.index_helpers import bsv_metadata_columns, metadata_dtypes
+from etdmap.index_helpers import bsv_metadata_columns, metadata_dtypes, read_metadata
+from etdmap.record_validators import record_flag_conditions
 
 
 # set paths
@@ -371,3 +375,101 @@ def load_metadata():
             return json.load(f)
     # return inner function as ficture
     return _load_metadata
+
+
+def _list_files_data_fixture(folder_path):
+    return {f[:-8]: f for f in os.listdir(folder_path) if f.endswith(".parquet") and "index" not in f}
+
+
+def _process_data_fixture_file(huis_code, file_name, etd_test_fixture_path, mapped_folder_path):
+    file_path = os.path.join(etd_test_fixture_path, file_name)
+    new_file_path = os.path.join(
+        mapped_folder_path, f"household_{int(huis_code)}_table.parquet"
+    )
+
+    data_fixture_df = pd.read_parquet(file_path)
+
+    data_fixture_df = mapping.ensure_intervals(data_fixture_df)
+
+    data_fixture_df = mapping.rearrange_model_columns(
+        household_df=data_fixture_df, add_columns=True, context=f"{huis_code}/{file_name}"
+    )
+
+    data_fixture_df = mapping.fill_down_infrequent_devices(
+        df=data_fixture_df,
+        columns=("ElektriciteitsgebruikBoilervat", "ElektriciteitsgebruikRadiator", "ElektriciteitsgebruikBooster"),
+    )
+
+    data_fixture_df = mapping.add_diff_columns(data_fixture_df, context=f"{huis_code}/{file_name}")
+
+    for flag, condition in record_flag_conditions.items():
+        try:
+            data_fixture_df[flag] = condition(data_fixture_df)
+        except Exception as e:
+            logging.error(
+                f"Error validating with {flag} for household {huis_code} / {file_name}: {e}",
+                exc_info=True,
+            )
+            data_fixture_df[flag] = pd.NA
+
+    data_fixture_df.to_parquet(new_file_path, engine="pyarrow")
+
+    project_id = (
+        str(data_fixture_df["ProjectIdLeverancier"].iloc[0])
+        if "ProjectIdLeverancier" in data_fixture_df.columns
+        else "unknown"
+    )
+
+    return {
+        "HuisIdLeverancier": f'Huis{int(file_name.replace("household_", "").replace("_table.parquet", "")):02}',
+        "ProjectIdLeverancier": project_id,
+        "HuisCode": huis_code,
+        "HuisIdBSV": huis_code,
+    }
+
+
+@pytest.fixture(scope="session")
+def mapped_fixtures(raw_data_fixture):
+    """
+    Session-scoped fixture that ensures the mapped household parquet files and
+    index.parquet exist in `etdmap.options.mapped_folder_path`. Tests that read
+    those files request this fixture; pytest resolves the dependency
+    automatically, so the dependent tests can run in any order or in isolation.
+
+    Generated files are not removed at session end. They remain available to
+    downstream test suites (e.g. etdtransform) that read from the same mapped
+    folder as their input.
+
+    Returns the path to the mapped folder.
+    """
+    test_config_path = Path("config_test.yaml")
+    config = load_config(test_config_path)
+
+    etdmap.options.mapped_folder_path = Path(config['etdmap_configuration']['mapped_folder_path'])
+    etdmap.options.bsv_metadata_file = Path(config['etdmap_configuration']['bsv_metadata_file'])
+
+    index_df, _index_path = index_helpers.read_index()
+    if 'Dataleverancier' not in index_df.columns:
+        index_df.loc[:, 'Dataleverancier'] = 'etdmap'
+    household_id_pairs = index_helpers.get_household_id_pairs(
+        index_df, raw_data_fixture, data_provider="etdmap", list_files_func=_list_files_data_fixture
+    )
+
+    limit_houses = 10
+    count = 0
+    for huis_code, file_name in household_id_pairs:
+        if count >= limit_houses:
+            break
+        count += 1
+        logging.info(f"Starting {file_name}")
+        new_entry = _process_data_fixture_file(
+            huis_code, file_name, raw_data_fixture, etdmap.options.mapped_folder_path
+        )
+        index_df = etdmap.index_helpers.update_index(index_df, new_entry, data_provider="etdmap")
+
+    etdmap.options.project_mapping_csv_path = config['etdmap_configuration']['project_mapping_csv_path']
+    metadata_file_path = Path(config['etdmap_configuration']['supplier_metadata_xlsx_file'])
+    metadata_df = read_metadata(metadata_file_path)
+    etdmap.index_helpers.add_supplier_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
+
+    return etdmap.options.mapped_folder_path

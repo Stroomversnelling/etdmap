@@ -51,135 +51,20 @@ def test_get_bsv_metadata(valid_metadata_file, invalid_metadata_file):
     assert "Not all required columns in" in str(excinfo.value)
 
 
-def _list_files_data_fixture(folder_path):
-    return {f[:-8]: f for f in os.listdir(folder_path) if f.endswith(".parquet") and "index" not in f}
-
-
-def _process_data_fixture_file(huis_code, file_name, etd_test_fixture_path, mapped_folder_path):
-    file_path = os.path.join(etd_test_fixture_path, file_name)
-    new_file_path = os.path.join(
-        mapped_folder_path, f"household_{int(huis_code)}_table.parquet"
-    )
-
-    data_fixture_df = pd.read_parquet(file_path)
-
-    ## Later potentially use if using the renaming of columns in the test fixtures
-    # data_fixture_df.rename(columns=fixture_mapping_dict, inplace=True)
-
-    data_fixture_df = mapping.ensure_intervals(data_fixture_df)
-
-    data_fixture_df = mapping.rearrange_model_columns(
-        household_df=data_fixture_df, add_columns=True, context=f"{huis_code}/{file_name}"
-    )
-
-    data_fixture_df = mapping.fill_down_infrequent_devices(
-        df=data_fixture_df,
-        columns=("ElektriciteitsgebruikBoilervat", "ElektriciteitsgebruikRadiator", "ElektriciteitsgebruikBooster"),
-    )
-
-    data_fixture_df = mapping.add_diff_columns(data_fixture_df, context=f"{huis_code}/{file_name}")
-
-    # Add validation flags
-    for flag, condition in record_flag_conditions.items():
-        try:
-            data_fixture_df[flag] = condition(data_fixture_df)
-        except Exception as e:
-            logging.error(
-                f"Error validating with {flag} for household {huis_code} / {file_name}: {e}",
-                exc_info=True,
-            )
-            data_fixture_df[flag] = pd.NA
-
-    data_fixture_df.to_parquet(new_file_path, engine="pyarrow")
-
-    project_id = (
-        str(data_fixture_df["ProjectIdLeverancier"].iloc[0])
-        if "ProjectIdLeverancier" in data_fixture_df.columns
-        else "unknown"
-    )
-
-    return {
-        "HuisIdLeverancier": f'Huis{int(file_name.replace("household_", "").replace("_table.parquet", "")):02}',
-        "ProjectIdLeverancier": project_id,
-        "HuisCode": huis_code,
-        "HuisIdBSV": huis_code,
-    }
-
-def _run_mapping_of_etd_fixtures(raw_data_fixture: str, limit_houses:int=20) -> None:
-    """
-    Generate the mapping of the etd_fixtures.
-
-    Calls the necessary functions in mapping_helpers
-    and index_helpers to generate the household_i_table.parquet
-    files.
-
-    Also calls the validator functions of the record_validators
-    and dataset_validators.py creating the additional columns.
-
-    Setup:
-    Before running this, ensure the index_bsv.parquet is copied from
-    the 01 Raw data/etd_test_fixtures folder and renamed to index_bsv
-    in your mapping folder (specified in your config_test.yaml)
-    The path to the metadata file should also be specified there and refers
-    to the etd_bsv_metadata file in the 01 Raw data/etd_test_fixtures folder.
-    """
-    def load_config(config_path):
-        with open(config_path, 'r') as file:
-            return yaml.safe_load(file)
-
-    test_config_path = Path("config_test.yaml")
-    if os.path.isfile(test_config_path):
-        config = load_config(test_config_path)
-
-    etdmap.options.mapped_folder_path = Path(config['etdmap_configuration']['mapped_folder_path'])
-    fixture_metadata_file = Path(config['etdmap_configuration']['bsv_metadata_file'])
-    etdmap.options.bsv_metadata_file = fixture_metadata_file
-
-    index_df, index_path = index_helpers.read_index()
-    if 'Dataleverancier' not in index_df.columns:
-        index_df.loc[:, 'Dataleverancier'] = 'etdmap'
-    household_id_pairs = index_helpers.get_household_id_pairs(
-        index_df, raw_data_fixture, data_provider="etdmap", list_files_func=_list_files_data_fixture
-    )
-
-    # limit nmbr of files/households
-    count = 0
-    for huis_code, file_name in household_id_pairs:
-        if count >= limit_houses:
-            break
-        else:
-            count += 1
-        logging.info(f"Starting {file_name}")
-        new_entry = _process_data_fixture_file(
-            huis_code, file_name, raw_data_fixture, etdmap.options.mapped_folder_path
-        )
-        index_df = etdmap.index_helpers.update_index(index_df, new_entry, data_provider="etdmap")
-
-    etdmap.options.project_mapping_csv_path = config['etdmap_configuration']['project_mapping_csv_path']
-
-    metadata_file_path = Path(config['etdmap_configuration']['supplier_metadata_xlsx_file'])
-    metadata_df = read_metadata(metadata_file_path)
-    etdmap.index_helpers.add_supplier_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
-
-
-def test_creation_validation_columns_index_data_files(raw_data_fixture, request):
+def test_creation_validation_columns_index_data_files(mapped_fixtures, request):
     """
     Functional test of dataset_validators.dataset_flag_conditions.
 
-    0. Runs the creation of the household parquet files (a selection) and index.parquet
+    0. The mapped_fixtures fixture (in conftest.py) creates the household
+       parquet files and index.parquet.
     Then Checks if:
     1. Appropirate columns are created in datafiles (record_validators) and index file (dataset validators)
     2. If True/False values are found as expected.
     """
-    ### 0: Create files ###
-    # limit houses:
-    limit_houses=10
-    # generate the mapped household parquet files & index file
-    _run_mapping_of_etd_fixtures(raw_data_fixture, limit_houses)
+    limit_houses = 10
+    folder_path = mapped_fixtures
 
     ### 1: Test household.parquet creation ###
-    # Test if all household files are created
-    folder_path = etdmap.options.mapped_folder_path
     files = os.listdir(folder_path)
     files = [f for f in files if (
         os.path.isfile(os.path.join(folder_path, f)) and \
@@ -269,6 +154,36 @@ def _check_samples_are_equal(expected_path, generated_path):
     return is_equal, new_cols, removed_cols
 
 
+def _check_sample_values_equal(expected_path, generated_path):
+    """
+    Like _check_samples_are_equal but compares VALUES only -- both sides have
+    their indexes reset before comparison. The full _check_samples_are_equal
+    additionally enforces that the row indexes match (i.e. fixture and fresh
+    sample reference the same source-rows by position), which is the
+    value-at-a-certain-time guarantee. This sibling helper isolates pure value
+    drift from index drift, useful as a regression-safety net when validating
+    that a fixture's stored values are still correct even if its row index has
+    been altered by an out-of-band rewrite.
+
+    Returns the same tuple shape as _check_samples_are_equal.
+    """
+    df_expected = pd.read_parquet(expected_path)
+    df_generated_full = pd.read_parquet(generated_path)
+    sample_size = min(100, len(df_generated_full))
+    df_generated_sample = df_generated_full.sample(n=sample_size, random_state=42)
+
+    expected_cols = set(df_expected.columns)
+    generated_cols = set(df_generated_sample.columns)
+    new_cols = sorted(generated_cols - expected_cols)
+    removed_cols = sorted(expected_cols - generated_cols)
+    shared_cols = sorted(expected_cols & generated_cols)
+
+    fa = df_expected[shared_cols].reset_index(drop=True)
+    ga = df_generated_sample[shared_cols].reset_index(drop=True)
+    is_equal = fa.equals(ga)
+    return is_equal, new_cols, removed_cols
+
+
 def _diff_json(a, b, path=""):
     results = []
 
@@ -338,7 +253,7 @@ def _classify_metadata_diffs(results, expected_json, generated_json):
     return new_col_names, failure_diffs
 
 
-def test_files_equal_expected(load_metadata):
+def test_files_equal_expected(mapped_fixtures, load_metadata):
     """
     Checks for each file generated by the workflow if its metadata and sample
     match the expected fixture files.
@@ -405,6 +320,34 @@ def test_files_equal_expected(load_metadata):
         assert is_equal, (
             f"sample_{name}.parquet: shared-column values differ between fixture and generated output"
         )
+
+def test_sample_values_equal_expected(mapped_fixtures, load_metadata):
+    """
+    Sibling regression-safety check to test_files_equal_expected: verifies that
+    generated sample VALUES match the fixture, ignoring row-index alignment.
+
+    test_files_equal_expected is the strict comparison (values + index) and
+    enforces the value-at-a-certain-time guarantee. This test is the relaxed
+    comparison used to confirm that pipeline values are still correct even if
+    a fixture's stored row index has drifted (e.g. from an out-of-band rewrite).
+    A pass here in the absence of a pass on test_files_equal_expected indicates
+    a fixture index issue, not a values regression.
+    """
+    for name in conftest.file_names:
+        name = name.split('.parquet')[0]
+        generated_path = os.path.join(etdmap.options.mapped_folder_path, f"{name}.parquet")
+        expected_sample_path = Path(f"tests/data/sample_{name}.parquet")
+        is_equal, _new_cols, removed_cols = _check_sample_values_equal(
+            expected_sample_path, generated_path
+        )
+        assert not removed_cols, (
+            f"sample_{name}.parquet: column(s) present in fixture are missing from generated "
+            f"output: {removed_cols}"
+        )
+        assert is_equal, (
+            f"sample_{name}.parquet: shared-column values differ between fixture and generated output"
+        )
+
 
 if __name__ == "__main__":
     # Run pytest for debugging the testing

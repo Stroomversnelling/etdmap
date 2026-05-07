@@ -1,8 +1,30 @@
+import json
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
+
+# Schema contract for the DataFrame returned by get_data_stats(). Applied
+# via .astype() so the output is fully typed (no object-dtype min/max
+# columns, no dict-as-string top5). min_datetime / max_datetime are cast
+# separately via pd.to_datetime to preserve datetime64[ns] dtype.
+_STATS_DTYPES = {
+    "column": "string",
+    "type": "string",
+    "count": "Int64",
+    "missing": "Int64",
+    "errors": "Int64",
+    "min": "Float64",
+    "max": "Float64",
+    "mean": "Float64",
+    "std": "Float64",
+    "median": "Float64",
+    "iqr": "Float64",
+    "quantile_25": "Float64",
+    "quantile_75": "Float64",
+    "top5": "string",
+}
 
 from etdmap.data_model import cumulative_columns, model_column_order, model_column_type, load_thresholds_as_dict
 from etdmap.index_helpers import get_mapped_data, read_index
@@ -1142,92 +1164,237 @@ def collect_mapped_data_stats(huis_id_bsv):
 
 def collect_column_stats(identifier, column_data):
     """
-    Collect summary statistics for a given column of data.
+    Collect typed summary statistics for a single column.
+
+    The returned dict's keys map 1:1 to the columns of the DataFrame
+    produced by get_data_stats(); the schema contract is enforced
+    downstream via _STATS_DTYPES.
+
+    Type routing:
+      - bool  -> coerced to Float64 (False=0, True=1) so min/max/mean
+                 populate. This makes "ever fired" filterable as max == 1.
+      - numeric -> min/max/mean/std/median/iqr/quantile_25/quantile_75.
+      - datetime64 (any tz) -> min_datetime / max_datetime, vectorised
+                 to UTC-naive. Numeric min/max remain pd.NA. Object
+                 columns are NOT promoted here -- per-row varying
+                 tzinfo would require per-cell handling and is dealt
+                 with separately by expand_tz_columns().
+      - object -> top5 only (JSON-serialised string for CSV safety).
+
+    All math uses pandas vectorised reductions; no per-cell Python
+    loops on the hot path.
+    """
+    dtype = column_data.dtype
+
+    stats = {
+        "Identifier": identifier,
+        "column": column_data.name,
+        "type": str(dtype),
+        "count": column_data.count(),
+        "missing": column_data.isna().sum(),
+        "errors": column_data.isna().sum(),
+        "min": pd.NA,
+        "max": pd.NA,
+        "mean": pd.NA,
+        "std": pd.NA,
+        "median": pd.NA,
+        "iqr": pd.NA,
+        "quantile_25": pd.NA,
+        "quantile_75": pd.NA,
+        "min_datetime": pd.NaT,
+        "max_datetime": pd.NaT,
+        "top5": pd.NA,
+    }
+
+    if column_data.isna().all():
+        return stats
+
+    if pd.api.types.is_bool_dtype(column_data):
+        # Single vectorised cast to nullable Float64; then C-level reductions.
+        numeric = column_data.astype("Float64")
+        stats["min"] = numeric.min()
+        stats["max"] = numeric.max()
+        stats["mean"] = numeric.mean()
+    elif pd.api.types.is_numeric_dtype(column_data):
+        stats["min"] = column_data.min()
+        stats["max"] = column_data.max()
+        stats["mean"] = column_data.mean()
+        stats["std"] = column_data.std()
+        stats["median"] = column_data.median()
+        q25 = column_data.quantile(0.25)
+        q75 = column_data.quantile(0.75)
+        stats["quantile_25"] = q25
+        stats["quantile_75"] = q75
+        stats["iqr"] = q75 - q25
+    elif pd.api.types.is_datetime64_any_dtype(column_data):
+        # datetime64 dtype is uniform-tz by construction; safe to vectorise.
+        if getattr(column_data.dt, "tz", None) is not None:
+            normalised = column_data.dt.tz_convert("UTC").dt.tz_localize(None)
+        else:
+            normalised = column_data
+        stats["min_datetime"] = normalised.min()
+        stats["max_datetime"] = normalised.max()
+    elif pd.api.types.is_object_dtype(column_data):
+        top5 = column_data.value_counts().head(5).to_dict()
+        stats["top5"] = json.dumps(top5, default=str)
+
+    return stats
+
+
+def _cast_stats_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply the _STATS_DTYPES contract to a stats DataFrame; cast
+    min_datetime / max_datetime to UTC-naive datetime64[ns] separately.
+
+    Defensive: only casts columns that actually appear in df. If a future
+    field is added to collect_column_stats but missed in _STATS_DTYPES, it
+    survives as object until the contract is updated.
+    """
+    if df.empty:
+        return df
+    cast_map = {col: dtype for col, dtype in _STATS_DTYPES.items() if col in df.columns}
+    df = df.astype(cast_map)
+    for dt_col in ("min_datetime", "max_datetime"):
+        if dt_col in df.columns:
+            converted = pd.to_datetime(df[dt_col], errors="raise")
+            tz = getattr(converted.dt, "tz", None) if hasattr(converted, "dt") else None
+            if tz is not None:
+                converted = converted.dt.tz_localize(None)
+            df[dt_col] = converted
+    return df
+
+
+def expand_tz_columns(df: pd.DataFrame, vectorized: bool = False) -> pd.DataFrame:
+    """
+    For every column whose non-null cells include tz-aware Timestamps,
+    expand into three columns:
+
+      - the original column with tz info stripped (so CSV / Excel can
+        round-trip it)
+      - {col}_TZ          -- pandas StringDtype, holds the tz name per
+                             row (pd.NA for cells that weren't tz-aware)
+      - {col}_UTC_naive   -- datetime64[ns] holding the UTC-normalised
+                             naive datetime (pd.NaT otherwise)
+
+    This exists because Excel / CSV cannot store tz-aware Timestamps,
+    and object columns in real parquets sometimes hold per-row varying
+    tzinfo (different households / different ingest sources). The
+    default behaviour walks each non-null cell individually so per-row
+    variation is preserved exactly.
 
     Parameters
     ----------
-    identifier : str or int
-        The identifier for the dataset.
-    column_data : pd.Series
-        The data in the column to analyze.
+    df : pd.DataFrame
+    vectorized : bool, default False
+        Default (False): per-cell inspection of object columns. Correct
+        in all cases, including per-row varying tzinfo.
+        True: opt-in fast path. Raises ValueError on object columns
+        whose non-null cells are not all tz-aware Timestamps with the
+        same tzinfo. Loud failure beats a silent wrong answer. Proper
+        datetime64 dtypes are uniform by construction and always use
+        the vectorised path regardless of this flag.
 
     Returns
     -------
-    dict
-        A dictionary containing summary statistics for the column. The keys are:
-            - 'Identifier': The identifier for the dataset.
-            - 'column': The name of the column.
-            - 'type': The data type of the column.
-            - 'count': The number of non-null values in the column.
-            - 'missing': The number of missing values in the column.
-            - 'errors': The number of errors (NA) in the column.
-            - 'min': The minimum value in the column, if applicable.
-            - 'max': The maximum value in the column, if applicable.
-            - 'mean': The mean value in the column, if applicable.
-            - 'median': The median value in the column, if applicable.
-            - 'iqr': The interquartile range (IQR) of the column, if applicable.
-            - 'quantile_25': The 25th percentile value in the column, if applicable.
-            - 'quantile_75': The 75th percentile value in the column, if applicable.
-            - 'top5': A dictionary with the top 5 most frequent values and their counts, if applicable.
-
-    Notes
-    -----
-    - This function handles different data types (numeric, boolean, datetime, object) and computes relevant statistics accordingly.
-    - At the moment there is no effective difference between missing and errors.
+    pd.DataFrame
+        New DataFrame with expanded columns. Untouched columns are
+        preserved unchanged.
     """
-    dtype = column_data.dtype
-    n_values = column_data.count()
-    n_missing = column_data.isnull().sum()
-    n_errors = column_data.isna().sum()
+    out_cols: dict = {}
+    for col in df.columns:
+        s = df[col]
 
-    # Initialize statistics variables
-    _min, _max, _mean, _std, _median, _iqr, quantile_25, quantile_75, top5 = (
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+        # Proper datetime64 dtype: uniform by construction, vectorise.
+        if pd.api.types.is_datetime64_any_dtype(s):
+            tz = getattr(s.dt, "tz", None)
+            if tz is None:
+                out_cols[col] = s
+                continue
+            tz_name = str(tz)
+            utc_naive = s.dt.tz_convert("UTC").dt.tz_localize(None)
+            tz_col = pd.Series(
+                [tz_name if not pd.isna(v) else pd.NA for v in s],
+                index=s.index, dtype="string", name=f"{col}_TZ",
+            )
+            out_cols[col] = utc_naive.rename(col)
+            out_cols[f"{col}_TZ"] = tz_col
+            out_cols[f"{col}_UTC_naive"] = utc_naive.rename(f"{col}_UTC_naive")
+            continue
 
-    if not column_data.isna().all():
-        if pd.api.types.is_bool_dtype(column_data):
-            _mean = column_data.mean()
-        elif pd.api.types.is_numeric_dtype(column_data):
-            _min = column_data.min()
-            _max = column_data.max()
-            _mean = column_data.mean()
-            _std = column_data.std()
-            _median = column_data.median()
-            quantile_25 = column_data.quantile(0.25)
-            quantile_75 = column_data.quantile(0.75)
-            _iqr = quantile_75 - quantile_25
-        elif pd.api.types.is_datetime64_any_dtype(column_data):
-            _min = column_data.min()
-            _max = column_data.max()
-        if pd.api.types.is_object_dtype(column_data):
-            top5 = column_data.value_counts().head(5).to_dict()
+        if s.dtype != object:
+            out_cols[col] = s
+            continue
 
-    return {
-        "Identifier": identifier,
-        "column": column_data.name,
-        "type": dtype,
-        "count": n_values,
-        "missing": n_missing,
-        "errors": n_errors,
-        "min": _min,
-        "max": _max,
-        "mean": _mean,
-        "std": _std,
-        "median": _median,
-        "iqr": _iqr,
-        "quantile_25": quantile_25,
-        "quantile_75": quantile_75,
-        "top5": top5,
-    }
+        non_null = s.dropna()
+        if non_null.empty:
+            out_cols[col] = s
+            continue
+
+        # Per-cell probe: which non-null cells are tz-aware Timestamps?
+        is_tz_dt = non_null.map(
+            lambda v: isinstance(v, pd.Timestamp) and v.tzinfo is not None
+        )
+        if not is_tz_dt.any():
+            out_cols[col] = s
+            continue
+        tz_aware_index = is_tz_dt[is_tz_dt].index
+
+        if vectorized:
+            non_ts = [v for v in non_null if not isinstance(v, pd.Timestamp)]
+            if non_ts:
+                raise ValueError(
+                    f"Column {col!r}: vectorized=True requires every non-null "
+                    f"cell to be a Timestamp; found {len(non_ts)} non-Timestamp "
+                    "values. Use the default vectorized=False path."
+                )
+            naive_ts = [v for v in non_null if v.tzinfo is None]
+            if naive_ts:
+                raise ValueError(
+                    f"Column {col!r}: vectorized=True requires every Timestamp "
+                    f"to be tz-aware; found {len(naive_ts)} naive Timestamps. "
+                    "Use the default vectorized=False path."
+                )
+            tzinfos = {str(v.tzinfo) for v in non_null}
+            if len(tzinfos) > 1:
+                raise ValueError(
+                    f"Column {col!r}: vectorized=True requires uniform tzinfo "
+                    f"across all non-null cells; found {len(tzinfos)} distinct "
+                    f"tz values: {sorted(tzinfos)}. Use the default "
+                    "vectorized=False path."
+                )
+            tz_name = next(iter(tzinfos))
+            converted = pd.to_datetime(s, utc=True, errors="raise").dt.tz_localize(None)
+            tz_values = [tz_name if not pd.isna(v) else pd.NA for v in s]
+            out_cols[col] = converted.rename(col)
+            out_cols[f"{col}_TZ"] = pd.Series(
+                tz_values, index=s.index, dtype="string", name=f"{col}_TZ",
+            )
+            out_cols[f"{col}_UTC_naive"] = converted.rename(f"{col}_UTC_naive")
+            continue
+
+        # Per-row safe path. Batch-assign so pandas does the heavy lifting.
+        stripped = s.copy()
+        new_stripped_values = [s.loc[idx].tz_localize(None) for idx in tz_aware_index]
+        stripped.loc[tz_aware_index] = new_stripped_values
+
+        tz_values = [pd.NA] * len(s)
+        utc_values = [pd.NaT] * len(s)
+        positions = {idx: pos for pos, idx in enumerate(s.index)}
+        for idx in tz_aware_index:
+            v = s.loc[idx]
+            pos = positions[idx]
+            tz_values[pos] = str(v.tzinfo)
+            utc_values[pos] = v.tz_convert("UTC").tz_localize(None)
+        out_cols[col] = stripped
+        out_cols[f"{col}_TZ"] = pd.Series(
+            pd.array(tz_values, dtype="string"),
+            index=s.index, name=f"{col}_TZ",
+        )
+        out_cols[f"{col}_UTC_naive"] = pd.Series(
+            pd.array(utc_values, dtype="datetime64[ns]"),
+            index=s.index, name=f"{col}_UTC_naive",
+        )
+    return pd.DataFrame(out_cols)
 
 
 def process_raw_data_file(args):
@@ -1246,90 +1413,80 @@ def process_raw_data_file(args):
         )
     return summary_data
 
-def get_raw_data_stats(raw_data_folder_path, multi=False, max_workers=2):
+def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2):
     """
-    Collect and aggregate statistics for all columns in the DataFrame corresponding to each raw data file in a folder.
+    Collect typed per-column summary statistics, either for mapped
+    household data or for a folder of raw parquet files.
+
+    Returned DataFrame schema is enforced via _STATS_DTYPES so all
+    numeric stat columns are nullable Float64, counts are Int64,
+    min_datetime / max_datetime are datetime64[ns] (UTC-naive), top5
+    is a JSON-serialised string, and type is the column dtype as a
+    string. CSV / Excel exports round-trip cleanly without any
+    post-processing.
+
+    Modes:
+      raw_data_folder_path is None (default): mapped mode. Iterates
+        the HuisIdBSV values from read_index(), collecting stats per
+        household via collect_mapped_data_stats. The identifier column
+        in the result is HuisIdBSV; the index DataFrame is merged in
+        (Dataleverancier, ProjectIdBSV, etc).
+      raw_data_folder_path is a path-like: raw mode. Iterates the
+        *.parquet files in the folder, collecting stats per file via
+        process_raw_data_file. The identifier column in the result is
+        source_file. No index merge.
 
     Parameters
     ----------
-    raw_data_folder_path : str
-        The path to the folder containing the raw data files.
+    raw_data_folder_path : str | os.PathLike | None, optional
+        Folder of raw parquets to inspect. None for mapped mode.
     multi : bool, optional
-        If True, use multiprocessing to collect stats. Default is False.
+        If True, run workers via ProcessPoolExecutor. Default False.
     max_workers : int, optional
-        The maximum number of workers to use for multiprocessing. Default is 2.
+        Worker count when multi=True. Default 2.
 
     Returns
     -------
     pd.DataFrame
-        A DataFrame containing the aggregated statistics for each column in the DataFrame corresponding to each file name.
-        Each row represents a column from a specific file and contains summary statistics.
-
-    Notes
-    -----
-    - Only parquet files are supported
-    - It logs errors if there are issues retrieving or processing the data.
+        One row per (identifier, column) pair, fully typed.
     """
-    file_extension = 'parquet'
     summary_data = []
 
-    files = os.listdir(raw_data_folder_path)
+    if raw_data_folder_path is None:
+        index_df, _ = read_index()
+        if multi:
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                results = executor.map(collect_mapped_data_stats, index_df["HuisIdBSV"])
+                summary_data = [item for sublist in results for item in sublist]
+        else:
+            for huis_id in index_df["HuisIdBSV"]:
+                logging.info(f"Collecting stats for HuisIdBSV = {huis_id}")
+                summary_data.extend(collect_mapped_data_stats(huis_id))
+        df = pd.DataFrame(summary_data)
+        df = _cast_stats_dtypes(df)
+        df = df.rename(columns={"Identifier": "HuisIdBSV"})
+        df = pd.merge(df, index_df, how="left", on="HuisIdBSV")
+        return df
 
+    file_extension = "parquet"
+    files = os.listdir(raw_data_folder_path)
     if multi:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            args_list = [(file, raw_data_folder_path) for file in files if file.endswith(f".{file_extension}")]
+            args_list = [
+                (file, raw_data_folder_path) for file in files
+                if file.endswith(f".{file_extension}")
+            ]
             results = executor.map(process_raw_data_file, args_list)
             summary_data = [item for sublist in results for item in sublist]
     else:
         for file in files:
             if not file.endswith(f".{file_extension}"):
                 continue
-            summary_data.extend(
-                process_raw_data_file((file, raw_data_folder_path))
-            )
-
-    df_raw_stats = pd.DataFrame(summary_data)
-    return df_raw_stats
-
-def get_mapped_data_stats(multi=False, max_workers=2):
-    """
-    Collect and aggregate statistics for all columns in the DataFrame corresponding to each HuisIdBSV.
-
-    Parameters
-    ----------
-    multi : bool, optional
-        If True, use multiprocessing to collect stats. Default is False.
-    max_workers : int, optional
-        The maximum number of workers to use for multiprocessing. Default is 2.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame containing the aggregated statistics for each column in the DataFrame corresponding to each HuisIdBSV.
-        Each row represents a column from a specific HuisIdBSV and contains summary statistics.
-
-    Notes
-    -----
-    - The function uses `read_index` to retrieve the index of households.
-    - It logs errors if there are issues retrieving or processing the data.
-    """
-    summary_data = []
-    index_df, _ = read_index()
-
-    if multi:
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            results = executor.map(collect_mapped_data_stats, index_df["HuisIdBSV"])
-            summary_data = [item for sublist in results for item in sublist]
-    else:
-        for huis_id in index_df["HuisIdBSV"]:
-            logging.info(f"Collecting stats for HuisIdBSV = {huis_id}")
-            result = collect_mapped_data_stats(huis_id)
-            summary_data.extend(result)
-
-    data_summary = pd.DataFrame(summary_data)
-    data_summary = data_summary.rename(columns={"Identifier": "HuisIdBSV"})
-    data_summary = pd.merge(data_summary, index_df, how="left", on="HuisIdBSV")
-    return data_summary
+            summary_data.extend(process_raw_data_file((file, raw_data_folder_path)))
+    df = pd.DataFrame(summary_data)
+    df = _cast_stats_dtypes(df)
+    df = df.rename(columns={"Identifier": "source_file"})
+    return df
 
 def apply_thresholds_to_df(
     df

@@ -16,8 +16,14 @@ import os
 import pandas as pd
 import pytest
 
+import json
+
 from etdmap.mapping_helpers import (
+    _STATS_DTYPES,
+    _cast_stats_dtypes,
+    collect_column_stats,
     ensure_intervals,
+    expand_tz_columns,
     fill_down_infrequent_devices,
     fill_zeros_for_device_not_installed,
     rearrange_model_columns,
@@ -258,3 +264,237 @@ class TestRunStandardPipeline:
         out = pd.read_parquet(tmp_path / "household_2_table.parquet")
         for col in model_column_order:
             assert col in out.columns, f"Model column '{col}' missing from output"
+
+
+# ---------------------------------------------------------------------------
+# collect_column_stats
+# ---------------------------------------------------------------------------
+
+
+class TestCollectColumnStats:
+    """The stats collector must return one stable type per key, so the
+    downstream cast in _cast_stats_dtypes never falls back to object."""
+
+    def test_numeric_float64_populates_numeric_stats(self):
+        s = pd.Series(pd.array([1.0, 2.0, 3.0, 4.0, pd.NA], dtype="Float64"), name="x")
+        out = collect_column_stats("hh1", s)
+        assert out["count"] == 4
+        assert out["missing"] == 1
+        assert out["min"] == 1.0
+        assert out["max"] == 4.0
+        assert out["mean"] == 2.5
+        assert out["median"] == 2.5
+        assert out["quantile_25"] == 1.75
+        assert out["quantile_75"] == 3.25
+        assert out["iqr"] == 1.5
+        assert pd.isna(out["min_datetime"]) and pd.isna(out["max_datetime"])
+        assert pd.isna(out["top5"])
+
+    def test_bool_column_populates_min_max_as_zero_one(self):
+        """The 'ever fired' filter target: bool max == 1 means the validator
+        triggered at least once."""
+        s = pd.Series(pd.array([True, False, False, True, pd.NA], dtype="boolean"), name="flag")
+        out = collect_column_stats("hh1", s)
+        assert out["min"] == 0.0
+        assert out["max"] == 1.0
+        assert out["mean"] == 0.5
+        assert pd.isna(out["std"])
+
+    def test_bool_all_false_max_is_zero(self):
+        """The 'never fired' case: bool max == 0 means the validator
+        never triggered. This is what users filter against to find
+        'ever-failed' columns by inverting the predicate."""
+        s = pd.Series(pd.array([False, False, False], dtype="boolean"), name="flag")
+        out = collect_column_stats("hh1", s)
+        assert out["min"] == 0.0
+        assert out["max"] == 0.0
+
+    def test_datetime_tz_aware_writes_to_min_max_datetime(self):
+        s = pd.Series(
+            pd.to_datetime(["2024-01-01 10:00", "2024-01-02 22:00"]).tz_localize("Europe/Amsterdam"),
+            name="ts",
+        )
+        out = collect_column_stats("hh1", s)
+        assert pd.isna(out["min"]) and pd.isna(out["max"])
+        # Both Amsterdam timestamps converted to UTC-naive
+        assert out["min_datetime"] == pd.Timestamp("2024-01-01 09:00")
+        assert out["max_datetime"] == pd.Timestamp("2024-01-02 21:00")
+
+    def test_datetime_naive_passthrough(self):
+        s = pd.Series(pd.to_datetime(["2024-01-01", "2024-01-05"]), name="ts")
+        out = collect_column_stats("hh1", s)
+        assert out["min_datetime"] == pd.Timestamp("2024-01-01")
+        assert out["max_datetime"] == pd.Timestamp("2024-01-05")
+
+    def test_object_column_top5_is_json(self):
+        s = pd.Series(["a", "a", "b", "c", "a", "b"], name="cat")
+        out = collect_column_stats("hh1", s)
+        assert isinstance(out["top5"], str)
+        parsed = json.loads(out["top5"])
+        assert parsed == {"a": 3, "b": 2, "c": 1}
+        assert pd.isna(out["min"]) and pd.isna(out["max"])
+
+    def test_all_na_returns_all_na_stats(self):
+        s = pd.Series(pd.array([pd.NA, pd.NA, pd.NA], dtype="Float64"), name="x")
+        out = collect_column_stats("hh1", s)
+        assert out["count"] == 0
+        assert out["missing"] == 3
+        for k in ("min", "max", "mean", "std", "median", "iqr",
+                  "quantile_25", "quantile_75", "top5"):
+            assert pd.isna(out[k]), f"{k} should be NA, got {out[k]!r}"
+        assert pd.isna(out["min_datetime"]) and pd.isna(out["max_datetime"])
+
+    def test_type_field_is_string(self):
+        """type must be the stringified dtype, never a dtype object,
+        so .astype('string') downstream succeeds."""
+        s = pd.Series(pd.array([1.0], dtype="Float64"), name="x")
+        out = collect_column_stats("hh1", s)
+        assert out["type"] == "Float64"
+        assert isinstance(out["type"], str)
+
+
+# ---------------------------------------------------------------------------
+# _cast_stats_dtypes  (regression test for the object-dtype min/max bug)
+# ---------------------------------------------------------------------------
+
+
+class TestGetStatsDtypes:
+    """The schema cast must produce nullable dtypes everywhere, even when
+    different rows populate different stat keys (the bug get_data_stats
+    was created to fix)."""
+
+    def test_mixed_rows_become_typed_columns(self):
+        # Row 1: numeric column. Row 2: datetime column. Row 3: object.
+        rows = [
+            collect_column_stats(
+                "hh1",
+                pd.Series(pd.array([1.0, 2.0, 3.0], dtype="Float64"), name="num"),
+            ),
+            collect_column_stats(
+                "hh1",
+                pd.Series(pd.to_datetime(["2024-01-01", "2024-01-02"]), name="ts"),
+            ),
+            collect_column_stats(
+                "hh1",
+                pd.Series(["a", "b", "a"], name="cat"),
+            ),
+        ]
+        df = pd.DataFrame(rows)
+        df = _cast_stats_dtypes(df)
+        assert str(df["min"].dtype) == "Float64"
+        assert str(df["max"].dtype) == "Float64"
+        assert str(df["mean"].dtype) == "Float64"
+        assert str(df["count"].dtype) == "Int64"
+        assert str(df["missing"].dtype) == "Int64"
+        assert str(df["type"].dtype) == "string"
+        assert str(df["top5"].dtype) == "string"
+        # min_datetime / max_datetime are proper datetime64[ns]
+        assert df["min_datetime"].dtype.kind == "M"
+        assert df["max_datetime"].dtype.kind == "M"
+
+    def test_dtype_contract_keys_present(self):
+        """Every key in _STATS_DTYPES is a column collect_column_stats
+        produces. Catches drift between the two."""
+        out = collect_column_stats("hh1", pd.Series([1.0, 2.0], name="x"))
+        for key in _STATS_DTYPES.keys():
+            assert key in out, f"{key!r} declared in _STATS_DTYPES but absent from collect_column_stats output"
+
+    def test_csv_round_trip_preserves_numeric_min_max(self, tmp_path):
+        """End-to-end: a stats DataFrame written to CSV and read back
+        must keep numeric dtypes. This is the bug we are fixing."""
+        rows = [
+            collect_column_stats(
+                "hh1",
+                pd.Series(pd.array([1.0, 2.0, 3.0], dtype="Float64"), name="x"),
+            ),
+        ]
+        df = _cast_stats_dtypes(pd.DataFrame(rows))
+        path = tmp_path / "stats.csv"
+        df.to_csv(path, index=False)
+        loaded = pd.read_csv(path)
+        # The min / max columns must be numeric on round-trip, not object.
+        assert loaded["min"].dtype.kind in "fi"
+        assert loaded["max"].dtype.kind in "fi"
+
+
+# ---------------------------------------------------------------------------
+# expand_tz_columns
+# ---------------------------------------------------------------------------
+
+
+class TestExpandTzColumns:
+    """Per-row default is the safe path; vectorized=True is the opt-in
+    fast path that requires uniformity and refuses to guess."""
+
+    def _mk_object_col_mixed_tz(self):
+        # Per-row varying tzinfo: Amsterdam, UTC, naive(None)
+        return pd.Series(
+            [
+                pd.Timestamp("2024-01-01 10:00", tz="Europe/Amsterdam"),
+                pd.Timestamp("2024-01-01 09:00", tz="UTC"),
+                None,
+            ],
+            dtype=object,
+            name="rd",
+        )
+
+    def _mk_object_col_uniform_tz(self):
+        return pd.Series(
+            [
+                pd.Timestamp("2024-01-01 10:00", tz="Europe/Amsterdam"),
+                pd.Timestamp("2024-01-02 11:00", tz="Europe/Amsterdam"),
+                None,
+            ],
+            dtype=object,
+            name="rd",
+        )
+
+    def test_per_row_default_handles_mixed_tz(self):
+        df = pd.DataFrame({"rd": self._mk_object_col_mixed_tz()})
+        out = expand_tz_columns(df)
+        assert "rd_TZ" in out.columns
+        assert "rd_UTC_naive" in out.columns
+        assert out["rd_TZ"].iloc[0] == "Europe/Amsterdam"
+        assert out["rd_TZ"].iloc[1] == "UTC"
+        assert pd.isna(out["rd_TZ"].iloc[2])
+        # Both rows convert to the same UTC instant (09:00)
+        assert out["rd_UTC_naive"].iloc[0] == pd.Timestamp("2024-01-01 09:00")
+        assert out["rd_UTC_naive"].iloc[1] == pd.Timestamp("2024-01-01 09:00")
+        assert pd.isna(out["rd_UTC_naive"].iloc[2])
+
+    def test_datetime64_tz_dtype_passes_through_vectorised(self):
+        s = pd.to_datetime(["2024-01-01 10:00", "2024-01-02 11:00"]).tz_localize("Europe/Amsterdam")
+        df = pd.DataFrame({"rd": s})
+        out = expand_tz_columns(df)
+        assert "rd_TZ" in out.columns
+        assert "rd_UTC_naive" in out.columns
+        assert out["rd_TZ"].iloc[0] == "Europe/Amsterdam"
+        assert out["rd_UTC_naive"].iloc[0] == pd.Timestamp("2024-01-01 09:00")
+
+    def test_datetime64_naive_unchanged(self):
+        s = pd.to_datetime(["2024-01-01", "2024-01-02"])
+        df = pd.DataFrame({"rd": s})
+        out = expand_tz_columns(df)
+        # No expansion when the column has no tz to strip
+        assert "rd_TZ" not in out.columns
+        assert "rd_UTC_naive" not in out.columns
+        assert (out["rd"] == df["rd"]).all()
+
+    def test_vectorized_uniform_matches_per_row(self):
+        df = pd.DataFrame({"rd": self._mk_object_col_uniform_tz()})
+        per_row = expand_tz_columns(df, vectorized=False)
+        vector = expand_tz_columns(df, vectorized=True)
+        assert (per_row["rd_TZ"].fillna("__NA__") == vector["rd_TZ"].fillna("__NA__")).all()
+        assert (per_row["rd_UTC_naive"].fillna(pd.Timestamp(0)) ==
+                vector["rd_UTC_naive"].fillna(pd.Timestamp(0))).all()
+
+    def test_vectorized_mixed_tz_raises(self):
+        df = pd.DataFrame({"rd": self._mk_object_col_mixed_tz()})
+        with pytest.raises(ValueError, match=r"rd.*uniform tzinfo"):
+            expand_tz_columns(df, vectorized=True)
+
+    def test_non_object_non_datetime_columns_passthrough(self):
+        df = pd.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+        out = expand_tz_columns(df)
+        assert list(out.columns) == ["x", "y"]
+        assert (out["x"] == df["x"]).all()

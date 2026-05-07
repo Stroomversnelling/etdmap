@@ -147,7 +147,7 @@ def validate_columns(df: DataFrame, columns: list, condition_func) -> Series:
         return pd.Series(pd.NA, dtype='boolean', index=df.index)
 
 
-def validate_reading_date_uniek(df: DataFrame) -> Series:
+def validate_reading_date_unique(df: DataFrame) -> Series:
     """
     Validate that ReadingDate column has only unique values.
 
@@ -356,7 +356,7 @@ thresholds_dict = load_thresholds_as_dict()
 
 # Category 1: hand-written record quality checks
 record_quality_flag_conditions = {
-    'validate_reading_date_uniek': validate_reading_date_uniek,
+    'validate_reading_date_unique': validate_reading_date_unique,
     'validate_300sec': validate_300sec,
     #'validate_zonopwek_totaal_tegen_gebruik': validate_zonopwek_totaal_tegen_gebruik,
     'validate_elektriciteitgebruik': validate_elektriciteitgebruik,
