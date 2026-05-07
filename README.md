@@ -85,6 +85,39 @@ source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
 pip install -e .
 ```
 
+## Test fixtures
+
+The test suite compares freshly-generated pipeline output against committed
+fixture files in `tests/data/`. Two kinds of fixture are committed:
+
+- `metadata_*.json` -- per-column statistics summary of each pipeline output.
+- `sample_*.parquet` -- a deterministic 100-row sample of each pipeline output
+  (`df.sample(n=100, random_state=42)`).
+
+Both are derived from the anonymised synthetic test dataset described in
+ADR-007 (see `DECISIONS.md`). They are not production data. The synthetic
+input itself is generated in `tests/conftest.py` via `PCG64(seed=42)` and is
+fully deterministic.
+
+`*.parquet` and `*.csv` are gitignored by default; the fixture files are
+re-included via explicit `!tests/data/sample_*.parquet` and
+`!tests/data/metadata_*.json` exceptions in `.gitignore`. The `etdmap/data/`
+canonical model files (etdmodel.csv, thresholds.csv, catalog.parquet,
+Rule.csv) have their own exceptions.
+
+To regenerate the fixtures after an intentional pipeline change, run the
+full mapping workflow so updated parquet files are written to
+`mapped_folder_path`, then from the repo root:
+
+```bash
+python tests/test_helpers.py
+```
+
+This overwrites `tests/data/metadata_*.json` and `tests/data/sample_*.parquet`.
+Per ADR-007, fixture regeneration must be deliberate -- review the diff with
+`git diff tests/data/` before committing, and confirm the change is the
+expected consequence of a known pipeline update rather than a silent drift.
+
 # Overview
 
 `etdmap` is a package that provides data mapping functionalities for energy-related datasets. It includes functions to map and transform data according to specific schemas, ensuring consistency across different sources. It also includes some utility variables like `cumulative_columns`, which can be used.
