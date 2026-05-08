@@ -323,3 +323,50 @@ test_aggregation_columns: list[str] = [
     "Zelfgebruik",
     "ElektriciteitsgebruikTotaalBruto",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Indexed lookup dicts -- variables grouped by data-model column.
+#
+# Built once at import from etdmodel.csv. Use direct dict access at the call
+# site; compose set operations there for combined filters rather than adding
+# per-filter helpers here. Examples:
+#
+#     from etdmap.data_model import variables_by_categorie, variables_by_eenheid
+#     temp_outdoor = sorted(
+#         set(variables_by_eenheid.get("graden C", []))
+#         & {v for v in variables_by_categorie.get("Temperatuur", []) if "Buiten" in v}
+#     )
+#     gj_heat = variables_by_eenheid.get("GJ", [])
+#
+# Values are sorted unique lists; keys are the raw Categorie / Eenheid
+# strings as they appear in etdmodel.csv. Missing keys raise KeyError on
+# bracket access -- use .get(key, []) for permissive callers.
+# ---------------------------------------------------------------------------
+
+def _build_indexed_lookups() -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """
+    Return ({Categorie: [Variabele,...]}, {Eenheid: [Variabele,...]}) from
+    etdmodel.csv. Rows with NA in the index column are skipped.
+    """
+    df = load_etdmodel()
+    by_cat: dict[str, set[str]] = {}
+    by_unit: dict[str, set[str]] = {}
+    for _, row in df.iterrows():
+        var = row.get("Variabele")
+        if pd.isna(var):
+            continue
+        var = str(var)
+        cat = row.get("Categorie")
+        if pd.notna(cat):
+            by_cat.setdefault(str(cat), set()).add(var)
+        unit = row.get("Eenheid")
+        if pd.notna(unit):
+            by_unit.setdefault(str(unit), set()).add(var)
+    return (
+        {k: sorted(v) for k, v in by_cat.items()},
+        {k: sorted(v) for k, v in by_unit.items()},
+    )
+
+
+variables_by_categorie, variables_by_eenheid = _build_indexed_lookups()
