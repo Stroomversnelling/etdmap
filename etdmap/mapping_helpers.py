@@ -22,8 +22,10 @@ _STATS_DTYPES = {
     "std": "Float64",
     "median": "Float64",
     "iqr": "Float64",
+    "quantile_1": "Float64",
     "quantile_25": "Float64",
     "quantile_75": "Float64",
+    "quantile_99": "Float64",
     "top5": "string",
     "season": "string",
 }
@@ -1147,6 +1149,68 @@ def ensure_intervals(
         merged_df = merge_left(df)
         return merged_df
 
+def _synthesise_tariff_roots(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add synthesised root columns for Hoog/Laag tariff register pairs
+    where the root is missing or all-NA.
+
+    Some suppliers / households report energy as a single combined
+    register (e.g. ``ElektriciteitNetgebruik``) while others split it
+    into a high-tariff and a low-tariff register
+    (``ElektriciteitNetgebruikHoog``, ``ElektriciteitNetgebruikLaag``).
+    To allow the downstream stats / report to compare projects
+    apples-to-apples on the *root* column, this helper synthesises
+    ``df[root] = df[hoog].fillna(0) + df[laag].fillna(0)`` whenever
+    the root column has no usable data and at least one of the
+    Hoog/Laag splits has data.
+
+    Pair mapping is sourced from
+    ``etdmap.data_model.tariff_root_to_splits``. The same logic
+    applies to Diff variants (``...HoogDiff`` /  ``...LaagDiff``
+    -> ``...Diff``).
+
+    Operates on a copy of the input frame; never overwrites a root
+    that already carries data.
+    """
+    from etdmap.data_model import tariff_root_to_splits
+
+    out = df
+    copied = False
+    for root, (hoog, laag) in tariff_root_to_splits.items():
+        root_has_data = (
+            root in out.columns
+            and not pd.to_numeric(out[root], errors="coerce").isna().all()
+        )
+        hoog_present = hoog in out.columns
+        laag_present = laag in out.columns
+        if not (hoog_present or laag_present):
+            continue
+        if root_has_data:
+            continue
+        if not copied:
+            out = out.copy()
+            copied = True
+        hoog_num = (
+            pd.to_numeric(out[hoog], errors="coerce")
+            if hoog_present
+            else pd.Series(pd.NA, index=out.index, dtype="Float64")
+        )
+        laag_num = (
+            pd.to_numeric(out[laag], errors="coerce")
+            if laag_present
+            else pd.Series(pd.NA, index=out.index, dtype="Float64")
+        )
+        # Sum with NA->0 substitution, but preserve NA in rows where BOTH
+        # tariff registers are missing -- otherwise the synthesised root
+        # would inflate its row count by counting "no data" timestamps as
+        # zero readings.
+        combined = hoog_num.fillna(0) + laag_num.fillna(0)
+        both_na = hoog_num.isna() & laag_num.isna()
+        combined = combined.mask(both_na, other=pd.NA)
+        out[root] = combined.astype("Float64")
+    return out
+
+
 def _seasonal_slices(df: pd.DataFrame, seasonal: bool, seasons=None):
     """
     Yield (season_name, sliced_df) tuples for the seasonal-split modes.
@@ -1216,6 +1280,10 @@ def collect_mapped_data_stats(huis_id_bsv, seasonal=False, seasons=None):
     file_summary_data = []
     try:
         df = get_mapped_data(huis_id_bsv)
+        # Fill in any Hoog/Laag tariff-pair root columns that are missing
+        # or empty so downstream stats compare projects on the root name
+        # apples-to-apples regardless of how a supplier reports the data.
+        df = _synthesise_tariff_roots(df)
         for season, sliced in _seasonal_slices(df, seasonal, seasons):
             for column in sliced.columns:
                 col_data = sliced[column]
@@ -1272,8 +1340,10 @@ def collect_column_stats(identifier, column_data):
         "std": pd.NA,
         "median": pd.NA,
         "iqr": pd.NA,
+        "quantile_1": pd.NA,
         "quantile_25": pd.NA,
         "quantile_75": pd.NA,
+        "quantile_99": pd.NA,
         "min_datetime": pd.NaT,
         "max_datetime": pd.NaT,
         "top5": pd.NA,
@@ -1296,8 +1366,10 @@ def collect_column_stats(identifier, column_data):
         stats["median"] = column_data.median()
         q25 = column_data.quantile(0.25)
         q75 = column_data.quantile(0.75)
+        stats["quantile_1"] = column_data.quantile(0.01)
         stats["quantile_25"] = q25
         stats["quantile_75"] = q75
+        stats["quantile_99"] = column_data.quantile(0.99)
         stats["iqr"] = q75 - q25
     elif pd.api.types.is_datetime64_any_dtype(column_data):
         # datetime64 dtype is uniform-tz by construction; safe to vectorise.
@@ -1477,6 +1549,7 @@ def process_raw_data_file(args, seasonal=False, seasons=None):
     logging.info(f"Opening {file_path}")
 
     df = pd.read_parquet(file_path)
+    df = _synthesise_tariff_roots(df)
     summary_data = []
 
     for season, sliced in _seasonal_slices(df, seasonal, seasons):

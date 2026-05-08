@@ -24,6 +24,7 @@ from etdmap.mapping_helpers import (
     _STATS_DTYPES,
     _cast_stats_dtypes,
     _seasonal_slices,
+    _synthesise_tariff_roots,
     collect_column_stats,
     collect_mapped_data_stats,
     ensure_intervals,
@@ -290,8 +291,27 @@ class TestCollectColumnStats:
         assert out["quantile_25"] == 1.75
         assert out["quantile_75"] == 3.25
         assert out["iqr"] == 1.5
+        # q1 / q99 are interpolated; with [1, 2, 3, 4] the values are close
+        # to min and max but not equal to them.
+        assert out["quantile_1"] is not pd.NA and float(out["quantile_1"]) == pytest.approx(1.03)
+        assert out["quantile_99"] is not pd.NA and float(out["quantile_99"]) == pytest.approx(3.97)
         assert pd.isna(out["min_datetime"]) and pd.isna(out["max_datetime"])
         assert pd.isna(out["top5"])
+
+    def test_q1_q99_on_large_sample_match_percentile_definition(self):
+        """q1 and q99 are the 1st and 99th percentiles. With 100+ points
+        they should land within typical-tail ranges away from min/max,
+        confirming they aren't picking up single-record extremes."""
+        # Values 1..100. q1 ~ 1.99, q99 ~ 99.01 by linear interpolation.
+        s = pd.Series(
+            pd.array([float(i) for i in range(1, 101)], dtype="Float64"),
+            name="x",
+        )
+        out = collect_column_stats("hh1", s)
+        assert float(out["quantile_1"]) == pytest.approx(1.99)
+        assert float(out["quantile_99"]) == pytest.approx(99.01)
+        assert float(out["min"]) == 1.0
+        assert float(out["max"]) == 100.0
 
     def test_bool_column_populates_min_max_as_zero_one(self):
         """The 'ever fired' filter target: bool max == 1 means the validator
@@ -682,3 +702,100 @@ class TestCollectMappedDataStatsSeasonal:
         assert cold["max"] == 12.0  # December
         assert warm["min"] == 5.0
         assert warm["max"] == 9.0
+
+
+# ---------------------------------------------------------------------------
+# _synthesise_tariff_roots
+# ---------------------------------------------------------------------------
+
+
+class TestSynthesisedRootFromHoogLaag:
+    """When a household reports only one tariff register, the helper
+    must synthesise the root combined column so downstream stats can
+    compare across projects on the root name."""
+
+    HOOG = "ElektriciteitNetgebruikHoog"
+    LAAG = "ElektriciteitNetgebruikLaag"
+    ROOT = "ElektriciteitNetgebruik"
+
+    def test_only_hoog_synthesises_root_equal_to_hoog(self):
+        df = pd.DataFrame({
+            self.HOOG: pd.array([1.0, 2.0, 3.0], dtype="Float64"),
+        })
+        out = _synthesise_tariff_roots(df)
+        assert self.ROOT in out.columns
+        # Laag treated as 0 -> root equals hoog
+        assert out[self.ROOT].tolist() == [1.0, 2.0, 3.0]
+        # Original input is not mutated
+        assert self.ROOT not in df.columns
+
+    def test_only_laag_synthesises_root_equal_to_laag(self):
+        df = pd.DataFrame({
+            self.LAAG: pd.array([4.0, 5.0, 6.0], dtype="Float64"),
+        })
+        out = _synthesise_tariff_roots(df)
+        assert self.ROOT in out.columns
+        assert out[self.ROOT].tolist() == [4.0, 5.0, 6.0]
+
+    def test_both_hoog_and_laag_synthesises_sum(self):
+        df = pd.DataFrame({
+            self.HOOG: pd.array([1.0, 2.0, 3.0], dtype="Float64"),
+            self.LAAG: pd.array([10.0, 20.0, 30.0], dtype="Float64"),
+        })
+        out = _synthesise_tariff_roots(df)
+        assert out[self.ROOT].tolist() == [11.0, 22.0, 33.0]
+
+    def test_neither_no_synthesis(self):
+        df = pd.DataFrame({"unrelated": pd.array([1.0], dtype="Float64")})
+        out = _synthesise_tariff_roots(df)
+        assert self.ROOT not in out.columns
+
+    def test_root_already_present_with_data_not_overwritten(self):
+        """If the supplier already reports the combined root directly,
+        the synthesiser must not clobber that value."""
+        df = pd.DataFrame({
+            self.ROOT: pd.array([100.0, 200.0, 300.0], dtype="Float64"),
+            self.HOOG: pd.array([1.0, 2.0, 3.0], dtype="Float64"),
+            self.LAAG: pd.array([10.0, 20.0, 30.0], dtype="Float64"),
+        })
+        out = _synthesise_tariff_roots(df)
+        assert out[self.ROOT].tolist() == [100.0, 200.0, 300.0]
+
+    def test_root_present_but_all_na_gets_synthesised(self):
+        """When the root column exists in the schema but is all NA
+        for this household, synthesise from the splits."""
+        df = pd.DataFrame({
+            self.ROOT: pd.array([pd.NA, pd.NA, pd.NA], dtype="Float64"),
+            self.HOOG: pd.array([1.0, 2.0, 3.0], dtype="Float64"),
+            self.LAAG: pd.array([10.0, 20.0, 30.0], dtype="Float64"),
+        })
+        out = _synthesise_tariff_roots(df)
+        assert out[self.ROOT].tolist() == [11.0, 22.0, 33.0]
+
+    def test_diff_pair_handled_too(self):
+        """Diff variants (HoogDiff / LaagDiff -> Diff) follow the same rule."""
+        df = pd.DataFrame({
+            "ElektriciteitNetgebruikHoogDiff": pd.array([0.1, 0.2], dtype="Float64"),
+            "ElektriciteitNetgebruikLaagDiff": pd.array([0.5, 0.5], dtype="Float64"),
+        })
+        out = _synthesise_tariff_roots(df)
+        assert "ElektriciteitNetgebruikDiff" in out.columns
+        assert out["ElektriciteitNetgebruikDiff"].tolist() == [0.6, 0.7]
+
+    def test_both_na_rows_stay_na_in_synthesised_root(self):
+        """When BOTH Hoog and Laag are NA at a given timestamp, the
+        synthesised root must remain NA (not become 0). Otherwise the
+        row count for the root would be inflated by "no data"
+        timestamps treated as zero readings."""
+        df = pd.DataFrame({
+            self.HOOG: pd.array([1.0, pd.NA, pd.NA], dtype="Float64"),
+            self.LAAG: pd.array([10.0, 5.0, pd.NA], dtype="Float64"),
+        })
+        out = _synthesise_tariff_roots(df)
+        # Row 0: both have data -> 1 + 10 = 11
+        # Row 1: only Laag has data -> 0 + 5 = 5
+        # Row 2: BOTH NA -> root must be NA
+        result = out[self.ROOT].tolist()
+        assert result[0] == 11.0
+        assert result[1] == 5.0
+        assert pd.isna(result[2])
