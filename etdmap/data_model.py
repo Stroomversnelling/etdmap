@@ -1,3 +1,4 @@
+import re
 from importlib.resources import files
 
 import pandas as pd
@@ -84,6 +85,24 @@ def load_thresholds_as_dict() -> dict:
         col = row["Variabele"]
         thresholds_dict[col] = {"Min": row["Min"], "Max": row["Max"]}
     return thresholds_dict
+
+
+def load_unit_map() -> dict:
+    """
+    Return {Variabele: Eenheid} from the bundled thresholds CSV.
+
+    Single source of truth for variable units across the project. Includes
+    Diff variants (which inherit unit from their parent cumulative column)
+    because thresholds.csv lists them explicitly. Missing / NA units are
+    omitted so callers can use ``.get(col, "")`` semantics.
+    """
+    df = load_thresholds()
+    unit_map = {}
+    for variable, unit in zip(df["Variabele"], df["Eenheid"]):
+        if pd.isna(variable) or pd.isna(unit):
+            continue
+        unit_map[str(variable)] = str(unit)
+    return unit_map
 
 
 def get_aggregation_config() -> dict:
@@ -209,24 +228,85 @@ def _build_derived_structures():
 # A regression test in tests/test_data_model.py guards the current alias.
 data_analysis_columns = model_column_order
 
-# Preferred variables for aggregation workflows (etdtransform, reporting pipelines).
-# Keeps aggregation runs fast by skipping momentaan variables and cumulative base columns
-# that are rarely needed in standard project-level analysis.
-# This mirrors the active entries in etdtransform/aggregate.py aggregation_variables.
+
+# ---------------------------------------------------------------------------
+# Tariff register pairs (Hoog/Laag) — derived from etdmodel.csv variable names.
+# Hoog = peak tariff register, Laag = off-peak. Suppliers report either the
+# combined root (single-tariff meter) or the split pair (multi-tariff meter).
+# Consumers use these structures to reason about which side of a pair has data.
+# In the future we expect to replace this with explicit metadata about pairs.
+# ---------------------------------------------------------------------------
+
+_TARIFF_RE = re.compile(r"^(?P<root>.+?)(?P<tariff>Hoog|Laag)(?P<suffix>Diff)?$")
+
+
+def _build_tariff_register_pairs() -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+    """
+    Derive Hoog/Laag tariff register pair structures from etdmodel.csv.
+
+    Returns
+    -------
+    (partners, root_to_splits)
+        partners : dict[str, str]
+            Symmetric flat partner map. Each Hoog or Laag variable name maps
+            to its complementary partner (e.g. ElektriciteitNetgebruikHoog ->
+            ElektriciteitNetgebruikLaag and vice versa). Includes Diff variants.
+        root_to_splits : dict[str, tuple[str, str]]
+            Maps the implied root variable name (Hoog/Laag suffix removed) to
+            its (Hoog variant, Laag variant) tuple. The root is the conceptual
+            combined-tariff column name; it may or may not exist as a separate
+            variable in etdmodel.csv -- consumers typically check whether it
+            appears in the data they are processing.
+    """
+    df = load_etdmodel()
+    variables = set(df["Variabele"].dropna().astype(str))
+
+    partners: dict[str, str] = {}
+    root_to_splits: dict[str, tuple[str, str]] = {}
+
+    for var in variables:
+        m = _TARIFF_RE.match(var)
+        if not m or m.group("tariff") != "Hoog":
+            continue
+        root = m.group("root")
+        suffix = m.group("suffix") or ""
+        laag_var = f"{root}Laag{suffix}"
+        if laag_var not in variables:
+            continue
+        partners[var] = laag_var
+        partners[laag_var] = var
+        root_to_splits[root + suffix] = (var, laag_var)
+
+    return partners, root_to_splits
+
+
+tariff_partner_columns, tariff_root_to_splits = _build_tariff_register_pairs()
+
+# TEST-ONLY: hand-curated subset of aggregation variables that test fixtures
+# carry meaningful synthetic values for. Tests filter both the stored fixture
+# and the freshly-generated pipeline output to this subset before comparing,
+# so data-model expansion outside the subset does not break tests.
 #
-# Includes both Diff columns (from raw mapped parquet files) and derived computed totals
-# produced by the transform pipeline (e.g. ZonopwekBruto, ElektriciteitsgebruikTotaalNetto).
-# Not all column names follow the *Diff pattern — derived totals have their own names.
+# Production code paths must NOT import this. Production aggregation pulls
+# from get_aggregation_config() (sourced from etdmodel.csv via
+# AggregatieMeenemen=True), and consumer entry points filter by what is
+# actually present in the dataset via active_aggregation_variables(df) in
+# etdtransform/aggregate.py. Using this list in production would lock the
+# scope to whatever was last manually curated here, not what the data model
+# currently says.
 #
-# TODO: replace with a filter on an 'Aggregeren' column in etdmodel.csv once
-# that column is added to the Grist data model.
-preferred_aggregation_columns: list[str] = [
-    # Electricity grid exchange — Diff variables (raw per-interval consumption)
+# Updating this list is a deliberate code change: extend it when you have
+# added plausible synthetic ranges in the test fixture for the new variable
+# and want the comparison surface to grow. The sync impact report in
+# etdworkflow/sync_data_model.py highlights candidates from the data model
+# that could be added here -- those candidates are informational only.
+test_aggregation_columns: list[str] = [
+    # Electricity grid exchange -- Diff variables (raw per-interval consumption)
     "ElektriciteitNetgebruikHoogDiff",
     "ElektriciteitNetgebruikLaagDiff",
     "ElektriciteitTerugleveringHoogDiff",
     "ElektriciteitTerugleveringLaagDiff",
-    # Heat pump sub-system electricity — Diff variables
+    # Heat pump sub-system electricity -- Diff variables
     "ElektriciteitsgebruikWTWDiff",
     "ElektriciteitsgebruikWarmtepompDiff",
     "ElektriciteitsgebruikBoosterDiff",

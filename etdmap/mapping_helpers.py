@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 
 import pandas as pd
 
@@ -24,7 +25,28 @@ _STATS_DTYPES = {
     "quantile_25": "Float64",
     "quantile_75": "Float64",
     "top5": "string",
+    "season": "string",
 }
+
+# Default seasonal partition for get_data_stats(seasonal=True). The keys are
+# season names that appear in the output 'season' column; the values are
+# sets of month numbers (1-12) that belong to each season. The "annual"
+# slice (full year) is always emitted; the dict configures the additional
+# slices.
+#
+# This default reflects the Netherlands' verwarmingsperiode (heating-period)
+# convention -- October through April for cold, May through September for
+# warm. Other regions / studies will want different splits (e.g. four
+# meteorological seasons; or coupled to local climate or HVAC switch-over
+# rules). Callers pass `seasons=` to override; see get_data_stats.
+DEFAULT_SEASON_MONTHS = {
+    "cold": {10, 11, 12, 1, 2, 3, 4},
+    "warm": {5, 6, 7, 8, 9},
+}
+
+# Backward-compat aliases (kept for any direct importers).
+_COLD_MONTHS = DEFAULT_SEASON_MONTHS["cold"]
+_WARM_MONTHS = DEFAULT_SEASON_MONTHS["warm"]
 
 from etdmap.data_model import cumulative_columns, model_column_order, model_column_type, load_thresholds_as_dict
 from etdmap.index_helpers import get_mapped_data, read_index
@@ -1125,40 +1147,91 @@ def ensure_intervals(
         merged_df = merge_left(df)
         return merged_df
 
-def collect_mapped_data_stats(huis_id_bsv):
+def _seasonal_slices(df: pd.DataFrame, seasonal: bool, seasons=None):
     """
-    Collect statistics for each column in the DataFrame corresponding to a specific HuisIdBSV.
+    Yield (season_name, sliced_df) tuples for the seasonal-split modes.
 
-    This function retrieves data for a given `huis_id_bsv`, processes it, and collects summary statistics
-    for each column. It logs errors if any issues occur during processing.
+    Returns just the annual slice when seasonal=False, or when the df has no
+    valid datetime ReadingDate column to split on. When seasonal=True and a
+    valid ReadingDate exists, yields the 'annual' slice plus one slice per
+    entry in `seasons`.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+    seasonal : bool
+    seasons : dict[str, set[int]] | None, optional
+        Mapping of season name -> set of month numbers (1..12). When None,
+        falls back to DEFAULT_SEASON_MONTHS (Netherlands verwarmingsperiode
+        cold/warm split). Pass an arbitrary dict for other partitions
+        (e.g. four meteorological seasons). Each season name appears as a
+        value in the output 'season' column; the name 'annual' is reserved
+        and added automatically.
+    """
+    if not (
+        seasonal
+        and "ReadingDate" in df.columns
+        and pd.api.types.is_datetime64_any_dtype(df["ReadingDate"])
+    ):
+        return [("annual", df)]
+
+    season_map = DEFAULT_SEASON_MONTHS if seasons is None else seasons
+    months = df["ReadingDate"].dt.month
+    slices = [("annual", df)]
+    for name, month_set in season_map.items():
+        if name == "annual":
+            # Reserved; skip user redefinitions of the annual slice.
+            continue
+        slices.append((name, df[months.isin(set(month_set))]))
+    return slices
+
+
+def collect_mapped_data_stats(huis_id_bsv, seasonal=False, seasons=None):
+    """
+    Collect statistics for each column in the DataFrame corresponding to a
+    specific HuisIdBSV.
 
     Parameters
     ----------
     huis_id_bsv : str or int
         The identifier for the household to process.
+    seasonal : bool, optional
+        If True, emit one row per (HuisIdBSV, numeric column, season) where
+        season includes 'annual' plus each entry in `seasons`. Non-numeric /
+        non-bool columns only get the 'annual' row regardless. Default False
+        (annual only).
+    seasons : dict[str, set[int]] | None, optional
+        Mapping season name -> set of month numbers (1..12). When None and
+        seasonal=True, falls back to DEFAULT_SEASON_MONTHS (Netherlands
+        verwarmingsperiode cold/warm split). Pass a custom dict for any
+        other partition.
 
     Returns
     -------
     list of dict
-        A list of dictionaries, where each dictionary contains summary statistics for a column in the DataFrame.
-        Each dictionary has keys 'column_name', 'mean', 'std', 'min', and 'max'.
-
-    Notes
-    -----
-    - The function uses `get_mapped_data` to retrieve the data for the given `huis_id_bsv`.
-    - It logs errors if there are issues retrieving or processing the data.
+        Stats dicts produced by collect_column_stats, each with an extra
+        'season' key.
     """
     logging.info(f"Processing stats from columns where HuisIdBSV = {huis_id_bsv}")
     file_summary_data = []
     try:
         df = get_mapped_data(huis_id_bsv)
-        for column in df.columns:
-            column_data = df[column]
-            file_summary_data.append(
-                collect_column_stats(huis_id_bsv, column_data)
-            )
+        for season, sliced in _seasonal_slices(df, seasonal, seasons):
+            for column in sliced.columns:
+                col_data = sliced[column]
+                if season != "annual" and not (
+                    pd.api.types.is_numeric_dtype(col_data)
+                    or pd.api.types.is_bool_dtype(col_data)
+                ):
+                    continue
+                stats = collect_column_stats(huis_id_bsv, col_data)
+                stats["season"] = season
+                file_summary_data.append(stats)
     except Exception as e:
-        logging.error(f"Failed to process stats from columns where HuisIdBSV = {huis_id_bsv}: {str(e)}", exc_info=True)
+        logging.error(
+            f"Failed to process stats from columns where HuisIdBSV = {huis_id_bsv}: {str(e)}",
+            exc_info=True,
+        )
 
     return file_summary_data
 
@@ -1397,7 +1470,7 @@ def expand_tz_columns(df: pd.DataFrame, vectorized: bool = False) -> pd.DataFram
     return pd.DataFrame(out_cols)
 
 
-def process_raw_data_file(args):
+def process_raw_data_file(args, seasonal=False, seasons=None):
     file, raw_data_folder_path = args
 
     file_path = os.path.join(raw_data_folder_path, file)
@@ -1406,14 +1479,21 @@ def process_raw_data_file(args):
     df = pd.read_parquet(file_path)
     summary_data = []
 
-    for column in df.columns:
-        column_data = df[column]
-        summary_data.append(
-            collect_column_stats(file, column_data)
-        )
+    for season, sliced in _seasonal_slices(df, seasonal, seasons):
+        for column in sliced.columns:
+            col_data = sliced[column]
+            if season != "annual" and not (
+                pd.api.types.is_numeric_dtype(col_data)
+                or pd.api.types.is_bool_dtype(col_data)
+            ):
+                continue
+            stats = collect_column_stats(file, col_data)
+            stats["season"] = season
+            summary_data.append(stats)
     return summary_data
 
-def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2):
+def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
+                   seasonal=False, seasons=None):
     """
     Collect typed per-column summary statistics, either for mapped
     household data or for a folder of raw parquet files.
@@ -1444,24 +1524,40 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2):
         If True, run workers via ProcessPoolExecutor. Default False.
     max_workers : int, optional
         Worker count when multi=True. Default 2.
+    seasonal : bool, optional
+        If True, every numeric/bool column produces one row per season
+        (the 'annual' slice plus one row per entry in `seasons`).
+        Non-numeric columns only get the annual row. Default False
+        (annual only). The output DataFrame always carries a 'season'
+        column for downstream filtering.
+    seasons : dict[str, set[int]] | None, optional
+        Mapping season name -> set of month numbers (1..12) used when
+        seasonal=True. None falls back to DEFAULT_SEASON_MONTHS (the
+        Netherlands verwarmingsperiode cold/warm split). Pass a custom
+        dict for region-specific or four-season analyses, e.g.
+        ``{"spring": {3, 4, 5}, "summer": {6, 7, 8},
+           "fall": {9, 10, 11}, "winter": {12, 1, 2}}``.
+        The 'annual' slice (full year) is always emitted regardless;
+        the dict configures the additional slices.
 
     Returns
     -------
     pd.DataFrame
-        One row per (identifier, column) pair, fully typed.
+        One row per (identifier, column, season) tuple, fully typed.
     """
     summary_data = []
 
     if raw_data_folder_path is None:
         index_df, _ = read_index()
+        worker = partial(collect_mapped_data_stats, seasonal=seasonal, seasons=seasons)
         if multi:
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                results = executor.map(collect_mapped_data_stats, index_df["HuisIdBSV"])
+                results = executor.map(worker, index_df["HuisIdBSV"])
                 summary_data = [item for sublist in results for item in sublist]
         else:
             for huis_id in index_df["HuisIdBSV"]:
                 logging.info(f"Collecting stats for HuisIdBSV = {huis_id}")
-                summary_data.extend(collect_mapped_data_stats(huis_id))
+                summary_data.extend(worker(huis_id))
         df = pd.DataFrame(summary_data)
         df = _cast_stats_dtypes(df)
         df = df.rename(columns={"Identifier": "HuisIdBSV"})
@@ -1470,19 +1566,20 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2):
 
     file_extension = "parquet"
     files = os.listdir(raw_data_folder_path)
+    worker = partial(process_raw_data_file, seasonal=seasonal, seasons=seasons)
     if multi:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             args_list = [
                 (file, raw_data_folder_path) for file in files
                 if file.endswith(f".{file_extension}")
             ]
-            results = executor.map(process_raw_data_file, args_list)
+            results = executor.map(worker, args_list)
             summary_data = [item for sublist in results for item in sublist]
     else:
         for file in files:
             if not file.endswith(f".{file_extension}"):
                 continue
-            summary_data.extend(process_raw_data_file((file, raw_data_folder_path)))
+            summary_data.extend(worker((file, raw_data_folder_path)))
     df = pd.DataFrame(summary_data)
     df = _cast_stats_dtypes(df)
     df = df.rename(columns={"Identifier": "source_file"})

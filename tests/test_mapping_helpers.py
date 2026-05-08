@@ -17,11 +17,15 @@ import pandas as pd
 import pytest
 
 import json
+from unittest.mock import patch
 
+from etdmap.data_model import load_unit_map, model_column_order, model_column_type
 from etdmap.mapping_helpers import (
     _STATS_DTYPES,
     _cast_stats_dtypes,
+    _seasonal_slices,
     collect_column_stats,
+    collect_mapped_data_stats,
     ensure_intervals,
     expand_tz_columns,
     fill_down_infrequent_devices,
@@ -29,7 +33,6 @@ from etdmap.mapping_helpers import (
     rearrange_model_columns,
     run_standard_pipeline,
 )
-from etdmap.data_model import model_column_order, model_column_type
 
 
 # ---------------------------------------------------------------------------
@@ -393,10 +396,16 @@ class TestGetStatsDtypes:
         assert df["max_datetime"].dtype.kind == "M"
 
     def test_dtype_contract_keys_present(self):
-        """Every key in _STATS_DTYPES is a column collect_column_stats
-        produces. Catches drift between the two."""
+        """Every key in _STATS_DTYPES (except those added by wrapping
+        layers) is a column collect_column_stats produces. Catches drift
+        between the two. 'season' is intentionally injected by
+        collect_mapped_data_stats / process_raw_data_file, not by
+        collect_column_stats itself."""
         out = collect_column_stats("hh1", pd.Series([1.0, 2.0], name="x"))
+        externally_injected = {"season"}
         for key in _STATS_DTYPES.keys():
+            if key in externally_injected:
+                continue
             assert key in out, f"{key!r} declared in _STATS_DTYPES but absent from collect_column_stats output"
 
     def test_csv_round_trip_preserves_numeric_min_max(self, tmp_path):
@@ -498,3 +507,178 @@ class TestExpandTzColumns:
         out = expand_tz_columns(df)
         assert list(out.columns) == ["x", "y"]
         assert (out["x"] == df["x"]).all()
+
+
+# ---------------------------------------------------------------------------
+# load_unit_map
+# ---------------------------------------------------------------------------
+
+
+class TestLoadUnitMap:
+    """The unit map is the project-wide single source of truth for column
+    units. Plot helpers and reports rely on it."""
+
+    def test_known_columns_have_expected_units(self):
+        m = load_unit_map()
+        assert m["ElektriciteitNetgebruikHoog"] == "kWh"
+        assert m["WarmteproductieWarmtepomp"] == "GJ"
+        assert m["Gasgebruik"] == "m3"
+
+    def test_diff_columns_inherit_parent_unit(self):
+        """Diff variants are listed explicitly in thresholds.csv and must
+        carry the same unit as their parent cumulative column."""
+        m = load_unit_map()
+        assert m["ElektriciteitNetgebruikHoogDiff"] == m["ElektriciteitNetgebruikHoog"]
+
+    def test_unknown_column_returns_none_via_get(self):
+        m = load_unit_map()
+        assert m.get("ThisColumnDoesNotExist") is None
+
+
+# ---------------------------------------------------------------------------
+# Seasonal split (collect_mapped_data_stats / get_data_stats)
+# ---------------------------------------------------------------------------
+
+
+def _year_of_data():
+    """Synthetic household-style DataFrame: one row per hour for a full
+    calendar year, with one numeric column, one bool column, and one object
+    column. The numeric column's value equals the month so seasonal slicing
+    is verifiable from the stats."""
+    rd = pd.date_range("2024-01-01", "2024-12-31 23:00", freq="h")
+    months = rd.month
+    return pd.DataFrame({
+        "ReadingDate": rd,
+        "month_value": pd.array(months.astype(float), dtype="Float64"),
+        "always_true": pd.array([True] * len(rd), dtype="boolean"),
+        "label":       pd.array(["x"] * len(rd), dtype="string"),
+    })
+
+
+class TestSeasonalSlices:
+    def test_seasonal_false_returns_only_annual(self):
+        df = _year_of_data()
+        out = _seasonal_slices(df, seasonal=False)
+        assert [s for s, _ in out] == ["annual"]
+
+    def test_seasonal_true_returns_three_slices(self):
+        df = _year_of_data()
+        out = _seasonal_slices(df, seasonal=True)
+        names = [s for s, _ in out]
+        assert names == ["annual", "cold", "warm"]
+        cold_df = dict(out)["cold"]
+        warm_df = dict(out)["warm"]
+        # Cold = Oct-Apr (months 10,11,12,1,2,3,4) = 7 months out of 12.
+        # 2024 is a leap year: (Jan 31 + Feb 29 + Mar 31 + Apr 30 + Oct 31
+        # + Nov 30 + Dec 31) * 24 hours = 213 * 24 = 5112.
+        assert len(cold_df) == 5112
+        # Warm = May-Sep = (May 31 + Jun 30 + Jul 31 + Aug 31 + Sep 30) * 24
+        # = 153 * 24 = 3672.
+        assert len(warm_df) == 3672
+        assert len(cold_df) + len(warm_df) == len(df)
+
+    def test_seasonal_true_without_reading_date_falls_back(self):
+        """No ReadingDate means seasonal slicing is impossible; the helper
+        must degrade to annual-only rather than raising."""
+        df = pd.DataFrame({"x": pd.array([1.0, 2.0], dtype="Float64")})
+        out = _seasonal_slices(df, seasonal=True)
+        assert [s for s, _ in out] == ["annual"]
+
+    def test_custom_seasons_dict_overrides_default(self):
+        """Callers can pass an arbitrary {season_name: month_set} mapping
+        to replace the Netherlands cold/warm default."""
+        df = _year_of_data()
+        custom = {
+            "Q1": {1, 2, 3}, "Q2": {4, 5, 6},
+            "Q3": {7, 8, 9}, "Q4": {10, 11, 12},
+        }
+        out = _seasonal_slices(df, seasonal=True, seasons=custom)
+        names = [s for s, _ in out]
+        assert names == ["annual", "Q1", "Q2", "Q3", "Q4"]
+        # Each quarter should have ~3 months of hourly data.
+        sliced = dict(out)
+        # 2024 leap year: Jan 31 + Feb 29 + Mar 31 = 91 days = 2184 hours
+        assert len(sliced["Q1"]) == 91 * 24
+        # Apr 30 + May 31 + Jun 30 = 91 days
+        assert len(sliced["Q2"]) == 91 * 24
+
+    def test_custom_seasons_annual_key_is_reserved(self):
+        """If the caller's dict includes 'annual', that entry is ignored
+        (the auto-emitted annual slice covers it)."""
+        df = _year_of_data()
+        custom = {"annual": {1, 2, 3}, "winter": {12, 1, 2}}
+        out = _seasonal_slices(df, seasonal=True, seasons=custom)
+        names = [s for s, _ in out]
+        assert names == ["annual", "winter"]
+        # The auto-annual slice still spans the whole year, not just the
+        # caller's 'annual' month set.
+        assert len(dict(out)["annual"]) == 8784  # leap-year hours
+
+
+class TestCollectMappedDataStatsSeasonal:
+    """The seasonal kwarg must produce the right row shapes:
+    three rows per numeric / bool column, one row per non-numeric."""
+
+    def _patched_get_mapped_data(self, df):
+        return patch(
+            "etdmap.mapping_helpers.get_mapped_data",
+            return_value=df,
+        )
+
+    def test_default_is_single_annual_row_per_column(self):
+        df = _year_of_data()
+        with self._patched_get_mapped_data(df):
+            rows = collect_mapped_data_stats("hh1")
+        # One row per source column (4 columns: ReadingDate, month_value,
+        # always_true, label).
+        assert len(rows) == 4
+        assert all(r["season"] == "annual" for r in rows)
+
+    def test_seasonal_true_emits_three_rows_for_numeric_and_bool(self):
+        df = _year_of_data()
+        with self._patched_get_mapped_data(df):
+            rows = collect_mapped_data_stats("hh1", seasonal=True)
+        by_col = {}
+        for r in rows:
+            by_col.setdefault(r["column"], []).append(r["season"])
+        # Numeric and bool columns: three seasons each.
+        assert sorted(by_col["month_value"]) == ["annual", "cold", "warm"]
+        assert sorted(by_col["always_true"]) == ["annual", "cold", "warm"]
+        # Datetime / object columns: only annual.
+        assert by_col["ReadingDate"] == ["annual"]
+        assert by_col["label"] == ["annual"]
+
+    def test_seasonal_annual_row_matches_unsplit_baseline(self):
+        """The annual slice must produce stats identical to seasonal=False."""
+        df = _year_of_data()
+        with self._patched_get_mapped_data(df):
+            baseline = collect_mapped_data_stats("hh1")
+            seasonal = collect_mapped_data_stats("hh1", seasonal=True)
+        baseline_by_col = {r["column"]: r for r in baseline}
+        seasonal_annual_by_col = {
+            r["column"]: r for r in seasonal if r["season"] == "annual"
+        }
+        for col in baseline_by_col:
+            b = baseline_by_col[col]
+            s = seasonal_annual_by_col[col]
+            assert b["count"] == s["count"]
+            # Numeric stats: compare with NA-tolerant equality.
+            for k in ("min", "max", "mean", "median"):
+                bv, sv = b[k], s[k]
+                if pd.isna(bv) and pd.isna(sv):
+                    continue
+                assert bv == sv, f"{col}.{k}: baseline={bv} seasonal={sv}"
+
+    def test_seasonal_cold_warm_row_counts(self):
+        """Cold / warm slice stats must reflect the row counts of those
+        months only. month_value column equals the month, so cold mean
+        should average the month values of cold months, etc."""
+        df = _year_of_data()
+        with self._patched_get_mapped_data(df):
+            rows = collect_mapped_data_stats("hh1", seasonal=True)
+        cold = next(r for r in rows if r["column"] == "month_value" and r["season"] == "cold")
+        warm = next(r for r in rows if r["column"] == "month_value" and r["season"] == "warm")
+        assert cold["min"] == 1.0   # January
+        assert cold["max"] == 12.0  # December
+        assert warm["min"] == 5.0
+        assert warm["max"] == 9.0
