@@ -22,10 +22,10 @@ _STATS_DTYPES = {
     "std": "Float64",
     "median": "Float64",
     "iqr": "Float64",
-    "quantile_1": "Float64",
-    "quantile_25": "Float64",
-    "quantile_75": "Float64",
-    "quantile_99": "Float64",
+    "p01": "Float64",
+    "p25": "Float64",
+    "p75": "Float64",
+    "p99": "Float64",
     "top5": "string",
     "season": "string",
 }
@@ -1303,6 +1303,76 @@ def collect_mapped_data_stats(huis_id_bsv, seasonal=False, seasons=None):
 
     return file_summary_data
 
+NUMERIC_STATS_SCHEMA = (
+    "count", "min", "max", "mean", "std", "median",
+    "p01", "p25", "p75", "p99", "iqr",
+)
+"""Canonical numeric-stats column names. See parent ADR-018.
+
+Single source of truth for the per-column numeric-stats schema across
+``compute_numeric_column_stats`` (per-Series kernel) and
+``etdanalyze.analysis_helpers.compute_stats_table`` (per-group
+vectorised path). Any consumer adding or removing a stat column must
+update this tuple and both paths in the same change; the parity test
+in ``tests/test_mapping_helpers.py`` enforces it.
+"""
+
+
+def compute_numeric_column_stats(series: pd.Series) -> dict:
+    """
+    Per-column numeric statistics with the project's standard names.
+
+    Returns a dict with keys equal to ``NUMERIC_STATS_SCHEMA``:
+      ``count``, ``min``, ``max``, ``mean``, ``std``, ``median``,
+      ``p01``, ``p25``, ``p75``, ``p99``, ``iqr``.
+
+    Centralises the stat names + math so any per-Series consumer
+    (mapping reports, analysis scripts, ad-hoc tooling) emits the same
+    columns. Group-aware callers (e.g. ``etdanalyze.compute_stats_table``)
+    do their own ``groupby().agg()`` for speed but match the same names
+    (see ADR-018).
+
+    Non-numeric or all-NA inputs return a dict with ``count`` set and
+    every other key as ``pd.NA``.
+
+    Notes
+    -----
+    Boolean columns are coerced to Float64 (False=0, True=1) before
+    reduction so min/max/mean populate. Datetime / object columns are
+    out of scope; use ``collect_column_stats`` for the typed-routing
+    behaviour (datetime min/max, object top5).
+    """
+    out = {
+        "count": series.count(),
+        "min": pd.NA, "max": pd.NA, "mean": pd.NA,
+        "std": pd.NA, "median": pd.NA,
+        "p01": pd.NA, "p25": pd.NA, "p75": pd.NA, "p99": pd.NA, "iqr": pd.NA,
+    }
+    if series.isna().all():
+        return out
+    if pd.api.types.is_bool_dtype(series):
+        numeric = series.astype("Float64")
+        out["min"] = numeric.min()
+        out["max"] = numeric.max()
+        out["mean"] = numeric.mean()
+        return out
+    if not pd.api.types.is_numeric_dtype(series):
+        return out
+    out["min"] = series.min()
+    out["max"] = series.max()
+    out["mean"] = series.mean()
+    out["std"] = series.std()
+    out["median"] = series.median()
+    p25 = series.quantile(0.25)
+    p75 = series.quantile(0.75)
+    out["p01"] = series.quantile(0.01)
+    out["p25"] = p25
+    out["p75"] = p75
+    out["p99"] = series.quantile(0.99)
+    out["iqr"] = p75 - p25
+    return out
+
+
 def collect_column_stats(identifier, column_data):
     """
     Collect typed summary statistics for a single column.
@@ -1314,7 +1384,7 @@ def collect_column_stats(identifier, column_data):
     Type routing:
       - bool  -> coerced to Float64 (False=0, True=1) so min/max/mean
                  populate. This makes "ever fired" filterable as max == 1.
-      - numeric -> min/max/mean/std/median/iqr/quantile_25/quantile_75.
+      - numeric -> min/max/mean/std/median/iqr/p25/p75.
       - datetime64 (any tz) -> min_datetime / max_datetime, vectorised
                  to UTC-naive. Numeric min/max remain pd.NA. Object
                  columns are NOT promoted here -- per-row varying
@@ -1340,10 +1410,10 @@ def collect_column_stats(identifier, column_data):
         "std": pd.NA,
         "median": pd.NA,
         "iqr": pd.NA,
-        "quantile_1": pd.NA,
-        "quantile_25": pd.NA,
-        "quantile_75": pd.NA,
-        "quantile_99": pd.NA,
+        "p01": pd.NA,
+        "p25": pd.NA,
+        "p75": pd.NA,
+        "p99": pd.NA,
         "min_datetime": pd.NaT,
         "max_datetime": pd.NaT,
         "top5": pd.NA,
@@ -1352,25 +1422,11 @@ def collect_column_stats(identifier, column_data):
     if column_data.isna().all():
         return stats
 
-    if pd.api.types.is_bool_dtype(column_data):
-        # Single vectorised cast to nullable Float64; then C-level reductions.
-        numeric = column_data.astype("Float64")
-        stats["min"] = numeric.min()
-        stats["max"] = numeric.max()
-        stats["mean"] = numeric.mean()
-    elif pd.api.types.is_numeric_dtype(column_data):
-        stats["min"] = column_data.min()
-        stats["max"] = column_data.max()
-        stats["mean"] = column_data.mean()
-        stats["std"] = column_data.std()
-        stats["median"] = column_data.median()
-        q25 = column_data.quantile(0.25)
-        q75 = column_data.quantile(0.75)
-        stats["quantile_1"] = column_data.quantile(0.01)
-        stats["quantile_25"] = q25
-        stats["quantile_75"] = q75
-        stats["quantile_99"] = column_data.quantile(0.99)
-        stats["iqr"] = q75 - q25
+    if pd.api.types.is_bool_dtype(column_data) or pd.api.types.is_numeric_dtype(column_data):
+        # Delegate the numeric / bool math to the canonical kernel (ADR-018).
+        # The kernel handles the bool->Float64 coercion internally and emits
+        # exactly NUMERIC_STATS_SCHEMA. Datetime / object branches stay below.
+        stats.update(compute_numeric_column_stats(column_data))
     elif pd.api.types.is_datetime64_any_dtype(column_data):
         # datetime64 dtype is uniform-tz by construction; safe to vectorise.
         if getattr(column_data.dt, "tz", None) is not None:

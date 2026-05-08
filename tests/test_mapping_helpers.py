@@ -21,12 +21,14 @@ from unittest.mock import patch
 
 from etdmap.data_model import load_unit_map, model_column_order, model_column_type
 from etdmap.mapping_helpers import (
+    NUMERIC_STATS_SCHEMA,
     _STATS_DTYPES,
     _cast_stats_dtypes,
     _seasonal_slices,
     _synthesise_tariff_roots,
     collect_column_stats,
     collect_mapped_data_stats,
+    compute_numeric_column_stats,
     ensure_intervals,
     expand_tz_columns,
     fill_down_infrequent_devices,
@@ -288,28 +290,28 @@ class TestCollectColumnStats:
         assert out["max"] == 4.0
         assert out["mean"] == 2.5
         assert out["median"] == 2.5
-        assert out["quantile_25"] == 1.75
-        assert out["quantile_75"] == 3.25
+        assert out["p25"] == 1.75
+        assert out["p75"] == 3.25
         assert out["iqr"] == 1.5
-        # q1 / q99 are interpolated; with [1, 2, 3, 4] the values are close
+        # p25 / p99 are interpolated; with [1, 2, 3, 4] the values are close
         # to min and max but not equal to them.
-        assert out["quantile_1"] is not pd.NA and float(out["quantile_1"]) == pytest.approx(1.03)
-        assert out["quantile_99"] is not pd.NA and float(out["quantile_99"]) == pytest.approx(3.97)
+        assert out["p01"] is not pd.NA and float(out["p01"]) == pytest.approx(1.03)
+        assert out["p99"] is not pd.NA and float(out["p99"]) == pytest.approx(3.97)
         assert pd.isna(out["min_datetime"]) and pd.isna(out["max_datetime"])
         assert pd.isna(out["top5"])
 
     def test_q1_q99_on_large_sample_match_percentile_definition(self):
-        """q1 and q99 are the 1st and 99th percentiles. With 100+ points
+        """p25 and p99 are the 1st and 99th percentiles. With 100+ points
         they should land within typical-tail ranges away from min/max,
         confirming they aren't picking up single-record extremes."""
-        # Values 1..100. q1 ~ 1.99, q99 ~ 99.01 by linear interpolation.
+        # Values 1..100. p25 ~ 1.99, p99 ~ 99.01 by linear interpolation.
         s = pd.Series(
             pd.array([float(i) for i in range(1, 101)], dtype="Float64"),
             name="x",
         )
         out = collect_column_stats("hh1", s)
-        assert float(out["quantile_1"]) == pytest.approx(1.99)
-        assert float(out["quantile_99"]) == pytest.approx(99.01)
+        assert float(out["p01"]) == pytest.approx(1.99)
+        assert float(out["p99"]) == pytest.approx(99.01)
         assert float(out["min"]) == 1.0
         assert float(out["max"]) == 100.0
 
@@ -363,7 +365,7 @@ class TestCollectColumnStats:
         assert out["count"] == 0
         assert out["missing"] == 3
         for k in ("min", "max", "mean", "std", "median", "iqr",
-                  "quantile_25", "quantile_75", "top5"):
+                  "p25", "p75", "top5"):
             assert pd.isna(out[k]), f"{k} should be NA, got {out[k]!r}"
         assert pd.isna(out["min_datetime"]) and pd.isna(out["max_datetime"])
 
@@ -374,6 +376,51 @@ class TestCollectColumnStats:
         out = collect_column_stats("hh1", s)
         assert out["type"] == "Float64"
         assert isinstance(out["type"], str)
+
+
+# ---------------------------------------------------------------------------
+# NUMERIC_STATS_SCHEMA parity (ADR-018)
+# ---------------------------------------------------------------------------
+
+
+class TestNumericStatsSchema:
+    """The kernel and the per-column wrapper must both honour
+    NUMERIC_STATS_SCHEMA. Drift here would silently break downstream
+    consumers that read stats columns by name (parent ADR-018)."""
+
+    def test_kernel_returns_exactly_the_schema_keys(self):
+        """compute_numeric_column_stats's keys are NUMERIC_STATS_SCHEMA.
+        No additions, no omissions, no renames."""
+        s = pd.Series(pd.array([1.0, 2.0, 3.0, 4.0], dtype="Float64"))
+        keys = set(compute_numeric_column_stats(s).keys())
+        assert keys == set(NUMERIC_STATS_SCHEMA), (
+            f"kernel keys diverged from NUMERIC_STATS_SCHEMA: "
+            f"missing={set(NUMERIC_STATS_SCHEMA) - keys}, "
+            f"unexpected={keys - set(NUMERIC_STATS_SCHEMA)}"
+        )
+
+    def test_collect_column_stats_includes_schema_for_numeric(self):
+        """collect_column_stats's numeric branch must populate every key in
+        NUMERIC_STATS_SCHEMA. Type-specific extras (top5, min_datetime)
+        are allowed -- the contract is 'at least these'."""
+        s = pd.Series(pd.array([1.0, 2.0, 3.0, 4.0], dtype="Float64"), name="x")
+        stats = collect_column_stats("hh1", s)
+        for key in NUMERIC_STATS_SCHEMA:
+            assert key in stats, f"NUMERIC_STATS_SCHEMA key '{key}' missing"
+
+    def test_kernel_and_wrapper_produce_identical_numeric_values(self):
+        """The wrapper delegates to the kernel; values must match exactly
+        for the keys both produce."""
+        s = pd.Series(pd.array([1.0, 2.0, 3.0, 4.0, pd.NA], dtype="Float64"), name="x")
+        kernel = compute_numeric_column_stats(s)
+        wrapper = collect_column_stats("hh1", s)
+        for key in NUMERIC_STATS_SCHEMA:
+            kv, wv = kernel[key], wrapper[key]
+            if pd.isna(kv) and pd.isna(wv):
+                continue
+            assert float(kv) == pytest.approx(float(wv)), (
+                f"kernel/wrapper diverged on '{key}': kernel={kv}, wrapper={wv}"
+            )
 
 
 # ---------------------------------------------------------------------------
