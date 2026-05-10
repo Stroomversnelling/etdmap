@@ -28,6 +28,7 @@ from etdmap.mapping_helpers import (
     _synthesise_tariff_roots,
     collect_column_stats,
     collect_mapped_data_stats,
+    combine_source_columns,
     compute_numeric_column_stats,
     ensure_intervals,
     expand_tz_columns,
@@ -228,6 +229,215 @@ class TestFillZerosForDeviceNotInstalled:
         df = pd.DataFrame({"Other": [1]})
         result = fill_zeros_for_device_not_installed(df, columns=("ElektriciteitsgebruikWTW",))
         assert str(result["ElektriciteitsgebruikWTW"].dtype) == "Float64"
+
+
+# ---------------------------------------------------------------------------
+# combine_source_columns
+# ---------------------------------------------------------------------------
+
+
+class TestCombineSourceColumns:
+    """Tests for combine_source_columns.
+
+    Resolves multiple raw source columns mapping to one standard target
+    column. Used by Watch-E for heat-pump energy/power binnen+buiten splits
+    and CO2 sensor combinations. Three states:
+      1. target already present  -> drop source columns, target wins
+      2. target absent + sources -> combine via sum or mean (NA-preserving)
+      3. neither                  -> all-NA target column
+    """
+
+    @staticmethod
+    def _df(**cols):
+        """Build a DataFrame with Float64 nullable columns (ADR-005)."""
+        return pd.DataFrame({k: pd.array(v, dtype="Float64") for k, v in cols.items()})
+
+    # --- State 1: target already present ---------------------------------
+
+    def test_target_present_no_sources_returns_unchanged(self):
+        df = self._df(target=[1.0, 2.0, 3.0], other=[10.0, 20.0, 30.0])
+        result = combine_source_columns(
+            df, target="target", sources=("a", "b"),
+            operator="sum", target_dtype="Float64",
+        )
+        assert list(result.columns) == ["target", "other"]
+        assert list(result["target"]) == [1.0, 2.0, 3.0]
+
+    def test_target_present_drops_both_sources(self):
+        df = self._df(target=[1.0, 2.0], a=[100.0, 200.0], b=[300.0, 400.0])
+        result = combine_source_columns(
+            df, target="target", sources=("a", "b"),
+            operator="sum", target_dtype="Float64",
+        )
+        assert "a" not in result.columns
+        assert "b" not in result.columns
+        # Target value is preserved unchanged -- the existing total wins.
+        assert list(result["target"]) == [1.0, 2.0]
+
+    def test_target_present_drops_only_present_source(self):
+        df = self._df(target=[1.0], a=[5.0])  # b absent
+        result = combine_source_columns(
+            df, target="target", sources=("a", "b"),
+            operator="sum", target_dtype="Float64",
+        )
+        assert "a" not in result.columns
+        assert list(result["target"]) == [1.0]
+
+    # --- State 2: target absent, operator=sum ----------------------------
+
+    def test_sum_two_sources_added_per_row(self):
+        df = self._df(a=[1.0, 2.0, 3.0], b=[10.0, 20.0, 30.0])
+        result = combine_source_columns(
+            df, target="t", sources=("a", "b"),
+            operator="sum", target_dtype="Float64",
+        )
+        assert "a" not in result.columns and "b" not in result.columns
+        assert list(result["t"]) == [11.0, 22.0, 33.0]
+
+    def test_sum_preserves_na_when_either_source_na(self):
+        # NA-preservation: a missing reading on either side at time t
+        # produces NA at t (no silent zero-fill, no half-value).
+        df = self._df(a=[1.0, pd.NA, 3.0], b=[10.0, 20.0, pd.NA])
+        result = combine_source_columns(
+            df, target="t", sources=("a", "b"),
+            operator="sum", target_dtype="Float64",
+        )
+        out = list(result["t"])
+        assert out[0] == 11.0
+        assert pd.isna(out[1])
+        assert pd.isna(out[2])
+
+    def test_sum_one_source_present_uses_it_directly(self):
+        df = self._df(a=[1.0, 2.0])  # b absent
+        result = combine_source_columns(
+            df, target="t", sources=("a", "b"),
+            operator="sum", target_dtype="Float64",
+        )
+        assert "a" not in result.columns
+        assert list(result["t"]) == [1.0, 2.0]
+
+    # --- State 2: target absent, operator=mean ---------------------------
+
+    def test_mean_two_sources_averaged_per_row(self):
+        df = self._df(a=[2.0, 4.0, 6.0], b=[4.0, 8.0, 12.0])
+        result = combine_source_columns(
+            df, target="t", sources=("a", "b"),
+            operator="mean", target_dtype="Float64",
+        )
+        assert list(result["t"]) == [3.0, 6.0, 9.0]
+
+    def test_mean_preserves_na_when_either_source_na(self):
+        df = self._df(a=[2.0, pd.NA, 6.0], b=[4.0, 8.0, pd.NA])
+        result = combine_source_columns(
+            df, target="t", sources=("a", "b"),
+            operator="mean", target_dtype="Float64",
+        )
+        out = list(result["t"])
+        assert out[0] == 3.0
+        assert pd.isna(out[1])
+        assert pd.isna(out[2])
+
+    def test_mean_one_source_pass_through(self):
+        # Mean over a single available source equals the source itself
+        # -- no zero-fill of the missing one.
+        df = self._df(a=[5.0, 10.0])  # b absent
+        result = combine_source_columns(
+            df, target="t", sources=("a", "b"),
+            operator="mean", target_dtype="Float64",
+        )
+        assert list(result["t"]) == [5.0, 10.0]
+
+    def test_mean_three_sources_averaged(self):
+        df = self._df(a=[3.0], b=[6.0], c=[9.0])
+        result = combine_source_columns(
+            df, target="t", sources=("a", "b", "c"),
+            operator="mean", target_dtype="Float64",
+        )
+        assert list(result["t"]) == [6.0]
+
+    # --- State 3: neither target nor sources -----------------------------
+
+    def test_no_sources_fills_na_using_target_dtype(self):
+        df = self._df(other=[1.0, 2.0])
+        result = combine_source_columns(
+            df, target="t", sources=("a", "b"),
+            operator="sum", target_dtype="Float64",
+        )
+        assert "t" in result.columns
+        assert result["t"].isna().all()
+        assert str(result["t"].dtype) == "Float64"
+
+    def test_no_sources_falls_back_to_model_column_type(self):
+        # CO2 is a real model column; helper should look up its dtype.
+        df = self._df(other=[1.0])
+        result = combine_source_columns(
+            df, target="CO2", sources=("CO2_1", "CO2_2"), operator="mean",
+        )
+        assert "CO2" in result.columns
+        assert str(result["CO2"].dtype) == model_column_type["CO2"]
+        assert result["CO2"].isna().all()
+
+    def test_no_sources_unknown_target_raises_key_error(self):
+        df = self._df(other=[1.0])
+        with pytest.raises(KeyError, match="No dtype known"):
+            combine_source_columns(
+                df, target="not_a_real_model_column",
+                sources=("a", "b"), operator="sum",
+            )
+
+    def test_no_sources_required_target_logs_warning(self, caplog):
+        # ElektriciteitsgebruikWarmtepomp is Vereist=ja in etdmodel.csv.
+        # Missing all sources should be loud (WARNING) without halting.
+        df = self._df(other=[1.0])
+        with caplog.at_level("WARNING"):
+            combine_source_columns(
+                df, target="ElektriciteitsgebruikWarmtepomp",
+                sources=("ElektriciteitsgebruikWarmtepomp_binnen",
+                         "ElektriciteitsgebruikWarmtepomp_buiten"),
+                operator="sum",
+            )
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warnings) == 1
+        assert "Vereist=ja" in warnings[0].message
+        assert "ElektriciteitsgebruikWarmtepomp" in warnings[0].message
+
+    def test_no_sources_optional_target_is_silent(self, caplog):
+        # CO2 is Vereist=nee. Missing all sources should be silent --
+        # all-NA optional columns are normal in this pipeline.
+        df = self._df(other=[1.0])
+        with caplog.at_level("WARNING"):
+            combine_source_columns(
+                df, target="CO2", sources=("CO2_1", "CO2_2"), operator="mean",
+            )
+        warnings = [r for r in caplog.records if r.levelname in ("WARNING", "ERROR")]
+        assert warnings == []
+
+    # --- Errors and behavioural contract ---------------------------------
+
+    def test_invalid_operator_raises_value_error(self):
+        df = self._df(a=[1.0], b=[2.0])
+        with pytest.raises(ValueError, match="must be 'sum' or 'mean'"):
+            combine_source_columns(
+                df, target="t", sources=("a", "b"),
+                operator="median", target_dtype="Float64",
+            )
+
+    def test_modifies_df_in_place_and_returns_same_object(self):
+        df = self._df(a=[1.0], b=[2.0])
+        result = combine_source_columns(
+            df, target="t", sources=("a", "b"),
+            operator="sum", target_dtype="Float64",
+        )
+        # Same convention as fill_down_infrequent_devices etc.
+        assert result is df
+
+    def test_combined_target_keeps_float64_nullable_dtype(self):
+        df = self._df(a=[1.0, 2.0], b=[3.0, 4.0])
+        result = combine_source_columns(
+            df, target="t", sources=("a", "b"),
+            operator="sum", target_dtype="Float64",
+        )
+        assert str(result["t"].dtype) == "Float64"
 
 
 # ---------------------------------------------------------------------------

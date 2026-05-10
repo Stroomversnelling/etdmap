@@ -50,7 +50,13 @@ DEFAULT_SEASON_MONTHS = {
 _COLD_MONTHS = DEFAULT_SEASON_MONTHS["cold"]
 _WARM_MONTHS = DEFAULT_SEASON_MONTHS["warm"]
 
-from etdmap.data_model import cumulative_columns, model_column_order, model_column_type, load_thresholds_as_dict
+from etdmap.data_model import (
+    cumulative_columns,
+    load_thresholds_as_dict,
+    model_column_order,
+    model_column_type,
+    required_performance_data_columns,
+)
 from etdmap.index_helpers import get_mapped_data, read_index
 from etdmap.record_validators import (
     record_flag_conditions,
@@ -851,6 +857,120 @@ def fill_zeros_for_device_not_installed(
     for col in columns:
         if col not in df.columns or df[col].isna().all():
             df[col] = pd.array([0] * len(df), dtype="Float64")
+    return df
+
+
+def combine_source_columns(
+    df: pd.DataFrame,
+    *,
+    target: str,
+    sources: tuple[str, ...] | list[str],
+    operator: str = "sum",
+    target_dtype: str | None = None,
+    context: str = "",
+) -> pd.DataFrame:
+    """
+    Resolve multiple raw source columns mapping to one standard target column.
+
+    Used by supplier mapping scripts when the supplier exposes more than one
+    raw column for the same standard model variable. Examples:
+      - Watch-E heat-pump energy: `_binnen` + `_buiten` -> `ElektriciteitsgebruikWarmtepomp`
+      - Watch-E heat-pump power:  `_binnen` + `_buiten` -> `ElektriciteitVermogenWarmtepomp`
+      - Watch-E project 5 CO2:    two co-located room sensors -> `CO2`
+
+    Assumes the supplier-specific rename has already happened, so the source
+    columns carry staging names (e.g. `<target>_binnen`, `<target>_1`).
+
+    Behaviour, in priority order:
+      1. If `target` is already in df, drop any source columns that are also
+         present and return -- the existing target wins. Handles suppliers
+         that expose both a total and a decomposition.
+      2. If `target` is absent and any source columns are present, compute
+         `target = operator(present_sources)` row-by-row and drop the
+         sources. NA-preserving: any timestamp where a contributing source
+         is NA produces NA in the target. A missing reading on one sensor
+         never silently halves or distorts the combined value.
+      3. If neither target nor any source is present, fill an all-NA target
+         column using `target_dtype` (or `model_column_type[target]`).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input frame, typically a single-household mapped frame. Modified
+        in place; also returned.
+    target : str
+        Standard model column name to produce.
+    sources : tuple or list of str
+        Source column names that combine into `target`. Must already be
+        renamed to their staging names.
+    operator : {"sum", "mean"}, default "sum"
+        Combination operator. Use `sum` for energy/power components that
+        add (e.g. binnen + buiten heat-pump power) and `mean` for
+        concentration / temperature / humidity readings from co-located
+        sensors that should be averaged.
+    target_dtype : str or None, default None
+        Pandas dtype for the all-NA target if no sources are present.
+        If None, looked up from `model_column_type[target]`.
+    context : str, default ""
+        Free-form prefix for log messages (e.g. household ID).
+
+    Returns
+    -------
+    pd.DataFrame
+        The same df, modified in place.
+    """
+    if operator not in ("sum", "mean"):
+        raise ValueError(
+            f"[combine_source_columns] operator must be 'sum' or 'mean', got {operator!r}"
+        )
+
+    present = [s for s in sources if s in df.columns]
+    ctx = f"{context} " if context else ""
+
+    # State 1: target already present, drop sources, target wins
+    if target in df.columns:
+        if present:
+            logging.info(
+                f"[combine_source_columns] {ctx}target '{target}' already present; "
+                f"dropping source(s) {present}."
+            )
+            df.drop(columns=present, inplace=True)
+        return df
+
+    # State 3: no sources -- create all-NA target column.
+    # Silent for optional targets (matches the rest of the pipeline's quiet
+    # NA fill for missing optional columns). Warning for required targets
+    # (Vereist=ja in etdmodel.csv) so a sensor-absent required variable
+    # surfaces in the logs without halting the run -- the dynamic rule
+    # calculations downstream may still re-derive it.
+    if not present:
+        dtype = target_dtype if target_dtype is not None else model_column_type.get(target)
+        if dtype is None:
+            raise KeyError(
+                f"[combine_source_columns] No dtype known for target '{target}'. "
+                f"Pass target_dtype= or add '{target}' to model_column_type."
+            )
+        if target in required_performance_data_columns:
+            logging.warning(
+                f"[combine_source_columns] {ctx}required target '{target}' "
+                f"(Vereist=ja) missing and no source(s) present; filling all-NA."
+            )
+        df[target] = pd.Series(pd.NA, dtype=dtype, index=df.index)
+        return df
+
+    # State 2: at least one source present -- combine and drop
+    combined = df[present[0]].copy()
+    for s in present[1:]:
+        combined = combined + df[s]  # NA-preserving
+    if operator == "mean":
+        combined = combined / len(present)
+
+    df[target] = combined
+    df.drop(columns=present, inplace=True)
+    logging.info(
+        f"[combine_source_columns] {ctx}target '{target}' = {operator}({present}); "
+        f"sources dropped."
+    )
     return df
 
 
