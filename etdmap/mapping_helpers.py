@@ -1757,13 +1757,28 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
     Modes:
       raw_data_folder_path is None (default): mapped mode. Iterates
         the HuisIdBSV values from read_index(), collecting stats per
-        household via collect_mapped_data_stats. The identifier column
-        in the result is HuisIdBSV; the index DataFrame is merged in
+        household via collect_mapped_data_stats. The mode-driver
+        identifier is HuisIdBSV; the index DataFrame is merged in
         (Dataleverancier, ProjectIdBSV, etc).
       raw_data_folder_path is a path-like: raw mode. Iterates the
         *.parquet files in the folder, collecting stats per file via
-        process_raw_data_file. The identifier column in the result is
-        source_file. No index merge.
+        process_raw_data_file. The mode-driver identifier is the
+        source filename. No index merge.
+
+    Output schema (shape-stable across modes):
+      Identifier  -- always present; the mode-driver value as string
+                     (HuisIdBSV in mapped mode, filename in raw mode).
+                     Use this column for mode-agnostic consumers.
+      HuisIdBSV   -- always present; populated in mapped mode, all NA
+                     (Int64 dtype) in raw mode.
+      source_file -- always present; populated in raw mode, all NA
+                     (string dtype) in mapped mode.
+
+    A consumer that is mode-agnostic should use `Identifier`. A consumer
+    that requires a specific identifier type should use the typed
+    column (`HuisIdBSV` or `source_file`) and treat all-NA as "not
+    available in this mode" -- not silently fall back to row counts or
+    other proxies.
 
     Parameters
     ----------
@@ -1809,7 +1824,13 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
                 summary_data.extend(worker(huis_id))
         df = pd.DataFrame(summary_data)
         df = _cast_stats_dtypes(df)
-        df = df.rename(columns={"Identifier": "HuisIdBSV"})
+        # Shape-stable schema (see docstring): copy the mode-driver
+        # identifier into both a generic `Identifier` column and the
+        # typed `HuisIdBSV`. The raw-mode column `source_file` is
+        # always present too, all-NA in this mode, with the same
+        # string dtype it carries in raw mode.
+        df["HuisIdBSV"] = df["Identifier"]
+        df["source_file"] = pd.Series([pd.NA] * len(df), dtype="string")
         df = pd.merge(df, index_df, how="left", on="HuisIdBSV")
         return df
 
@@ -1831,7 +1852,13 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
             summary_data.extend(worker((file, raw_data_folder_path)))
     df = pd.DataFrame(summary_data)
     df = _cast_stats_dtypes(df)
-    df = df.rename(columns={"Identifier": "source_file"})
+    # Shape-stable schema (see docstring): copy the mode-driver
+    # identifier into both a generic `Identifier` column and the typed
+    # `source_file`. The mapped-mode column `HuisIdBSV` is always
+    # present too, all-NA in this mode, with Int64 dtype to match its
+    # populated dtype in mapped mode.
+    df["source_file"] = df["Identifier"]
+    df["HuisIdBSV"] = pd.Series([pd.NA] * len(df), dtype="Int64")
     return df
 
 def apply_thresholds_to_df(
