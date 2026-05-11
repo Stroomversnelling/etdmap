@@ -802,8 +802,10 @@ class TestLoadUnitMap:
         assert m["Gasgebruik"] == "m3"
 
     def test_diff_columns_inherit_parent_unit(self):
-        """Diff variants are listed explicitly in thresholds.csv and must
-        carry the same unit as their parent cumulative column."""
+        """Diff variants are not rows in etdmodel.csv -- they are derived
+        upstream from Cumulatief == 'ja' columns. ``load_unit_map`` seeds
+        a Diff entry per cumulative parent so the variant carries the
+        same unit as its parent."""
         m = load_unit_map()
         assert m["ElektriciteitNetgebruikHoogDiff"] == m["ElektriciteitNetgebruikHoog"]
 
