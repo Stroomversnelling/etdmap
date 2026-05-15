@@ -899,8 +899,11 @@ class TestCollectMappedDataStatsSeasonal:
     three rows per numeric / bool column, one row per non-numeric."""
 
     def _patched_get_mapped_data(self, df):
+        # get_mapped_data was relocated alongside collect_mapped_data_stats
+        # from etdmap.mapping_helpers to etdmap.data_stats; patch the new
+        # location so the test intercepts the actual call site.
         return patch(
-            "etdmap.mapping_helpers.get_mapped_data",
+            "etdmap.data_stats.get_mapped_data",
             return_value=df,
         )
 
