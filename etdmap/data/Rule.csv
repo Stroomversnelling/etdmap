@@ -10,3 +10,4 @@ ElektriciteitsgebruikTotaalBruto,ElektriciteitsgebruikTotaalNetto + Zelfgebruik,
 ElektriciteitsgebruikWTWDiff,-ElektriciteitsgebruikRadiatorDiff + ElektriciteitsgebruikTotaalGebouwgebonden - ElektriciteitsgebruikTotaalWarmtepomp,"ElektriciteitsgebruikRadiatorDiff, ElektriciteitsgebruikTotaalGebouwgebonden, ElektriciteitsgebruikTotaalWarmtepomp","Universeel, All-Electric, Hybride"
 TerugleveringTotaalNetto,ElektriciteitTerugleveringDiff,ElektriciteitTerugleveringDiff,"Universeel, All-Electric, Hybride"
 ElektriciteitsgebruikTotaalNetto,ElektriciteitNetgebruikDiff,ElektriciteitNetgebruikDiff,"Universeel, All-Electric, Hybride"
+ZelfgebruikPercentage,Zelfgebruik / ZonopwekBruto,"ZonopwekBruto, Zelfgebruik","Universeel, All-Electric, Hybride"
