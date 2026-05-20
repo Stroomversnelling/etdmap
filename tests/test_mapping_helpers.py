@@ -801,13 +801,15 @@ class TestLoadUnitMap:
         assert m["WarmteproductieWarmtepomp"] == "GJ"
         assert m["Gasgebruik"] == "m3"
 
-    def test_diff_columns_inherit_parent_unit(self):
-        """Diff variants are not rows in etdmodel.csv -- they are derived
-        upstream from Cumulatief == 'ja' columns. ``load_unit_map`` seeds
-        a Diff entry per cumulative parent so the variant carries the
-        same unit as its parent."""
+    def test_diff_columns_have_explicit_rows(self):
+        """Diff variants are explicit rows in etdmodel.csv (Diff='ja'),
+        not synthesised from a suffix convention. Each Diff row carries
+        its own unit declaration; the unit happens to match its
+        cumulative parent in normal cases but the model is authoritative
+        (no suffix-based inheritance in ``load_unit_map``)."""
         m = load_unit_map()
-        assert m["ElektriciteitNetgebruikHoogDiff"] == m["ElektriciteitNetgebruikHoog"]
+        assert m["ElektriciteitNetgebruikHoogDiff"] == "kWh"
+        assert m["ElektriciteitNetgebruikHoog"] == "kWh"
 
     def test_unknown_column_returns_none_via_get(self):
         m = load_unit_map()
