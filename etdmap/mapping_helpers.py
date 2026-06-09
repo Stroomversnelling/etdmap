@@ -335,7 +335,7 @@ def _apply_negative_diff_corrections(group, col, context_string):
 
     # positional index over group rows (group itself may have any index label)
     # Use epoch nanoseconds (int64) for searchsorted to avoid tz-aware vs tz-naive
-    # comparison errors — O-Nexus ReadingDate arrives as datetime64[ns, UTC] and
+    # comparison errors -- some suppliers' ReadingDate arrives as datetime64[ns, UTC] and
     # pd.to_datetime coercion in rearrange_model_columns does not always strip tz.
     group_dates_ns = group['ReadingDate'].astype('int64').reset_index(drop=True)
     fg_dates_ns    = fg['ReadingDate'].astype('int64')
@@ -850,9 +850,9 @@ def combine_source_columns(
 
     Used by supplier mapping scripts when the supplier exposes more than one
     raw column for the same standard model variable. Examples:
-      - Watch-E heat-pump energy: `_binnen` + `_buiten` -> `ElektriciteitsgebruikWarmtepomp`
-      - Watch-E heat-pump power:  `_binnen` + `_buiten` -> `ElektriciteitVermogenWarmtepomp`
-      - Watch-E project 5 CO2:    two co-located room sensors -> `CO2`
+      - heat-pump energy: `_binnen` + `_buiten` -> `ElektriciteitsgebruikWarmtepomp`
+      - heat-pump power:  `_binnen` + `_buiten` -> `ElektriciteitVermogenWarmtepomp`
+      - CO2 from two co-located room sensors -> `CO2`
 
     Assumes the supplier-specific rename has already happened, so the source
     columns carry staging names (e.g. `<target>_binnen`, `<target>_1`).
@@ -970,7 +970,7 @@ def snap_readings_to_grid(
 
     For datasets with multiple separate input files per sensor group, concatenate
     all files into one DataFrame first (leaving columns from other files as NaN),
-    then call this function. This is equivalent to Factory Zero's Timestep-based
+    then call this function. This is equivalent to a Timestep-based
     sheet merge, but works on datetime columns rather than integer offsets.
 
     Within a slot, when multiple rows are present, each column independently
@@ -978,7 +978,7 @@ def snap_readings_to_grid(
     offset (the most common signed offset observed for that column across all
     rows where it is non-null).  This is implemented as a K-pass vectorized
     merge where K is the number of distinct characteristic offsets (typically
-    2-3 for O-Nexus data).
+    2-3 for typical supplier data).
 
     Per-column characteristic offsets matter especially for cumulative columns.
     If a cumulative column (e.g. ElektriciteitNetgebruikHoogCum) always arrives
@@ -1379,26 +1379,50 @@ def expand_tz_columns(df: pd.DataFrame, vectorized: bool = False) -> pd.DataFram
 
 
 def apply_thresholds_to_df(
-    df
+    df,
+    return_stats=False,
 ):
     """
     Apply thresholds to columns and update imputation flags.
 
     This function applies lower and upper bounds to a column in the
     DataFrame. Values outside these bounds are replaced with pd.NA.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The input DataFrame containing the data.
+    return_stats : bool, optional
+        If True, also return a dict describing what each column lost to
+        the threshold pass. Default False (returns only the DataFrame,
+        backward-compatible with existing callers).
+
+    Returns
+    -------
+    pandas.DataFrame
+        The DataFrame with thresholds applied (when return_stats is False).
+    tuple(pandas.DataFrame, dict)
+        When return_stats is True: (df, stats) where stats maps each
+        affected column name to {"n_below", "n_above", "min_removed",
+        "max_removed"}. Columns that lost no values are omitted.
     """
 
     thresholds_dict = load_thresholds_as_dict()
 
+    stats = {}
     for col in df.columns:
         if col in thresholds_dict:
-            df = apply_threshold_to_col(
+            df, col_stats = apply_threshold_to_col(
                 df=df,
                 col=col,
                 lower_bound=thresholds_dict[col]["Min"],
                 upper_bound=thresholds_dict[col]["Max"]
             )
+            if col_stats is not None:
+                stats[col] = col_stats
 
+    if return_stats:
+        return df, stats
     return df
 
 def apply_threshold_to_col(
@@ -1426,22 +1450,113 @@ def apply_threshold_to_col(
 
     Returns
     -------
-    pandas.DataFrame
-        The DataFrame with thresholds applied.
+    tuple(pandas.DataFrame, dict or None)
+        The DataFrame with thresholds applied, and a stats dict describing
+        what was removed: {"n_below", "n_above", "min_removed",
+        "max_removed"}. The stats are computed from the same out-of-bounds
+        mask used to null the values (no extra column scan). Returns None
+        for the stats when the column lost no values.
 
     Notes
     -----
     This function modifies the input DataFrame in-place and also returns it.
-    Values outside the thresholds are replaced with pd.NA.
+    Values outside the thresholds are replaced with pd.NA. min_removed /
+    max_removed are taken from the out-of-bounds values *before* they are
+    nulled, so they record how far past the bounds the data reached.
     """
-    mask = ((df[col] < lower_bound) | (df[col] > upper_bound)) & df[
-        col
-    ].notna()
+    notna = df[col].notna()
+    below = (df[col] < lower_bound) & notna
+    above = (df[col] > upper_bound) & notna
+    mask = below | above
 
-    n_out_of_bounds = mask.sum()
+    n_below = int(below.sum())
+    n_above = int(above.sum())
+
+    if n_below or n_above:
+        removed = df.loc[mask, col]
+        col_stats = {
+            "n_below": n_below,
+            "n_above": n_above,
+            "min_removed": float(removed.min()),
+            "max_removed": float(removed.max()),
+        }
+    else:
+        col_stats = None
+
     df.loc[mask, col] = pd.NA
 
-    return df
+    return df, col_stats
+
+
+# Sidecar written next to the per-household mapped parquets (one row per
+# HuisIdBSV + column that lost values in the threshold pass).
+THRESHOLD_REMOVALS_FILENAME = "mapping_threshold_removals.parquet"
+
+# Nullable dtypes (ADR-005) for the sidecar columns.
+_THRESHOLD_REMOVAL_DTYPES = {
+    "HuisIdBSV": "Int64",
+    "column": "string",
+    "n_below": "Int64",
+    "n_above": "Int64",
+    "min_removed": "Float64",
+    "max_removed": "Float64",
+}
+
+
+def threshold_stats_to_rows(huis_id_bsv, threshold_stats):
+    """
+    Flatten one household's threshold_stats dict into sidecar rows.
+
+    Parameters
+    ----------
+    huis_id_bsv : int
+        The household's HuisIdBSV.
+    threshold_stats : dict
+        {column: {"n_below", "n_above", "min_removed", "max_removed"}} as
+        produced by apply_thresholds_to_df(return_stats=True). May be empty
+        or None.
+
+    Returns
+    -------
+    list of dict
+        One row per column that lost values; empty when nothing was removed.
+    """
+    rows = []
+    for col, s in (threshold_stats or {}).items():
+        rows.append(
+            {
+                "HuisIdBSV": huis_id_bsv,
+                "column": col,
+                "n_below": s["n_below"],
+                "n_above": s["n_above"],
+                "min_removed": s["min_removed"],
+                "max_removed": s["max_removed"],
+            }
+        )
+    return rows
+
+
+def write_threshold_removals(
+    rows, mapped_folder_path, filename=THRESHOLD_REMOVALS_FILENAME
+):
+    """
+    Write accumulated threshold-removal rows to a sidecar parquet.
+
+    One row per (HuisIdBSV, column) that lost values in the threshold pass.
+    An empty but correctly-typed frame is written when no values were removed,
+    so downstream readers get a stable schema either way.
+
+    Returns the path written.
+    """
+    df = pd.DataFrame(rows, columns=list(_THRESHOLD_REMOVAL_DTYPES)).astype(
+        _THRESHOLD_REMOVAL_DTYPES
+    )
+    path = os.path.join(mapped_folder_path, filename)
+    df.to_parquet(path, engine="pyarrow")
+    logging.info(
+        f"[mapping_helpers] Wrote {len(df)} threshold-removal row(s) to {path}"
+    )
+    return path
 
 
 def run_standard_pipeline(
@@ -1456,7 +1571,7 @@ def run_standard_pipeline(
 
     Call this after all supplier-specific preprocessing is complete: column rename,
     unit conversion, ReadingDate derived, identifier columns dropped, and any
-    supplier-specific grid snapping (e.g. snap_readings_to_grid for O-Nexus).
+    supplier-specific grid snapping (e.g. snap_readings_to_grid).
 
     Steps:
       1. Validate ReadingDate present — raise KeyError if missing
@@ -1573,8 +1688,6 @@ def run_standard_pipeline(
         df[flag] = condition(df)
 
     # Count flag failures per category (False = failed validation)
-    thresholds_dict = load_thresholds_as_dict()
-
     def _count_failures(flag_dict):
         return {
             flag: int((df[flag] == False).sum())  # noqa: E712
@@ -1589,15 +1702,13 @@ def run_standard_pipeline(
     }
 
     # ------------------------------------------------------------------
-    # 9. Apply threshold filters — track removals before/after
+    # 9. Apply threshold filters -- capture removal stats in the same pass
     # ------------------------------------------------------------------
-    _thresh_cols = [c for c in thresholds_dict if c in df.columns]
-    _pre = {c: int(df[c].notna().sum()) for c in _thresh_cols}
-    df = apply_thresholds_to_df(df)
+    df, threshold_stats = apply_thresholds_to_df(df, return_stats=True)
+    # Per-column count of values nulled (n_below + n_above), kept for the
+    # existing DEBUG summary line and _validation_summary consumers.
     threshold_counts = {
-        c: _pre[c] - int(df[c].notna().sum())
-        for c in _thresh_cols
-        if int(df[c].notna().sum()) < _pre[c]
+        c: s["n_below"] + s["n_above"] for c, s in threshold_stats.items()
     }
 
     # Per-household summary at DEBUG (full detail in log file)
@@ -1622,5 +1733,9 @@ def run_standard_pipeline(
     return {
         "HuisIdLeverancier": huis_id,
         "HuisIdBSV": huis_code,
-        "_validation_summary": {"flags": flag_counts, "thresholds": threshold_counts},
+        "_validation_summary": {
+            "flags": flag_counts,
+            "thresholds": threshold_counts,
+            "threshold_stats": threshold_stats,
+        },
     }

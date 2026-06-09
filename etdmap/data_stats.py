@@ -16,8 +16,7 @@ wide-parquet producer all agree on shape and values.
 
 Historical note: these definitions previously lived in
 ``etdmap/mapping_helpers.py``. They were relocated here for
-module-path symmetry with ``etdtransform.data_stats`` (per the parked
-follow-up to task #36; reconfirmed in 2026-05). ``mapping_helpers``
+module-path symmetry with ``etdtransform.data_stats``. ``mapping_helpers``
 re-exports the same names for backward compatibility -- existing
 ``from etdmap.mapping_helpers import get_data_stats`` imports keep
 working. New code should prefer ``from etdmap.data_stats import ...``.
@@ -33,6 +32,7 @@ import pandas as pd
 
 from etdmap.data_model import tariff_root_to_splits
 from etdmap.index_helpers import get_mapped_data, read_index
+from etdmap.timestamp_helpers import derive_and_normalize_reading_date
 
 
 # ---------------------------------------------------------------------------
@@ -419,7 +419,14 @@ def collect_mapped_data_stats(huis_id_bsv, seasonal=False, seasons=None):
     return file_summary_data
 
 
-def process_raw_data_file(args, seasonal=False, seasons=None):
+# Raw supplier files name the reading timestamp differently per project
+# (e.g. a supplier may use 'Datum' or 'readingDate'); mirror the supplier mappers'
+# candidate-list pattern so the raw-stats path derives ReadingDate the SAME way
+# the mapping pipeline does (via derive_and_normalize_reading_date).
+_RAW_TIMESTAMP_CANDIDATES = ("ReadingDate", "Datum", "readingDate")
+
+
+def process_raw_data_file(args, seasonal=False, seasons=None, timestamp_candidates=None):
     file, raw_data_folder_path = args
 
     file_path = os.path.join(raw_data_folder_path, file)
@@ -427,6 +434,19 @@ def process_raw_data_file(args, seasonal=False, seasons=None):
 
     df = pd.read_parquet(file_path)
     df = _synthesise_tariff_roots(df)
+    # Derive a proper datetime ReadingDate using the canonical mapper helper, so
+    # the per-project timestamp column name + format (incl. tz-aware object
+    # strings like a supplier's 'Datum') are handled exactly as in the mapping
+    # pipeline and min_datetime/max_datetime populate. If no timestamp column is
+    # recognised, fall back gracefully -- stats still emit, without a ReadingDate.
+    candidates = list(timestamp_candidates or _RAW_TIMESTAMP_CANDIDATES)
+    try:
+        df = derive_and_normalize_reading_date(df, candidates, context=file)
+    except ValueError as exc:
+        logging.warning(
+            f"[process_raw_data_file] {file}: no usable timestamp column "
+            f"({exc}); continuing without ReadingDate."
+        )
     summary_data = []
 
     for season, sliced in _seasonal_slices(df, seasonal, seasons):
@@ -448,7 +468,7 @@ def process_raw_data_file(args, seasonal=False, seasons=None):
 # ---------------------------------------------------------------------------
 
 def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
-                   seasonal=False, seasons=None):
+                   seasonal=False, seasons=None, timestamp_candidates=None):
     """
     Collect typed per-column summary statistics, either for mapped
     household data or for a folder of raw parquet files.
@@ -509,6 +529,14 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
            "fall": {9, 10, 11}, "winter": {12, 1, 2}}``.
         The 'annual' slice (full year) is always emitted regardless;
         the dict configures the additional slices.
+    timestamp_candidates : list[str] | tuple[str] | None, optional
+        Raw mode only. Ordered candidate names for the reading timestamp
+        column (it varies per supplier/project, e.g. 'Datum' vs
+        'readingDate'). The first found is derived into a datetime
+        'ReadingDate' via the canonical derive_and_normalize_reading_date,
+        so min_datetime/max_datetime populate. None falls back to
+        _RAW_TIMESTAMP_CANDIDATES. Pass the supplier mapper's own
+        candidate list to mirror its handling exactly.
 
     Returns
     -------
@@ -542,7 +570,8 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
 
     file_extension = "parquet"
     files = os.listdir(raw_data_folder_path)
-    worker = partial(process_raw_data_file, seasonal=seasonal, seasons=seasons)
+    worker = partial(process_raw_data_file, seasonal=seasonal, seasons=seasons,
+                     timestamp_candidates=timestamp_candidates)
     if multi:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             args_list = [
@@ -566,3 +595,46 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
     df["source_file"] = df["Identifier"]
     df["HuisIdBSV"] = pd.Series([pd.NA] * len(df), dtype="Int64")
     return df
+
+
+# ---------------------------------------------------------------------------
+# Mapping annotation
+# ---------------------------------------------------------------------------
+
+def annotate_mapped_bsv_variable(stats_df, mapping_dict, raw_col_field="column"):
+    """
+    Add a ``mapped_bsv_variable`` column to a raw-data-stats DataFrame.
+
+    Lets raw stats be analysed across suppliers without looking up each raw
+    column's BSV variable by hand.
+
+    Parameters
+    ----------
+    stats_df : pandas.DataFrame
+        A raw-data-stats table (one row per raw column), e.g. the output of
+        get_data_stats(raw_data_folder_path=...).
+    mapping_dict : dict
+        {raw_column_name: bsv_variable_name} for the supplier -- the {raw: bsv}
+        dict returned by load_supplier_pipeline_config, or a supplier's
+        hardcoded mapping dict.
+    raw_col_field : str, optional
+        Column in stats_df holding the raw column name to look up. Default
+        "column". For multi-device suppliers whose mapping keys are prefixed
+        (e.g. a multi-device supplier's ``sheetName_columnName``), pass a field that
+        already holds the prefixed key.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A copy with a nullable-string ``mapped_bsv_variable`` column. Raw
+        columns with no mapping (timestamps, Mapping_Meenemen=0, debug columns)
+        get pd.NA. Where several raw columns combine into one BSV variable
+        (e.g. ``_binnen`` + ``_buiten`` parts summed into one variable), each raw column shows its own
+        staging name from the mapping dict; the combination happens later in
+        the mapper and is not represented here.
+    """
+    out = stats_df.copy()
+    out["mapped_bsv_variable"] = (
+        out[raw_col_field].map(mapping_dict).astype("string")
+    )
+    return out

@@ -379,7 +379,7 @@ def test_cumulative_column_stream_consistency():
 #    tie-breaking order.  The modal could be either offset, making group
 #    assignment for that column undefined.
 #    Real-world risk: a column that appears equally in two streams — rare in
-#    O-Nexus but possible for infrequent shared metrics.
+#    typical supplier data but possible for infrequent shared metrics.
 #    Mitigation options to consider:
 #      - Accept the first-seen offset (stable sort in pandas 2+)
 #      - Require the caller to pass explicit per-column overrides
@@ -410,7 +410,7 @@ def test_cumulative_column_stream_consistency():
 #    dt.round('5min') uses "round half to even" (IEEE 754 banker's rounding).
 #    A timestamp exactly 2 min 30 s after a slot boundary (the midpoint) will
 #    round to whichever neighbouring minute is even — NOT necessarily the later
-#    slot.  This is unlikely in O-Nexus data (offsets are +22s and +0s, both
+#    slot.  This is unlikely in typical supplier data (offsets are +22s and +0s, both
 #    far from the ±150 s boundary) but could matter for other suppliers.
 #
 # def test_midpoint_boundary_rounds_to_even():
@@ -446,7 +446,7 @@ def test_cumulative_column_stream_consistency():
 #     # TODO: Add two rows at at(0, 22) and at(0, 22) for the same column.
 #     # Assert that exactly one row is returned for slot(0), with either value
 #     # (not both, not NA).  Consider logging a warning for this case in the
-#     # implementation if it occurs frequently in real O-Nexus data.
+#     # implementation if it occurs frequently in real supplier data.
 #     pass
 
 

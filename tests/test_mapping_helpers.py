@@ -36,6 +36,12 @@ from etdmap.mapping_helpers import (
     fill_zeros_for_device_not_installed,
     rearrange_model_columns,
     run_standard_pipeline,
+    threshold_stats_to_rows,
+    write_threshold_removals,
+)
+from etdmap.data_stats import (
+    annotate_mapped_bsv_variable,
+    process_raw_data_file,
 )
 
 
@@ -240,7 +246,7 @@ class TestCombineSourceColumns:
     """Tests for combine_source_columns.
 
     Resolves multiple raw source columns mapping to one standard target
-    column. Used by Watch-E for heat-pump energy/power binnen+buiten splits
+    column. Used for heat-pump energy/power binnen+buiten splits
     and CO2 sensor combinations. Three states:
       1. target already present  -> drop source columns, target wins
       2. target absent + sources -> combine via sum or mean (NA-preserving)
@@ -586,6 +592,38 @@ class TestCollectColumnStats:
         out = collect_column_stats("hh1", s)
         assert out["type"] == "Float64"
         assert isinstance(out["type"], str)
+
+
+class TestProcessRawDataFileTimestamp:
+    """Raw parquets can store the timestamp as object strings with per-row DST
+    offsets (e.g. a 'Datum' column). process_raw_data_file must derive a datetime
+    'ReadingDate' via the canonical helper so min_datetime/max_datetime populate
+    -- and fall back gracefully when no timestamp column is present."""
+
+    def test_tz_aware_string_datum_yields_reading_date_min_max(self, tmp_path):
+        df = pd.DataFrame({
+            "Datum": ["2024-05-01 00:00:00+02:00",   # CEST -> 22:00 UTC prev day
+                      "2025-01-15 12:00:00+01:00"],   # CET  -> 11:00 UTC
+            "value": [1.0, 2.0],
+        })
+        df.to_parquet(tmp_path / "Address 1.parquet")
+        rows = process_raw_data_file(("Address 1.parquet", str(tmp_path)))
+        sdf = pd.DataFrame(rows)
+        rd = sdf[sdf["column"] == "ReadingDate"]
+        assert not rd.empty, "ReadingDate row should be present"
+        assert rd.iloc[0]["min_datetime"] == pd.Timestamp("2024-04-30 22:00:00")
+        assert rd.iloc[0]["max_datetime"] == pd.Timestamp("2025-01-15 11:00:00")
+        # source timestamp column is consumed by the canonical helper
+        assert "Datum" not in set(sdf["column"])
+
+    def test_no_timestamp_column_falls_back_without_error(self, tmp_path):
+        df = pd.DataFrame({"value": [1.0, 2.0], "Adres": ["Address 1", "Address 1"]})
+        df.to_parquet(tmp_path / "Address 2.parquet")
+        rows = process_raw_data_file(("Address 2.parquet", str(tmp_path)))
+        sdf = pd.DataFrame(rows)
+        # stats still emitted for the data columns; no ReadingDate row
+        assert "value" in set(sdf["column"])
+        assert "ReadingDate" not in set(sdf["column"])
 
 
 # ---------------------------------------------------------------------------
@@ -1063,3 +1101,89 @@ class TestSynthesisedRootFromHoogLaag:
         assert result[0] == 11.0
         assert result[1] == 5.0
         assert pd.isna(result[2])
+
+
+class TestThresholdStatsToRows:
+    """threshold_stats_to_rows flattens the per-column threshold_stats dict
+    (from apply_thresholds_to_df(return_stats=True)) into sidecar rows."""
+
+    def test_empty_or_none_yields_no_rows(self):
+        assert threshold_stats_to_rows(1, {}) == []
+        assert threshold_stats_to_rows(1, None) == []
+
+    def test_one_row_per_affected_column(self):
+        stats = {
+            "ElektriciteitVermogen": {
+                "n_below": 2, "n_above": 1,
+                "min_removed": -5.0, "max_removed": 25000.0,
+            },
+            "TemperatuurWoonkamer": {
+                "n_below": 0, "n_above": 3,
+                "min_removed": 40.0, "max_removed": 99.0,
+            },
+        }
+        rows = threshold_stats_to_rows(42, stats)
+        by_col = {r["column"]: r for r in rows}
+        assert len(rows) == 2
+        assert by_col["ElektriciteitVermogen"]["HuisIdBSV"] == 42
+        assert by_col["ElektriciteitVermogen"]["n_below"] == 2
+        assert by_col["ElektriciteitVermogen"]["n_above"] == 1
+        assert by_col["ElektriciteitVermogen"]["min_removed"] == -5.0
+        assert by_col["TemperatuurWoonkamer"]["max_removed"] == 99.0
+
+
+class TestWriteThresholdRemovals:
+    """write_threshold_removals writes a typed sidecar parquet (ADR-005)."""
+
+    EXPECTED_COLS = [
+        "HuisIdBSV", "column", "n_below", "n_above", "min_removed", "max_removed",
+    ]
+
+    def test_writes_rows_with_nullable_dtypes(self, tmp_path):
+        rows = [
+            {"HuisIdBSV": 1, "column": "A", "n_below": 2, "n_above": 0,
+             "min_removed": -1.0, "max_removed": -0.5},
+            {"HuisIdBSV": 1, "column": "B", "n_below": 0, "n_above": 4,
+             "min_removed": 100.0, "max_removed": 200.0},
+        ]
+        path = write_threshold_removals(rows, str(tmp_path))
+        out = pd.read_parquet(path, dtype_backend="numpy_nullable")
+        assert list(out.columns) == self.EXPECTED_COLS
+        assert len(out) == 2
+        assert str(out["HuisIdBSV"].dtype) == "Int64"
+        assert str(out["n_below"].dtype) == "Int64"
+        assert str(out["min_removed"].dtype) == "Float64"
+        assert str(out["column"].dtype) == "string"
+
+    def test_empty_rows_writes_typed_empty_frame(self, tmp_path):
+        path = write_threshold_removals([], str(tmp_path))
+        out = pd.read_parquet(path, dtype_backend="numpy_nullable")
+        assert list(out.columns) == self.EXPECTED_COLS
+        assert len(out) == 0
+        assert str(out["min_removed"].dtype) == "Float64"
+
+
+class TestAnnotateMappedBsvVariable:
+    """annotate_mapped_bsv_variable tags each raw column with its BSV variable."""
+
+    def test_maps_known_and_leaves_unknown_as_na(self):
+        stats = pd.DataFrame({
+            "column": ["HeatPumpPowerKWInst", "Datum", "Adres"],
+            "count": pd.array([10, 10, 10], dtype="Int64"),
+        })
+        mapping = {"HeatPumpPowerKWInst": "ElektriciteitVermogenWarmtepomp"}
+        out = annotate_mapped_bsv_variable(stats, mapping)
+        assert str(out["mapped_bsv_variable"].dtype) == "string"
+        assert out.loc[0, "mapped_bsv_variable"] == "ElektriciteitVermogenWarmtepomp"
+        assert pd.isna(out.loc[1, "mapped_bsv_variable"])
+        assert pd.isna(out.loc[2, "mapped_bsv_variable"])
+        # original input is not mutated
+        assert "mapped_bsv_variable" not in stats.columns
+
+    def test_custom_raw_col_field_for_prefixed_keys(self):
+        stats = pd.DataFrame({"sheet": ["elec", "heat"], "column": ["P", "Q"]})
+        stats["_map_key"] = stats["sheet"] + "_" + stats["column"]
+        mapping = {"elec_P": "ElektriciteitVermogen"}
+        out = annotate_mapped_bsv_variable(stats, mapping, raw_col_field="_map_key")
+        assert out.loc[0, "mapped_bsv_variable"] == "ElektriciteitVermogen"
+        assert pd.isna(out.loc[1, "mapped_bsv_variable"])

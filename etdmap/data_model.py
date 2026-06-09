@@ -166,6 +166,7 @@ def get_aggregation_config() -> dict:
 
     config = {}
     missing = []
+    inconsistent_derive = []
     for _, row in included.iterrows():
         col = row["Variabele"]
         resample = row.get("ResamplingMethode", None)
@@ -176,15 +177,34 @@ def get_aggregation_config() -> dict:
             missing.append(f"{col}: AggregatieMethode")
         if missing:
             continue
+        resample = str(resample)
+        aggregate = str(aggregate)
+        # 'derive' marks a variable that is recomputed from its catalog rule
+        # AFTER its components are aggregated (e.g. a ratio like
+        # ZelfgebruikPercentage, which cannot be summed or averaged as a stored
+        # value). That is only meaningful when BOTH axes derive -- a mix is a
+        # modelling error, so fail loud (ADR-003).
+        if (resample == "derive") != (aggregate == "derive"):
+            inconsistent_derive.append(
+                f"{col}: ResamplingMethode={resample!r}, "
+                f"AggregatieMethode={aggregate!r}"
+            )
         config[str(col)] = {
-            "resample_method": str(resample),
-            "aggregate_method": str(aggregate),
+            "resample_method": resample,
+            "aggregate_method": aggregate,
         }
 
     if missing:
         raise ValueError(
             f"etdmodel.csv is incomplete -- AggregatieMeenemen=True variables"
             f" missing required method columns: {missing}"
+        )
+
+    if inconsistent_derive:
+        raise ValueError(
+            "etdmodel.csv has inconsistent 'derive' methods -- a variable must "
+            "use 'derive' for BOTH ResamplingMethode and AggregatieMethode or "
+            f"for neither: {inconsistent_derive}"
         )
 
     return config

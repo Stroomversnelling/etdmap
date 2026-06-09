@@ -99,7 +99,7 @@ project_mapping_csv_path = Option(
     default_value=None,
     doc=(
         "Path to the CSV that maps ProjectIdLeverancier values to ProjectIdBSV. "
-        "Used to resolve project identifiers for suppliers (e.g. O-Nexus) whose "
+        "Used to resolve project identifiers for suppliers whose "
         "households are not yet in the BSV metadata file at the time of mapping."
     ),
     validator=None,

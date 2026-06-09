@@ -178,6 +178,51 @@ def test_get_aggregation_config_raises_on_missing_aggregate_method(tmp_path, mon
         get_aggregation_config()
 
 
+def test_get_aggregation_config_raises_on_inconsistent_derive(tmp_path, monkeypatch):
+    """A 'derive' method on only one axis is a modelling error (ADR-003)."""
+    import etdmap
+    from pathlib import Path
+
+    model = pd.read_csv(Path("etdmap/data/etdmodel.csv"))
+    # Normalise any pre-existing 'derive' variable in the real model so this
+    # test controls the single induced inconsistency below.
+    both = (model["ResamplingMethode"] == "derive") | (model["AggregatieMethode"] == "derive")
+    model.loc[both, ["ResamplingMethode", "AggregatieMethode"]] = "derive"
+    # 'derive' on Resampling but not Aggregatie for a known included variable.
+    mask = model["Variabele"] == "ElektriciteitNetgebruikHoogDiff"
+    model.loc[mask, "ResamplingMethode"] = "derive"
+    model.loc[mask, "AggregatieMethode"] = "avg"
+    patched = tmp_path / "etdmodel_patched.csv"
+    model.to_csv(patched, index=False)
+
+    monkeypatch.setattr(etdmap.options, "etdmodel_csv_path", str(patched))
+    with pytest.raises(ValueError, match="inconsistent 'derive'"):
+        get_aggregation_config()
+
+
+def test_get_aggregation_config_accepts_consistent_derive(tmp_path, monkeypatch):
+    """'derive' on BOTH axes is valid and passes through to the config."""
+    import etdmap
+    from pathlib import Path
+
+    model = pd.read_csv(Path("etdmap/data/etdmodel.csv"))
+    # Normalise any pre-existing half-applied 'derive' in the real model so the
+    # whole config is consistent, then add another consistent 'derive' variable.
+    both = (model["ResamplingMethode"] == "derive") | (model["AggregatieMethode"] == "derive")
+    model.loc[both, ["ResamplingMethode", "AggregatieMethode"]] = "derive"
+    mask = model["Variabele"] == "ElektriciteitNetgebruikHoogDiff"
+    model.loc[mask, "ResamplingMethode"] = "derive"
+    model.loc[mask, "AggregatieMethode"] = "derive"
+    patched = tmp_path / "etdmodel_patched.csv"
+    model.to_csv(patched, index=False)
+
+    monkeypatch.setattr(etdmap.options, "etdmodel_csv_path", str(patched))
+    config = get_aggregation_config()
+    entry = config["ElektriciteitNetgebruikHoogDiff"]
+    assert entry["resample_method"] == "derive"
+    assert entry["aggregate_method"] == "derive"
+
+
 # ---------------------------------------------------------------------------
 # Regression tests for existing derived variables (etdmap/DECISIONS.md ADR-001)
 # ---------------------------------------------------------------------------

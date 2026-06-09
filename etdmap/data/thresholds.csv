@@ -39,8 +39,32 @@ Zon-opwekTotaal,cumulatief,kWh,0.0,,
 CO2,momentaan,ppm,200.0,30000.0,
 Luchtvochtigheid,momentaan,procenten,10.0,100.0,
 DebietVentilatieAanvoer,momentaan,m3 / uur,0.0,1000.0,voor woningen
+ElektriciteitNetgebruikHoogDiff,5-minute,kWh,0.0,1.5,bij 3x25A
+ElektriciteitNetgebruikLaagDiff,5-minute,kWh,0.0,1.5,bij 3x25A
+ElektriciteitTerugleveringHoogDiff,5-minute,kWh,0.0,1.5,bij 3x25A
+ElektriciteitTerugleveringLaagDiff,5-minute,kWh,0.0,1.5,bij 3x25A
+GasgebruikDiff,5-minute,m3,0.0,0.8333,bij G6 aansluiting
+ElektriciteitsgebruikWTWDiff,5-minute,kWh,0.0,0.32,"bij aansluiting op 1 fase, 16A zekering"
+ElektriciteitsgebruikWarmtepompDiff,5-minute,kWh,0.0,0.96,"bij aansluiting op 3 fase, 16A zekering"
+ElektriciteitsgebruikBoosterDiff,5-minute,kWh,0.0,0.32,"bij aansluiting op 1 fase, 16A zekering"
+ElektriciteitsgebruikBoilervatDiff,5-minute,kWh,0.0,0.32,"bij aansluiting op 1 fase, 16A zekering"
+WarmteproductieWarmtepompDiff,5-minute,GJ,0.0,0.0576,"bij COP = 10, wp+boiler+booster"
+WatergebruikWarmTapwaterDiff,5-minute,liter,0.0,100.0,regendouche = 20 liter per minuut (van 40 graden)
+Zon-opwekTotaalDiff,5-minute,kWh,0.0,0.96,"bij aansluiting op 3 fase, 16A zekering"
+TerugleveringTotaalNetto,5-minute,kWh,0.0,,
+ElektriciteitsgebruikTotaalNetto,5-minute,kWh,0.0,,
+Netuitwisseling,5-minute,kWh,-2012.5,2012.5,Max power during 5 minutes using 3x35A connection
+ElektriciteitsgebruikTotaalWarmtepomp,5-minute,kWh,0.0,,
+ElektriciteitsgebruikTotaalGebouwgebonden,5-minute,kWh,-2012.5,2012.5,Max power during 5 minutes using 3x35A connection
+ZonopwekBruto,5-minute,kWh,-200.0,2012.5,Max power during 5 minutes using 3x35A connection
+ElektriciteitsgebruikTotaalHuishoudelijk,5-minute,kWh,-2012.5,2012.5,Max power during 5 minutes using 3x35A connection
+Zelfgebruik,5-minute,kWh,0.0,,
+ElektriciteitsgebruikTotaalBruto,5-minute,kWh,0.0,,
+ElektriciteitsgebruikRadiatorDiff,5-minute,kWh,0.0,0.32,"bij aansluiting op 1 fase, 16A zekering"
 ElektriciteitNetgebruik,cumulatief,kWh,0.0,99999.0,
 ElektriciteitTeruglevering,cumulatief,kWh,0.0,99999.0,
+ElektriciteitNetgebruikDiff,5-minute,kWh,0.0,1.5,bij 3x25A
+ElektriciteitTerugleveringDiff,5-minute,kWh,0.0,1.5,bij 3x25A
 DebietVentilatieExtractie,momentaan,m3 / uur,0.0,1000.0,voor woningen
 VOC,momentaan,ppm,0.0,,
 TemperatuurLuchtRetour,momentaan,graden C,0.0,,
@@ -58,26 +82,13 @@ ElektriciteitVermogenTeruglevering,momentaan,kW,-999999.0,999999.0,
 ElektriciteitVermogenNetgebruik,momentaan,kW,-999999.0,999999.0,
 TemperatuurWarmtepompAanvoer,momentaan,graden C,1.0,100.0,
 TemperatuurWarmtepompRetour,momentaan,graden C,1.0,100.0,
+ElektriciteitsgebruikOverigGGDiff,5-minute,kWh,0.0,,
+WarmteproductieRuimteverwarmingDiff,5-minute,GJ,0.0,0.0576,"bij COP = 10, wp+boiler+booster"
+WatergebruikRuimteverwarmingDiff,5-minute,liter / uur,0.0,,
+WatergebruikWarmtepompDiff,5-minute,liter / uur,0.0,,
+Zon-opwekVerbruikDiff,5-minute,kWh,0.0,,
 TemperatuurWaterOmgeving,momentaan,graden C,0.0,99.0,
-ElektriciteitNetgebruikHoogDiff,momentaan,kWh,0.0,99999.0,
-ElektriciteitNetgebruikLaagDiff,momentaan,kWh,0.0,99999.0,
-ElektriciteitTerugleveringHoogDiff,momentaan,kWh,0.0,99999.0,
-ElektriciteitTerugleveringLaagDiff,momentaan,kWh,0.0,99999.0,
-GasgebruikDiff,momentaan,m3,0.0,99999.0,
-ElektriciteitsgebruikWTWDiff,momentaan,kWh,0.0,,
-ElektriciteitsgebruikWarmtepompDiff,momentaan,kWh,0.0,,
-ElektriciteitsgebruikWarmtepompInternDiff,momentaan,kWh,0.0,11.52,"bij aansluiting op 3 fase, 16A zekering"
-ElektriciteitsgebruikBoosterDiff,momentaan,kWh,0.0,,
-ElektriciteitsgebruikBoilervatDiff,momentaan,kWh,0.0,,
-ElektriciteitsgebruikRadiatorDiff,momentaan,kWh,0.0,,
-WarmteproductieWarmtepompDiff,momentaan,GJ,0.0,200.0,
-WarmteproductieRuimteverwarmingDiff,momentaan,GJ,0.0,200.0,
-WarmteproductieWarmTapwaterDiff,momentaan,GJ,0.0,200.0,
-WatergebruikWarmtepompDiff,momentaan,liter,0.0,,
-WatergebruikWarmTapwaterDiff,momentaan,liter,0.0,999999.0,
-WatergebruikRuimteverwarmingDiff,momentaan,liter,0.0,,
-Zon-opwekTotaalDiff,momentaan,kWh,0.0,,
-ElektriciteitNetgebruikDiff,momentaan,kWh,0.0,99999.0,
-ElektriciteitTerugleveringDiff,momentaan,kWh,0.0,99999.0,
-Zon-opwekVerbruikDiff,momentaan,kWh,0.0,,
-ElektriciteitsgebruikOverigGGDiff,momentaan,kWh,0.0,999999.0,
+Ventilatievoud,momentaan,1 / uur,0.0,99.0,
+WarmteproductieWarmTapwaterDiff,5-minute,GJ,0.0,0.0576,"bij COP = 10, wp+boiler+booster"
+ZelfgebruikPercentage,5-minute,procenten,0.0,100.0,
+ElektriciteitsgebruikWarmtepompInternDiff,5-minute,kWh,0.0,,

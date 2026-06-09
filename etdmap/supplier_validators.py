@@ -97,7 +97,7 @@ def validate_mapping_coverage(
     csv_path : str or Path
         Path to the ETD DatamodelLeverancier CSV.
     supplier : str
-        Supplier name to filter on (e.g. 'O-Nexus', 'Watch-E', 'FactoryZero').
+        Supplier name to filter on.
     project_id : str or None
         BSV project ID string to match against the comma-split ProjectIdBSV column
         (e.g. '8', '9', '10'). Pass None to validate against all supplier rows.
@@ -204,7 +204,7 @@ def _build_site_to_project_id_map(project_df: pd.DataFrame, supplier: str = None
       - Dataleverancier: the supplier name
 
     The ProjectIdLeverancier column must contain the exact values that appear in
-    the supplier's raw data project column (e.g. the 'Site' column in O-Nexus data).
+    the supplier's raw data project column (e.g. a 'Site' column).
     If these don't match, update the Grist Project table and re-run sync_data_model.py.
     """
     id_col = "ProjectIdBSV"
@@ -260,7 +260,7 @@ def run_mapping_coverage_preflight(
     csv_path : str or Path
         Path to the ETD DatamodelLeverancier CSV.
     supplier : str
-        Supplier name (e.g. 'O-Nexus', 'Watch-E', 'FactoryZero').
+        Supplier name.
     project_files : dict[str, list[Path]]
         {project_folder_name: [parquet_path, ...]} — as collected before the
         processing loop. Each parquet file is read to discover its columns;
@@ -269,7 +269,7 @@ def run_mapping_coverage_preflight(
         Columns to skip (e.g. timestamp candidates, household/project ID columns).
     raw_project_col : str, optional
         Name of the raw column that contains the site/project identifier
-        (e.g. 'Site' for O-Nexus). When provided together with project_table_csv,
+        (e.g. a 'Site' column). When provided together with project_table_csv,
         enables per-project validation by mapping site values to BSV project IDs.
         When None, validates all columns globally against the supplier (no project filter).
     project_table_csv : str or Path, optional

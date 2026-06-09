@@ -541,7 +541,7 @@ def validate_project_id_coverage(
         The supplier's physical metadata DataFrame. Must contain a
         ``ProjectIdLeverancier`` column.
     data_leverancier : str
-        Supplier name (e.g. ``'O-Nexus'``).  Used to filter the project CSV.
+        Supplier name.  Used to filter the project CSV.
 
     Raises
     ------

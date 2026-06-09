@@ -42,7 +42,7 @@ def derive_and_normalize_reading_date(
     Derive the 'ReadingDate' column from a raw DataFrame.
 
     Intended for suppliers where the timestamp column name varies across projects
-    or data files (e.g. O-Nexus uses either 'Datum' or 'readingDate'). The function
+    or data files (e.g. a supplier may use either 'Datum' or 'readingDate'). The function
     tries each name in ``candidate_columns`` in order and uses the first one found.
 
     If 'ReadingDate' is already present in the DataFrame, returns it unchanged.
@@ -178,7 +178,7 @@ def normalize_to_utc_for_storage(
     pd.to_datetime(..., utc=True) as in derive_and_normalize_reading_date()),
     do NOT call this function — the data is already in UTC.
 
-    Watch-E and Factory Zero both apply this correction as a `- 1 hour` subtraction
+    Some suppliers apply this correction as a `- 1 hour` subtraction
     before saving. New sources that receive data in local time should use this function
     rather than hardcoding the subtraction inline.
 
