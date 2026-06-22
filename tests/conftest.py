@@ -13,9 +13,47 @@ from numpy.random import PCG64, Generator
 import etdmap
 import etdmap.index_helpers as index_helpers
 import etdmap.mapping_helpers as mapping
-from etdmap.data_model import cumulative_columns, load_thresholds
+from etdmap.data_model import cumulative_columns
 from etdmap.index_helpers import bsv_metadata_columns, metadata_dtypes, read_metadata
 from etdmap.record_validators import record_flag_conditions
+
+
+# Frozen synthetic generation ranges for the raw-data test fixture:
+# cumulative column name -> (min_diff, max_diff) for its per-interval Diff.
+#
+# PROVENANCE: seeded 2026-06-19 from the then-current thresholds.csv effective
+# values (each "{col}Diff" row's Min/Max, with a missing Max collapsed to 1.0).
+# These are INTENTIONALLY INDEPENDENT of thresholds.csv from here on: test input
+# must exercise behaviour, never be derived from the artifact under test
+# (generating from thresholds is circular -- data drawn inside [Min, Max] can
+# never violate its own thresholds, so the validators/clipping are never
+# exercised and a wrong threshold cannot be caught). Editing thresholds.csv no
+# longer rewrites this fixture. tests/test_threshold_fixture_coverage.py warns
+# if thresholds.csv grows variables/columns/units this dict no longer covers.
+SYNTHETIC_DIFF_RANGES: dict[str, tuple[float, float]] = {
+    "ElektriciteitNetgebruik": (0.0, 1.5),
+    "ElektriciteitNetgebruikHoog": (0.0, 1.5),
+    "ElektriciteitNetgebruikLaag": (0.0, 1.5),
+    "ElektriciteitTeruglevering": (0.0, 1.5),
+    "ElektriciteitTerugleveringHoog": (0.0, 1.5),
+    "ElektriciteitTerugleveringLaag": (0.0, 1.5),
+    "ElektriciteitsgebruikBoilervat": (0.0, 0.32),
+    "ElektriciteitsgebruikBooster": (0.0, 0.32),
+    "ElektriciteitsgebruikOverigGG": (0.0, 1.0),
+    "ElektriciteitsgebruikRadiator": (0.0, 0.32),
+    "ElektriciteitsgebruikWTW": (0.0, 0.32),
+    "ElektriciteitsgebruikWarmtepomp": (0.0, 0.96),
+    "ElektriciteitsgebruikWarmtepompIntern": (0.0, 1.0),
+    "Gasgebruik": (0.0, 0.8333),
+    "WarmteproductieRuimteverwarming": (0.0, 0.0576),
+    "WarmteproductieWarmTapwater": (0.0, 0.0576),
+    "WarmteproductieWarmtepomp": (0.0, 0.0576),
+    "WatergebruikRuimteverwarming": (0.0, 1.0),
+    "WatergebruikWarmTapwater": (0.0, 100.0),
+    "WatergebruikWarmtepomp": (0.0, 1.0),
+    "Zon-opwekTotaal": (0.0, 0.96),
+    "Zon-opwekVerbruik": (0.0, 1.0),
+}
 
 
 # set paths
@@ -124,16 +162,12 @@ def raw_data_fixture(tmp_path_factory):
     Returns:
         str: Path to the directory containing the generated fixture data.
     """
-    # Load thresholds
-    thresholds = load_thresholds()
-
     # Settings
     num_households_per_project = 5
     projects = [1, 2]
     num_records = 105120  # 1 year of data at 5-minute intervals
     base_date = pd.Timestamp("2023-01-01")
     time_interval = "5min"  # 5-minute intervals
-    default_max_value = 1  # Default max value if not provided in thresholds
 
     # Output directory (temporary directory for the test session)
     output_dir = tmp_path_factory.mktemp("raw_fixture")
@@ -168,20 +202,18 @@ def raw_data_fixture(tmp_path_factory):
             # Each column uses an independent seed derived from household + column name
             # so fixture data is stable regardless of the order of cumulative_columns.
             for col in sorted(cumulative_columns):
-                diff_col = f"{col}Diff"
-                if diff_col in thresholds["Variabele"].values:
-                    min_diff = thresholds.loc[thresholds["Variabele"] == diff_col, "Min"].values[0]
-                    max_diff = thresholds.loc[thresholds["Variabele"] == diff_col, "Max"].values[0]
-                    if pd.isna(max_diff):
-                        max_diff = default_max_value
-
-                    col_seed = int(hashlib.md5(f"{huis_id}_{col}".encode()).hexdigest(), 16) % (2**32)
-                    col_rng = Generator(PCG64(seed=col_seed))
-                    diffs = pd.Series(col_rng.uniform(min_diff, max_diff, size=num_records - 1), dtype="float64")
-                    cumulative = pd.concat([pd.Series([0]), diffs.cumsum()], ignore_index=True)
-                    household_data[col] = cumulative
-                else:
-                    raise ValueError(f"Cannot generate raw data test fixture. No threshold exists for {diff_col} in `thresholds.csv`")
+                if col not in SYNTHETIC_DIFF_RANGES:
+                    raise ValueError(
+                        f"Cannot generate raw data test fixture: no synthetic range for "
+                        f"cumulative column '{col}' in SYNTHETIC_DIFF_RANGES (tests/conftest.py). "
+                        f"Add it -- see tests/test_threshold_fixture_coverage.py."
+                    )
+                min_diff, max_diff = SYNTHETIC_DIFF_RANGES[col]
+                col_seed = int(hashlib.md5(f"{huis_id}_{col}".encode()).hexdigest(), 16) % (2**32)
+                col_rng = Generator(PCG64(seed=col_seed))
+                diffs = pd.Series(col_rng.uniform(min_diff, max_diff, size=num_records - 1), dtype="float64")
+                cumulative = pd.concat([pd.Series([0]), diffs.cumsum()], ignore_index=True)
+                household_data[col] = cumulative
 
             household_df = pd.DataFrame(household_data)
             household_df = add_raw_data_test_case(base_date, household_df, huis_id_raw=huis_prefixed, project_id_raw=project_prefixed, rng=rng)

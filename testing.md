@@ -63,6 +63,6 @@ One can also use the following to copy the test data out. This is no longer real
 
 # Updating the data model between versions
 
-Use the script in `etdworkflow`, `update_data_model.py` that provides detailed feedback on changes in the Excel based data model in comparison to the installed `etdmap` version in the environment with suggestions of variables to add and remove in `etdmap`. 
+Use the data model sync tooling, which provides detailed feedback on changes in the Excel based data model in comparison to the installed `etdmap` version in the environment, with suggestions of variables to add and remove in `etdmap`.
 
 In addition, it is critical to run the etdmap pytests in the debugger to be sure everything is working.

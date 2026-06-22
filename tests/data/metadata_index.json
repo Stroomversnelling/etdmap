@@ -95,8 +95,8 @@
         },
         "validate_ElektriciteitNetgebruikHoog": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -109,8 +109,8 @@
         },
         "validate_ElektriciteitNetgebruikLaag": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -123,8 +123,8 @@
         },
         "validate_ElektriciteitTerugleveringHoog": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -137,8 +137,8 @@
         },
         "validate_ElektriciteitTerugleveringLaag": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -151,8 +151,8 @@
         },
         "validate_Gasgebruik": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -200,8 +200,8 @@
         },
         "validate_ElektriciteitsgebruikWarmtepompInternDiff": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -347,8 +347,8 @@
         },
         "validate_ElektriciteitNetgebruik": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -361,8 +361,8 @@
         },
         "validate_ElektriciteitTeruglevering": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -389,8 +389,8 @@
         },
         "validate_ElektriciteitsgebruikOverigGG": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -403,8 +403,8 @@
         },
         "validate_cumulative_diff_ok": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },

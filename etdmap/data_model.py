@@ -379,9 +379,9 @@ tariff_partner_columns, tariff_root_to_splits = _build_tariff_register_pairs()
 #
 # Updating this list is a deliberate code change: extend it when you have
 # added plausible synthetic ranges in the test fixture for the new variable
-# and want the comparison surface to grow. The sync impact report in
-# etdworkflow/sync_data_model.py highlights candidates from the data model
-# that could be added here -- those candidates are informational only.
+# and want the comparison surface to grow. The data model sync impact report
+# highlights candidates from the data model that could be added here -- those
+# candidates are informational only.
 test_aggregation_columns: list[str] = [
     # Electricity grid exchange -- Diff variables (raw per-interval consumption)
     "ElektriciteitNetgebruikHoogDiff",

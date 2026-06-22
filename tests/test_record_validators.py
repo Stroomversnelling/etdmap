@@ -1,10 +1,13 @@
+import pandas as pd
 import pytest
 
+import etdmap.record_validators as record_validators
 from etdmap.data_model import cumulative_columns
 from etdmap.index_helpers import read_metadata
 from etdmap.record_validators import (
     columns_5min_momentaan,
     record_flag_conditions,
+    validate_thresholds_combined,
 )
 
 
@@ -39,6 +42,30 @@ def test_record_flag_conditions():
 
     # check if each value in dict is a function
     assert all(callable(value) for value in record_flag_conditions.values())
+
+
+# ---------------------------------------------------------------------------
+# validate_thresholds_combined: per-row, flags whether all values are within
+# their [Min, Max]. Reads the module-level `thresholds_dict` captured at
+# import, so monkeypatch that attribute (not thresholds.csv). Fail-path
+# coverage with crafted out-of-bound input.
+# ---------------------------------------------------------------------------
+
+class TestValidateThresholdsCombined:
+    def test_flags_out_of_bounds_row(self, monkeypatch):
+        monkeypatch.setattr(record_validators, "thresholds_dict", {"X": {"Min": 0.0, "Max": 1.0}})
+        df = pd.DataFrame({"X": pd.array([0.5, 5.0, 0.2], dtype="Float64")})
+        result = validate_thresholds_combined(df)
+        # True = within bounds, False = out of bounds
+        assert result.tolist() == [True, False, True]
+
+    def test_all_na_row_is_na(self, monkeypatch):
+        monkeypatch.setattr(record_validators, "thresholds_dict", {"X": {"Min": 0.0, "Max": 1.0}})
+        df = pd.DataFrame({"X": pd.array([pd.NA, 0.5], dtype="Float64")})
+        result = validate_thresholds_combined(df)
+        assert pd.isna(result.iloc[0])
+        assert bool(result.iloc[1]) is True
+
 
 if __name__ == "__main__":
     # Run pytest for debugging the testing

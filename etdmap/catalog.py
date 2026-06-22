@@ -105,7 +105,7 @@ def load_catalog(catalog_path=None) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(
             f"[catalog] Catalog not found: {path}. "
-            f"Run etdworkflow/sync_data_model.py to build catalog.parquet from Rule.csv."
+            f"Run the data model sync step to build catalog.parquet from Rule.csv."
         )
 
     return pd.read_parquet(path)

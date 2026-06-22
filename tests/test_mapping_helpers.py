@@ -22,6 +22,8 @@ from unittest.mock import patch
 from etdmap.data_model import load_unit_map, model_column_order, model_column_type
 from etdmap.mapping_helpers import (
     NUMERIC_STATS_SCHEMA,
+    apply_threshold_to_col,
+    apply_thresholds_to_df,
     _STATS_DTYPES,
     _cast_stats_dtypes,
     _seasonal_slices,
@@ -1187,3 +1189,39 @@ class TestAnnotateMappedBsvVariable:
         out = annotate_mapped_bsv_variable(stats, mapping, raw_col_field="_map_key")
         assert out.loc[0, "mapped_bsv_variable"] == "ElektriciteitVermogen"
         assert pd.isna(out.loc[1, "mapped_bsv_variable"])
+
+
+# ---------------------------------------------------------------------------
+# Threshold application (fail-paths). These exercise the actual masking logic
+# with crafted out-of-bound input -- coverage the synthetic fixtures cannot
+# give now that generation ranges are decoupled from thresholds (data drawn
+# inside the bounds never trips them). This is where "a wrong/too-tight
+# threshold is catchable" is proven.
+# ---------------------------------------------------------------------------
+
+class TestApplyThresholds:
+    def test_apply_threshold_to_col_nulls_out_of_bounds(self):
+        df = pd.DataFrame({"X": pd.array([-1.0, 0.5, 2.0, 0.0, 1.0], dtype="Float64")})
+        out, stats = apply_threshold_to_col(df.copy(), "X", lower_bound=0.0, upper_bound=1.0)
+        assert out["X"].isna().tolist() == [True, False, True, False, False]
+        assert out["X"].dropna().astype(float).tolist() == [0.5, 0.0, 1.0]
+        assert stats == {"n_below": 1, "n_above": 1, "min_removed": -1.0, "max_removed": 2.0}
+
+    def test_apply_threshold_to_col_all_in_bounds_returns_none_stats(self):
+        df = pd.DataFrame({"X": pd.array([0.0, 0.5, 1.0], dtype="Float64")})
+        out, stats = apply_threshold_to_col(df.copy(), "X", lower_bound=0.0, upper_bound=1.0)
+        assert stats is None
+        assert int(out["X"].isna().sum()) == 0
+
+    def test_apply_thresholds_to_df_masks_using_live_threshold_dict(self, monkeypatch):
+        # A wrong/too-tight threshold IS catchable: data crossing the bound is nulled
+        # and reported. apply_thresholds_to_df reads load_thresholds_as_dict() live.
+        monkeypatch.setattr(
+            "etdmap.mapping_helpers.load_thresholds_as_dict",
+            lambda: {"X": {"Min": 0.0, "Max": 1.0}},
+        )
+        df = pd.DataFrame({"X": pd.array([0.5, 5.0, 0.2], dtype="Float64")})
+        out, stats = apply_thresholds_to_df(df.copy(), return_stats=True)
+        assert out["X"].isna().tolist() == [False, True, False]
+        assert stats["X"]["n_above"] == 1
+        assert stats["X"]["max_removed"] == 5.0
