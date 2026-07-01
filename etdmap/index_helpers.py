@@ -49,6 +49,62 @@ metadata_dtypes = {
     "Dataleverancier": pd.StringDtype(),
 }
 
+# Categorical cadence vocabulary, finest -> coarsest. Mirrors the Grist
+# Gegevensfrequentie / Meetfrequentie Choice columns. Reference ordering for the
+# (future) cadence DQ warning report; per-column cadence mismatches are WARNINGS
+# (reported in data form, summarised once at end of run), never hard raises.
+CADENCE_ORDER = ["5-minute", "15-minute", "1-hour", "24-hour"]
+
+
+def validate_batch_index_correspondence(index_df, batch_index_df):
+    """
+    Raise if the legacy per-HuisIdBSV index and the per-HuisBatchIdBSV
+    batch_index are not in perfect 1:1 correspondence.
+
+    While both registries coexist, every HuisIdBSV maps to exactly one
+    HuisBatchIdBSV and the two registries agree row-for-row. A household
+    appearing in more than one batch (the forced-switch trigger) or any
+    row-set mismatch raises ValueError -- a loud, early stop rather than a
+    silent 1:many join corruption.
+    """
+    counts = batch_index_df.groupby("HuisIdBSV")["HuisBatchIdBSV"].nunique()
+    multi = sorted(int(h) for h, n in counts.items() if n > 1)
+    if multi:
+        raise ValueError(
+            f"Batch-index 1:1 correspondence broken: HuisIdBSV {multi} appear in "
+            f"more than one HuisBatchIdBSV. The legacy per-household index can no "
+            f"longer represent the data; the sharded path must be used."
+        )
+
+    index_ids = set(int(h) for h in index_df["HuisIdBSV"].dropna().tolist())
+    batch_ids = set(int(h) for h in batch_index_df["HuisIdBSV"].dropna().tolist())
+    only_index = sorted(index_ids - batch_ids)
+    only_batch = sorted(batch_ids - index_ids)
+    if only_index or only_batch:
+        raise ValueError(
+            f"Batch-index and legacy index disagree row-for-row: only in "
+            f"index.parquet={only_index}; only in batch_index.parquet={only_batch}."
+        )
+
+
+def validate_gegevensfrequentie_present(batch_index_df):
+    """
+    Raise if any batch row lacks a Gegevensfrequentie (the required finest
+    mapped cadence, declared in Grist and synced).
+    """
+    col = batch_index_df["Gegevensfrequentie"]
+    missing_mask = col.isna() | (col.fillna("").astype(str).str.strip() == "")
+    if bool(missing_mask.any()):
+        bad = sorted(
+            int(h) for h in
+            batch_index_df.loc[missing_mask, "HuisBatchIdBSV"].dropna().tolist()
+        )
+        raise ValueError(
+            f"Gegevensfrequentie missing for HuisBatchIdBSV {bad}. It is required "
+            f"(declared in Grist); fill it in and re-sync."
+        )
+
+
 def get_bsv_metadata():
     """
     Reads and returns metadata from the BSV metadata file, ensuring that all required columns are present.
