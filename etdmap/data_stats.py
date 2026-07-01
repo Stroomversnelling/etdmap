@@ -85,7 +85,7 @@ _WARM_MONTHS = DEFAULT_SEASON_MONTHS["warm"]
 
 
 NUMERIC_STATS_SCHEMA = (
-    "count", "min", "max", "mean", "std", "median",
+    "count", "missing", "min", "max", "mean", "std", "median",
     "p01", "p25", "p75", "p99", "iqr",
 )
 """Canonical numeric-stats column names. See parent ADR-018.
@@ -96,6 +96,13 @@ Single source of truth for the per-column numeric-stats schema across
 vectorised path). Any consumer adding or removing a stat column must
 update this tuple and both paths in the same change; the parity test
 in ``etdmap/tests/test_mapping_helpers.py`` enforces it.
+
+``count`` is the number of non-NA observations; ``missing`` is the
+number of NA observations. Their sum is the group/column total -- the
+denominator a reader needs to judge whether ``count`` is large relative
+to the population. A statistic reported without ``missing`` hides that
+denominator (e.g. n=3 could be 3-of-3 or 3-of-3000), so ``missing``
+travels with the stats rather than only in a separate coverage table.
 """
 
 
@@ -215,8 +222,12 @@ def compute_numeric_column_stats(series: pd.Series) -> dict:
     Per-column numeric statistics with the project's standard names.
 
     Returns a dict with keys equal to ``NUMERIC_STATS_SCHEMA``:
-      ``count``, ``min``, ``max``, ``mean``, ``std``, ``median``,
-      ``p01``, ``p25``, ``p75``, ``p99``, ``iqr``.
+      ``count``, ``missing``, ``min``, ``max``, ``mean``, ``std``,
+      ``median``, ``p01``, ``p25``, ``p75``, ``p99``, ``iqr``.
+
+    ``count`` is the non-NA observation count; ``missing`` is the NA
+    count. ``count + missing`` is the series length -- the denominator a
+    reader needs to judge ``count`` against the population.
 
     Centralises the stat names + math so any per-Series consumer
     (mapping reports, analysis scripts, ad-hoc tooling) emits the same
@@ -224,8 +235,8 @@ def compute_numeric_column_stats(series: pd.Series) -> dict:
     do their own ``groupby().agg()`` for speed but match the same names
     (see ADR-018).
 
-    Non-numeric or all-NA inputs return a dict with ``count`` set and
-    every other key as ``pd.NA``.
+    Non-numeric or all-NA inputs return a dict with ``count`` and
+    ``missing`` set and every other key as ``pd.NA``.
 
     Notes
     -----
@@ -236,6 +247,7 @@ def compute_numeric_column_stats(series: pd.Series) -> dict:
     """
     out = {
         "count": series.count(),
+        "missing": series.isna().sum(),
         "min": pd.NA, "max": pd.NA, "mean": pd.NA,
         "std": pd.NA, "median": pd.NA,
         "p01": pd.NA, "p25": pd.NA, "p75": pd.NA, "p99": pd.NA, "iqr": pd.NA,
