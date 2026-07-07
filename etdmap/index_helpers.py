@@ -56,6 +56,37 @@ metadata_dtypes = {
 CADENCE_ORDER = ["5-minute", "15-minute", "1-hour", "24-hour"]
 
 
+class HuisBatchOverlapError(ValueError):
+    """
+    Raised when a HuisIdBSV maps to more than one HuisBatchIdBSV -- the moment
+    the legacy per-household model can no longer represent the data (a household
+    delivered in a second batch). This is the FORCED-SWITCH trigger: from here on
+    the sharded / batch-aware path must be used.
+
+    Subclasses ValueError so existing `except ValueError` sites still catch it.
+
+    Code that MUST already be batch-aware (keyed on HuisBatchIdBSV) by the time
+    this is raised -- otherwise it silently corrupts or must be fixed:
+
+      - index.parquet (per-HuisIdBSV projection): becomes ambiguous -> retire it;
+        the legacy monolith path cannot run on the overlapping data.
+      - The HuisId-first read interface: a HuisId-only read for the overlapping
+        household must select a batch (batches=...) or it raises this.
+      - Meenemen + household metadata: resolved at HuisBatch grain (batch_index),
+        not via a per-HuisIdBSV derivation.
+      - Workflow functions keyed on HuisIdBSV: drop_duplicates / merge / the
+        Meenemen filter (filter_excluded_households.py) / stratified sampling
+        (run_aggregation_workflow.py) must key on HuisBatchIdBSV.
+      - etdanalyze + etdanalyze-internal callers passing HuisIdBSV only: must
+        specify the batch for overlapping households.
+      - compare_aggregation_outputs.py: baseline (per-HuisIdBSV) vs candidate
+        (per-HuisBatchIdBSV) keying must handle the grain change.
+
+    Full list + interface taxonomy:
+    etdworkflow/docs/refactoring/NATIVE_RESOLUTION_DESIGN.md.
+    """
+
+
 def validate_batch_index_correspondence(index_df, batch_index_df):
     """
     Raise if the legacy per-HuisIdBSV index and the per-HuisBatchIdBSV
@@ -70,10 +101,11 @@ def validate_batch_index_correspondence(index_df, batch_index_df):
     counts = batch_index_df.groupby("HuisIdBSV")["HuisBatchIdBSV"].nunique()
     multi = sorted(int(h) for h, n in counts.items() if n > 1)
     if multi:
-        raise ValueError(
+        raise HuisBatchOverlapError(
             f"Batch-index 1:1 correspondence broken: HuisIdBSV {multi} appear in "
             f"more than one HuisBatchIdBSV. The legacy per-household index can no "
-            f"longer represent the data; the sharded path must be used."
+            f"longer represent the data; the sharded / batch-aware path must be "
+            f"used (see HuisBatchOverlapError for the code that must adapt)."
         )
 
     index_ids = set(int(h) for h in index_df["HuisIdBSV"].dropna().tolist())

@@ -31,6 +31,7 @@ import pandas as pd
 import pytest
 
 from etdmap.index_helpers import (
+    HuisBatchOverlapError,
     validate_batch_index_correspondence,
     validate_gegevensfrequentie_present,
 )
@@ -70,9 +71,11 @@ class TestOneToOneCorrespondence:
 
     def test_household_in_two_batches_raises(self):
         # The forced-switch trigger: HuisIdBSV 2 recurs in a second batch.
+        # Raises the specific HuisBatchOverlapError (whose docstring lists the
+        # code that must be batch-aware by this point).
         index = _index_df([1, 2, 3])
         batch = _batch_index_df([(1, 1), (2, 2), (3, 3), (2, 4)])
-        with pytest.raises(Exception) as exc:
+        with pytest.raises(HuisBatchOverlapError) as exc:
             validate_batch_index_correspondence(index, batch)
         assert "2" in str(exc.value)
 

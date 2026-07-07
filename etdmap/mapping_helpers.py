@@ -1,5 +1,7 @@
 import logging
 import os
+import re
+import shutil
 
 import pandas as pd
 
@@ -1557,6 +1559,154 @@ def write_threshold_removals(
         f"[mapping_helpers] Wrote {len(df)} threshold-removal row(s) to {path}"
     )
     return path
+
+
+def save_household_shard(df, huis_id_bsv, huis_batch_id_bsv, sharded_folder_path):
+    """
+    Write one household's mapped data as a hive-partitioned shard:
+    ``<sharded_folder_path>/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/part.parquet``.
+
+    Sharding originates at mapping (etdmap), not in a downstream combine step. The
+    partition columns (the ids) live in the PATH, not the file -- hive convention,
+    and consistent with the flat mapped file which also carries no id columns.
+
+    Per-household and idempotent: re-running one household overwrites only its shard
+    (exactly one part file, never stale duplicates), so a single changed household
+    can be re-mapped without touching the rest. Different batches of the same
+    household coexist as sibling ``HuisBatchIdBSV=*`` partitions.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The mapped household frame (ReadingDate + data columns, nullable dtypes).
+    huis_id_bsv : int
+        HuisIdBSV -- the household id (the flat pipeline's ``huis_code``).
+    huis_batch_id_bsv : int
+        HuisBatchIdBSV (equals HuisIdBSV in the initial 1:1 state).
+    sharded_folder_path : str or Path
+        Root of the sharded mapped dataset.
+
+    Returns
+    -------
+    str
+        Path to the written part file.
+    """
+    part_dir = os.path.join(
+        str(sharded_folder_path),
+        f"HuisIdBSV={int(huis_id_bsv)}",
+        f"HuisBatchIdBSV={int(huis_batch_id_bsv)}",
+    )
+    # Idempotent per (household, batch): clear any prior part files for this shard
+    # so a re-run leaves exactly one file, never stale duplicates.
+    if os.path.isdir(part_dir):
+        for name in os.listdir(part_dir):
+            if name.endswith(".parquet"):
+                os.remove(os.path.join(part_dir, name))
+    os.makedirs(part_dir, exist_ok=True)
+    out_path = os.path.join(part_dir, "part.parquet")
+    df.to_parquet(out_path, engine="pyarrow")
+    logging.info(f"[mapping_helpers] Wrote household shard -> {out_path}")
+    return out_path
+
+
+_HOUSEHOLD_FILE_RE = re.compile(r"^household_(\d+)_table\.parquet$")
+_HUISID_DIR_RE = re.compile(r"^HuisIdBSV=(\d+)$")
+_HUISBATCHID_DIR_RE = re.compile(r"^HuisBatchIdBSV=(\d+)$")
+
+
+def prune_stale_household_files(mapped_folder_path, keep_huis_ids):
+    """
+    Delete flat mapped household files whose HuisIdBSV is KNOWN stale -- i.e. not
+    in ``keep_huis_ids`` (the current authoritative household set, from the index).
+
+    Only files matching ``household_<n>_table.parquet`` are considered; ``index.parquet``
+    and any other content are never touched. This is a targeted delete-with-manifest,
+    NOT a blanket glob-delete: it returns a manifest (one dict per removal with
+    ``HuisIdBSV`` + ``path``) so the caller can log/audit exactly what was removed.
+
+    Parameters
+    ----------
+    mapped_folder_path : str or Path
+        Folder holding the flat mapped household files.
+    keep_huis_ids : iterable of int
+        HuisIdBSV values that SHOULD exist; everything else matching the pattern is
+        removed.
+
+    Returns
+    -------
+    list of dict
+        Manifest of removed files: ``[{"HuisIdBSV": n, "path": ...}, ...]``.
+    """
+    keep = {int(h) for h in keep_huis_ids}
+    folder = str(mapped_folder_path)
+    removed = []
+    if not os.path.isdir(folder):
+        return removed
+    for name in sorted(os.listdir(folder)):
+        m = _HOUSEHOLD_FILE_RE.match(name)
+        if not m:
+            continue
+        hid = int(m.group(1))
+        if hid in keep:
+            continue
+        path = os.path.join(folder, name)
+        os.remove(path)
+        removed.append({"HuisIdBSV": hid, "path": path})
+        logging.info(f"[mapping_helpers] Pruned stale household file: {path}")
+    return removed
+
+
+def prune_stale_household_shards(sharded_folder_path, keep_pairs):
+    """
+    Delete sharded household partitions whose ``(HuisIdBSV, HuisBatchIdBSV)`` is KNOWN
+    stale -- i.e. not in ``keep_pairs`` (the current authoritative set from batch_index).
+
+    Only ``HuisIdBSV=<n>/HuisBatchIdBSV=<p>`` partition directories are considered;
+    other content is never touched. A ``HuisIdBSV=<n>`` parent is removed once its last
+    remaining batch partition is pruned. Targeted delete-with-manifest, not a blanket
+    wipe: returns a manifest (one dict per removal with ``HuisIdBSV`` + ``HuisBatchIdBSV``
+    + ``path``).
+
+    Parameters
+    ----------
+    sharded_folder_path : str or Path
+        Root of the sharded mapped dataset.
+    keep_pairs : iterable of (int, int)
+        ``(HuisIdBSV, HuisBatchIdBSV)`` pairs that SHOULD exist.
+
+    Returns
+    -------
+    list of dict
+        Manifest of removed shards.
+    """
+    keep = {(int(a), int(b)) for (a, b) in keep_pairs}
+    root = str(sharded_folder_path)
+    removed = []
+    if not os.path.isdir(root):
+        return removed
+    for hid_name in sorted(os.listdir(root)):
+        hid_m = _HUISID_DIR_RE.match(hid_name)
+        if not hid_m:
+            continue
+        hid_dir = os.path.join(root, hid_name)
+        if not os.path.isdir(hid_dir):
+            continue
+        hid = int(hid_m.group(1))
+        for hbid_name in sorted(os.listdir(hid_dir)):
+            hbid_m = _HUISBATCHID_DIR_RE.match(hbid_name)
+            if not hbid_m:
+                continue
+            hbid = int(hbid_m.group(1))
+            if (hid, hbid) in keep:
+                continue
+            part_dir = os.path.join(hid_dir, hbid_name)
+            shutil.rmtree(part_dir)
+            removed.append({"HuisIdBSV": hid, "HuisBatchIdBSV": hbid, "path": part_dir})
+            logging.info(f"[mapping_helpers] Pruned stale shard: {part_dir}")
+        # Drop the HuisIdBSV=<n> parent if pruning emptied it.
+        if os.path.isdir(hid_dir) and not os.listdir(hid_dir):
+            os.rmdir(hid_dir)
+    return removed
 
 
 def run_standard_pipeline(
