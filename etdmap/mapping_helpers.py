@@ -5,6 +5,8 @@ import shutil
 
 import pandas as pd
 
+import etdmap
+
 from etdmap.data_model import (
     cumulative_columns,
     load_thresholds_as_dict,
@@ -1609,6 +1611,47 @@ def save_household_shard(df, huis_id_bsv, huis_batch_id_bsv, sharded_folder_path
     return out_path
 
 
+def save_mapped_household(df, huis_code, mapped_folder_path) -> str:
+    """
+    Save one household's mapped data in the configured output format -- THE
+    single save primitive for all mappers.
+
+    Honours ``etdmap.options.mapped_output_format``:
+    - "sharded" (default): hive shard under
+      ``<mapped_folder_path>/sharded/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/``
+      (HuisBatchIdBSV = HuisIdBSV while each household has one batch; a registry
+    lookup replaces this when second batches
+      exist);
+    - "flat": the legacy ``household_<n>_table.parquet`` (tests / legacy escape
+      hatch via the map scripts' --flat flag).
+
+    run_standard_pipeline calls this internally; mapper scripts that write
+    household output directly (e.g. map_watch_e) MUST use this instead of a raw
+    ``to_parquet`` -- a direct write silently bypasses the format branch (this is
+    exactly how Watch-E produced zero shards on the first real sharded run).
+
+    Returns the path written.
+    """
+    output_format = etdmap.options.mapped_output_format
+    if output_format == "flat":
+        path = os.path.join(
+            str(mapped_folder_path), f"household_{int(huis_code)}_table.parquet"
+        )
+        df.to_parquet(path, engine="pyarrow")
+        return path
+    if output_format == "sharded":
+        return save_household_shard(
+            df,
+            huis_id_bsv=int(huis_code),
+            huis_batch_id_bsv=int(huis_code),
+            sharded_folder_path=os.path.join(str(mapped_folder_path), "sharded"),
+        )
+    raise ValueError(
+        f"[save_mapped_household] Unknown mapped_output_format {output_format!r}; "
+        f"expected 'sharded' or 'flat'."
+    )
+
+
 _HOUSEHOLD_FILE_RE = re.compile(r"^household_(\d+)_table\.parquet$")
 _HUISID_DIR_RE = re.compile(r"^HuisIdBSV=(\d+)$")
 _HUISBATCHID_DIR_RE = re.compile(r"^HuisBatchIdBSV=(\d+)$")
@@ -1872,11 +1915,12 @@ def run_standard_pipeline(
         logging.debug(f"[run_standard_pipeline] {ctx}Validation: " + "; ".join(_parts))
 
     # ------------------------------------------------------------------
-    # 10. Save
+    # 10. Save via the single format-aware primitive (sharded default; flat is
+    #     the legacy escape hatch)
     # ------------------------------------------------------------------
-    df.to_parquet(new_file_path, engine="pyarrow")
+    saved_path = save_mapped_household(df, huis_code, mapped_folder_path)
     logging.info(
-        f"[run_standard_pipeline] {ctx}Saved to {new_file_path} "
+        f"[run_standard_pipeline] {ctx}Saved to {saved_path} "
         f"({len(df)} rows, {len(df.columns)} columns)"
     )
 

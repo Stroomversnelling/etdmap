@@ -64,6 +64,9 @@ def _clean_mapped_folder(mapped_folder_path):
     if mapped_folder.exists():
         for f in mapped_folder.glob("household_*.parquet"):
             f.unlink()
+        batch_index_file = mapped_folder / "batch_index.parquet"
+        if batch_index_file.exists():
+            batch_index_file.unlink()
         index_file = mapped_folder / "index.parquet"
         if index_file.exists():
             index_file.unlink()
@@ -480,6 +483,39 @@ def mapped_fixtures(raw_data_fixture):
     etdmap.options.mapped_folder_path = Path(config['etdmap_configuration']['mapped_folder_path'])
     etdmap.options.bsv_metadata_file = Path(config['etdmap_configuration']['bsv_metadata_file'])
 
+    # Fixture HuisBatch sync CSV next to the fixture BSV metadata: the REAL
+    # registry write path (save_index_to_parquet) then builds
+    # batch_index.parquet exactly as production does -- fixtures exercise
+    # production code, no fixture-only derivation. Meenemen is EMPTY here:
+    # the researcher adds the rows (ids + batch + cadence) and reviews later.
+    _fixtures_dir = Path(str(etdmap.options.bsv_metadata_file)).parent
+    _sync_rows = 10
+    pd.DataFrame({
+        "HuisIdBSV": pd.array(range(1, _sync_rows + 1), dtype="Int64"),
+        "HuisBatchIdBSV": pd.array(range(1, _sync_rows + 1), dtype="Int64"),
+        "BatchIdBSV": pd.array([1] * _sync_rows, dtype="Int64"),
+        "ProjectIdBSV": pd.array([1] * _sync_rows, dtype="Int64"),
+        "Meenemen": pd.array([pd.NA] * _sync_rows, dtype="boolean"),
+        "Gegevensfrequentie": pd.array(["5-minute"] * _sync_rows, dtype="string"),
+        "Leverancierfrequentie": pd.array([pd.NA] * _sync_rows, dtype="string"),
+        "Startdatum": ["2024-01-01 00:00:00 UTC"] * _sync_rows,
+        "Einddatum": ["2025-01-01 00:00:00 UTC"] * _sync_rows,
+    }).to_csv(_fixtures_dir / "huisbatch_sync.csv", index=False)
+    etdmap.options.huisbatch_csv_path = _fixtures_dir / "huisbatch_sync.csv"
+
+    # The fixture pipeline runs in the FIRST-MAPPING state: Meenemen is not
+    # reviewed yet, so the BSV metadata the Meenemen stamp reads is a variant
+    # of the fixture metadata with the Meenemen values blanked. The option is
+    # restored to the reviewed metadata afterwards, so later tests (e.g. the
+    # update_meenemen tests) exercise the review transition -- the suite
+    # covers BOTH states, in lifecycle order.
+    _reviewed_metadata = Path(str(etdmap.options.bsv_metadata_file))
+    _first_mapping_metadata = _fixtures_dir / "metadata_first_mapping.csv"
+    _meta_df = pd.read_csv(_reviewed_metadata, dtype_backend="numpy_nullable")
+    _meta_df["Meenemen"] = pd.array([pd.NA] * len(_meta_df), dtype="boolean")
+    _meta_df.to_csv(_first_mapping_metadata, index=False)
+    etdmap.options.bsv_metadata_file = _first_mapping_metadata
+
     index_df, _index_path = index_helpers.read_index()
     if 'Dataleverancier' not in index_df.columns:
         index_df.loc[:, 'Dataleverancier'] = 'etdmap'
@@ -504,4 +540,11 @@ def mapped_fixtures(raw_data_fixture):
     metadata_df = read_metadata(metadata_file_path)
     etdmap.index_helpers.add_supplier_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
 
+    # batch_index.parquet was written together with index.parquet by the
+    # save calls above (single registry write path; the fixture sync CSV
+    # supplied the batch fields; Meenemen is EMPTY -- the honest
+    # first-mapping state). Downstream suites (etdtransform) apply the
+    # review step themselves. Restore the option to the REVIEWED metadata so
+    # later etdmap tests exercise the review transition.
+    etdmap.options.bsv_metadata_file = _reviewed_metadata
     return etdmap.options.mapped_folder_path

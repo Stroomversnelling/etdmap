@@ -454,6 +454,18 @@ class TestCombineSourceColumns:
 
 
 class TestRunStandardPipeline:
+    """Characterizes the LEGACY flat mapping output, so the flat mode is pinned
+    explicitly (the default mapped_output_format is 'sharded' since the
+    refactor; sharded behaviour is covered in test_sharded_mapping.py)."""
+
+    @pytest.fixture(autouse=True)
+    def _flat_output_format(self):
+        import etdmap
+        prev = etdmap.options.mapped_output_format
+        etdmap.options.mapped_output_format = "flat"
+        yield
+        etdmap.options.mapped_output_format = prev
+
     def test_raises_key_error_when_no_reading_date(self, tmp_path):
         df = pd.DataFrame({"SomeCol": [1, 2, 3]})
         with pytest.raises(KeyError, match="ReadingDate"):

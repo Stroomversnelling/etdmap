@@ -6,7 +6,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# Maps Grist/CSV "Type variabele" values to pandas dtype strings.
+# Maps the data model's "Type variabele" values to pandas dtype strings.
 # This mapping belongs in code, not data — it's a fixed translation layer.
 _DTYPE_MAP = {
     "number": "Float64",
@@ -97,10 +97,10 @@ def _validate_ja_nee_column(df: pd.DataFrame, column: str) -> None:
     """Raise ``ValueError`` if ``df[column]`` contains anything other than
     ``"ja"``, ``"nee"``, or empty/NA.
 
-    ja/nee columns in etdmodel.csv are Grist choice fields, not free
+    ja/nee columns in etdmodel.csv are fixed-choice fields, not free
     text. Any other content (capitalisation, whitespace, typos) is a
-    Grist sync bug -- normalising it away here would hide the bug.
-    Loud failure at import time is the right behaviour.
+    sync bug -- normalising it away here would hide the bug. Loud
+    failure at import time is the right behaviour.
     """
     series = df[column].dropna()
     bad_mask = ~series.astype(str).isin(_JA_NEE_CHOICE)
@@ -112,7 +112,7 @@ def _validate_ja_nee_column(df: pd.DataFrame, column: str) -> None:
         raise ValueError(
             f"etdmodel.csv: {column} is a choice field and must be one of "
             f"{sorted(_JA_NEE_CHOICE)} (or empty). Offending rows: {offenders}. "
-            f"Fix the Grist source and re-sync."
+            f"Fix the source data model and re-sync."
         )
 
 
@@ -125,10 +125,10 @@ def load_unit_map() -> dict:
     omitted so callers can use ``.get(col, "")`` semantics.
 
     No suffix-based Diff inheritance: every variable referenced
-    downstream must have an explicit row in ``etdmodel.csv`` (the Grist
-    source of truth). Missing rows surface as a clean lookup miss at
-    the call site, pointing callers at Grist instead of papering over
-    the gap with a heuristic.
+    downstream must have an explicit row in ``etdmodel.csv`` (synced
+    from the source data model). Missing rows surface as a clean lookup
+    miss at the call site, pointing callers at the source data model
+    instead of papering over the gap with a heuristic.
     """
     df = load_etdmodel()
     unit_map: dict[str, str] = {}
@@ -227,7 +227,7 @@ def _build_derived_structures():
         perf = perf.sort_values("Volgorde", na_position="last")
 
     # Strict-choice validation for the ja/nee classifier columns. These are
-    # Grist choice fields; any other content is a Grist sync bug, not
+    # fixed-choice fields; any other content is a sync bug, not
     # something to normalise away. Fail loud at import time so the gap
     # surfaces immediately.
     for _classifier_col in ("Cumulatief", "Momentaan", "Diff"):

@@ -28,6 +28,14 @@ etdmap.index\_helpers module
    :show-inheritance:
    :undoc-members:
 
+etdmap.storage module
+---------------------
+
+.. automodule:: etdmap.storage
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 etdmap.mapping\_clock\_helpers module
 -------------------------------------
 

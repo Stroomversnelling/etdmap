@@ -130,7 +130,7 @@ def validate_mapping_coverage(
         if col not in col_index:
             errors.append(
                 f"Column '{col}' ({project_label}): not found in mapping CSV for "
-                f"supplier '{supplier}'. Add a row to DatamodelLeverancier in Grist "
+                f"supplier '{supplier}'. Add a row to the DatamodelLeverancier table "
                 f"with Mapping_Meenemen=1 (include) or Mapping_Meenemen=0 (exclude)."
             )
             logging.debug(
@@ -184,12 +184,12 @@ def validate_mapping_coverage(
 
 
 def _load_project_table(project_table_csv) -> pd.DataFrame:
-    """Load the Grist Project table CSV (downloaded by sync_data_model.py)."""
+    """Load the Project table CSV (synced from the source data model)."""
     path = Path(project_table_csv)
     if not path.exists():
         raise FileNotFoundError(
             f"[supplier_validators] Project table CSV not found: {path}. "
-            f"Run sync_data_model.py to download it."
+            f"Sync the data model to download it."
         )
     return pd.read_csv(path)
 
@@ -198,14 +198,15 @@ def _build_site_to_project_id_map(project_df: pd.DataFrame, supplier: str = None
     """
     Build a {site_name: bsv_project_id_str} map from the Project table.
 
-    The Project table from Grist has:
+    The synced Project table has:
       - ProjectIdBSV: the BSV numeric project ID
       - ProjectIdLeverancier: the supplier's own site/project identifier (raw data value)
       - Dataleverancier: the supplier name
 
     The ProjectIdLeverancier column must contain the exact values that appear in
     the supplier's raw data project column (e.g. a 'Site' column).
-    If these don't match, update the Grist Project table and re-run sync_data_model.py.
+    If these don't match, update the Project table in the source data model
+    and re-sync.
     """
     id_col = "ProjectIdBSV"
     name_col = "ProjectIdLeverancier"
@@ -252,8 +253,8 @@ def run_mapping_coverage_preflight(
     via validate_mapping_coverage() using BSV project IDs.
 
     Raises ValueError listing all issues if any are found.
-    Fix issues in the DatamodelLeverancier table in Grist, re-run
-    sync_data_model.py, then retry.
+    Fix issues in the DatamodelLeverancier table in the source data model,
+    re-sync, then retry.
 
     Parameters
     ----------
@@ -273,7 +274,7 @@ def run_mapping_coverage_preflight(
         enables per-project validation by mapping site values to BSV project IDs.
         When None, validates all columns globally against the supplier (no project filter).
     project_table_csv : str or Path, optional
-        Path to the Project table CSV downloaded from Grist by sync_data_model.py
+        Path to the Project table CSV synced from the source data model
         (e.g. 'data/ETD Data model-Project.csv'). Required when raw_project_col
         is set.
     """
@@ -324,9 +325,9 @@ def run_mapping_coverage_preflight(
                     f"[run_mapping_coverage_preflight] Could not determine ProjectIdBSV "
                     f"for folder '{project_folder}' — no file in the folder returned a "
                     f"recognisable site value. Known sites: {list(site_to_project_id.keys())}. "
-                    f"Update ProjectIdLeverancier in the Grist Project table to match the "
+                    f"Update ProjectIdLeverancier in the source Project table to match the "
                     f"exact values in the '{raw_project_col}' column of the raw parquet files, "
-                    f"then re-run sync_data_model.py."
+                    f"then re-sync the data model."
                 )
 
             # Collect all unique columns in this project folder
@@ -368,7 +369,7 @@ def run_mapping_coverage_preflight(
         msg = (
             f"[run_mapping_coverage_preflight] {len(all_errors)} coverage issue(s) found "
             f"for supplier '{supplier}'.\n"
-            f"Fix these in DatamodelLeverancier in Grist and re-run sync_data_model.py.\n"
+            f"Fix these in the source DatamodelLeverancier table and re-sync.\n"
             f"Issues:\n  {lines}"
         )
         logging.error(msg)

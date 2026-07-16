@@ -17,7 +17,7 @@ Contracts (see docs/refactoring/NATIVE_RESOLUTION_DESIGN.md in etdworkflow):
    degrade into 1:many join corruption.
 
 2. Gegevensfrequentie is required. The batch's finest mapped cadence is declared
-   in Grist (synced) and must be present on every batch row; missing -> RAISE.
+   externally (synced) and must be present on every included batch row.
 
 3. A mapped column is never finer than its batch's Gegevensfrequentie. Columns
    may deviate only coarser (O-Nexus electricity 15-min inside a 5-min batch);
@@ -80,18 +80,21 @@ class TestOneToOneCorrespondence:
         assert "2" in str(exc.value)
 
     def test_household_in_batch_not_in_index_raises(self):
-        # batch_index has a household the legacy index does not.
+        # batch_index has a household the legacy index does not: impossible data
+        # (ids are minted from the index) -> hard error.
         index = _index_df([1, 2])
         batch = _batch_index_df([(1, 1), (2, 2), (3, 3)])
         with pytest.raises(Exception):
             validate_batch_index_correspondence(index, batch)
 
-    def test_household_in_index_not_in_batch_raises(self):
-        # legacy index has a household the batch_index does not.
+    def test_household_in_index_not_in_batch_warns_pending(self, caplog):
+        # legacy index has a household the batch_index does not: PENDING its
+        # manual addition to the metadata (normal transient state) -> warning.
         index = _index_df([1, 2, 3])
         batch = _batch_index_df([(1, 1), (2, 2)])
-        with pytest.raises(Exception):
-            validate_batch_index_correspondence(index, batch)
+        validate_batch_index_correspondence(index, batch)  # must NOT raise
+        warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert any("3" in w for w in warnings)
 
 
 # ---------------------------------------------------------------------------

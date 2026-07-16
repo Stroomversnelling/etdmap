@@ -86,7 +86,8 @@ supplier_mapping_csv_path = Option(
     key="supplier_mapping_csv_path",
     default_value=None,
     doc=(
-        "Path to the ETD DatamodelLeverancier CSV (synced from Grist). Maps raw "
+        "Path to the ETD DatamodelLeverancier CSV (synced from the source "
+        "data model). Maps raw "
         "supplier column names to BSV column names and drives "
         "load_supplier_pipeline_config / map_raw_df in all supplier mappers."
     ),
@@ -106,6 +107,37 @@ project_mapping_csv_path = Option(
     callback=None,
 )
 
+huisbatch_csv_path = Option(
+    key="huisbatch_csv_path",
+    default_value=None,
+    doc=(
+        "Path to the synced HuisBatch table CSV: one row per household batch "
+        "with HuisIdBSV, HuisBatchIdBSV, BatchIdBSV, Meenemen, "
+        "Gegevensfrequentie, Leverancierfrequentie, Startdatum and Einddatum. "
+        "The project's data-management tooling produces this file; "
+        "save_index_to_parquet reads it to build batch_index.parquet. When "
+        "unset or missing, the batch registry file is skipped with a warning."
+    ),
+    validator=None,
+    callback=None,
+)
+
+mapped_output_format = Option(
+    key="mapped_output_format",
+    default_value="sharded",
+    doc=(
+        "How run_standard_pipeline writes mapped household data. 'sharded' "
+        "(the one-way default): hive-partitioned shards under "
+        "<mapped_folder_path>/sharded/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/. "
+        "'flat': the legacy single household_<n>_table.parquet. Producing "
+        "flat output is a deliberate per-run choice (mapper scripts expose a "
+        "--flat flag; tests pin the value); it is NOT a maintained "
+        "configuration -- do not set it in config files."
+    ),
+    validator=None,
+    callback=None,
+)
+
 # Set the option with default values
 options = Options(
     {
@@ -115,6 +147,8 @@ options = Options(
         "etdmodel_csv_path": etdmodel_csv_path,
         "supplier_mapping_csv_path": supplier_mapping_csv_path,
         "project_mapping_csv_path": project_mapping_csv_path,
+        "huisbatch_csv_path": huisbatch_csv_path,
+        "mapped_output_format": mapped_output_format,
     }
 )
 
