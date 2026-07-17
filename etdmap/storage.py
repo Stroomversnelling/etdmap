@@ -162,7 +162,7 @@ def shard_glob(path) -> str:
     return os.path.join(str(path), "**", "*.parquet")
 
 
-def resolve_stage_source(folder, artifact_name: str):
+def resolve_source_path(folder, artifact_name: str):
     """
     Resolve a stage artifact inside a folder: the hive shard DIRECTORY named
     ``<artifact_name>`` when present, else the legacy single file
@@ -206,6 +206,52 @@ def source_schema_names(path) -> set:
     if source_is_sharded(path):
         names |= {"HuisIdBSV", "HuisBatchIdBSV"}
     return names
+
+
+def read_source_frame(path, columns=None) -> pd.DataFrame:
+    """
+    Read a stage artifact -- a single parquet file or a shard directory --
+    into one pandas DataFrame with nullable dtypes.
+
+    Directory shards are read in sorted path order (repeat reads return rows
+    in the same order). The ids carried in the folder names are added as
+    Int64 columns when the files do not store them; a folder name that does
+    not parse raises rather than guessing. A requested column that a shard
+    does not store reads as missing for that shard's rows (the same union
+    behaviour a combined single file would give).
+    """
+    import pyarrow.parquet as _pq
+    p = str(path)
+    if not source_is_sharded(p):
+        return pd.read_parquet(p, columns=columns, dtype_backend="numpy_nullable")
+    part_files = sorted(_glob.glob(shard_glob(p), recursive=True))
+    if not part_files:
+        raise FileNotFoundError(f"No parquet shards under {p}.")
+    frames = []
+    for f in part_files:
+        m = _SHARD_PART_RE.search(f)
+        if m is None:
+            raise ValueError(
+                f"Cannot parse HuisIdBSV/HuisBatchIdBSV from shard path {f!r}."
+            )
+        read_cols = columns
+        if columns is not None:
+            stored = set(_pq.read_schema(f).names)
+            read_cols = [c for c in columns if c in stored]
+        df = pd.read_parquet(f, columns=read_cols, dtype_backend="numpy_nullable")
+        for pos, (name, val) in enumerate(
+            (("HuisIdBSV", int(m.group(1))), ("HuisBatchIdBSV", int(m.group(2))))
+        ):
+            if name not in df.columns and (columns is None or name in columns):
+                df.insert(pos, name, pd.array([val] * len(df), dtype="Int64"))
+        frames.append(df)
+    out = pd.concat(frames, ignore_index=True)
+    if columns is not None:
+        missing = [c for c in columns if c not in out.columns]
+        if missing:
+            raise ValueError(f"Column(s) {missing} not found in any shard under {p}.")
+        out = out[list(columns)]
+    return out
 
 
 def source_sql(path) -> str:
