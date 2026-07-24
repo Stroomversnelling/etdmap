@@ -64,9 +64,6 @@ def _clean_mapped_folder(mapped_folder_path):
     if mapped_folder.exists():
         for f in mapped_folder.glob("household_*.parquet"):
             f.unlink()
-        batch_index_file = mapped_folder / "batch_index.parquet"
-        if batch_index_file.exists():
-            batch_index_file.unlink()
         index_file = mapped_folder / "index.parquet"
         if index_file.exists():
             index_file.unlink()
@@ -187,16 +184,16 @@ def raw_data_fixture(tmp_path_factory):
     for project_id in projects:
         for household_idx in range(1, num_households_per_project + 1):
             # Generate unique HuisIdBSV
-            huis_id = (project_id - 1) * num_households_per_project + household_idx
+            household_id = (project_id - 1) * num_households_per_project + household_idx
 
             # Preconstruct the prefixed strings
-            huis_prefixed = f"Huis{huis_id:02}"
+            household_prefixed = f"Huis{household_id:02}"
             project_prefixed = f"Project{project_id:02}"
 
             # Generate time series
             timestamps = pd.date_range(start=base_date, periods=num_records, freq=time_interval)
             household_data = {
-                "HuisIdLeverancier": pd.Series([huis_prefixed] * num_records, dtype="string"),
+                "HuisIdLeverancier": pd.Series([household_prefixed] * num_records, dtype="string"),
                 "ProjectIdLeverancier": pd.Series([project_prefixed] * num_records, dtype="string"),
                 "ReadingDate": timestamps,
             }
@@ -212,21 +209,21 @@ def raw_data_fixture(tmp_path_factory):
                         f"Add it -- see tests/test_threshold_fixture_coverage.py."
                     )
                 min_diff, max_diff = SYNTHETIC_DIFF_RANGES[col]
-                col_seed = int(hashlib.md5(f"{huis_id}_{col}".encode()).hexdigest(), 16) % (2**32)
+                col_seed = int(hashlib.md5(f"{household_id}_{col}".encode()).hexdigest(), 16) % (2**32)
                 col_rng = Generator(PCG64(seed=col_seed))
                 diffs = pd.Series(col_rng.uniform(min_diff, max_diff, size=num_records - 1), dtype="float64")
                 cumulative = pd.concat([pd.Series([0]), diffs.cumsum()], ignore_index=True)
                 household_data[col] = cumulative
 
             household_df = pd.DataFrame(household_data)
-            household_df = add_raw_data_test_case(base_date, household_df, huis_id_raw=huis_prefixed, project_id_raw=project_prefixed, rng=rng)
+            household_df = add_raw_data_test_case(base_date, household_df, household_id_raw=household_prefixed, project_id_raw=project_prefixed, rng=rng)
 
-            file_path = os.path.join(output_dir, f"household_{huis_id}_table.parquet")
+            file_path = os.path.join(output_dir, f"household_{household_id}_table.parquet")
             household_df.to_parquet(file_path, index=False)
 
             # Add metadata
-            index_bsv.append({"HuisIdLeverancier": huis_prefixed, "ProjectIdLeverancier": project_prefixed, "HuisIdBSV": huis_id, "ProjectIdBSV": project_id})
-            index_raw.append({"HuisIdLeverancier": huis_prefixed, "ProjectIdLeverancier": project_prefixed})
+            index_bsv.append({"HuisIdLeverancier": household_prefixed, "ProjectIdLeverancier": project_prefixed, "HuisIdBSV": household_id, "ProjectIdBSV": project_id})
+            index_raw.append({"HuisIdLeverancier": household_prefixed, "ProjectIdLeverancier": project_prefixed})
 
     index_raw_df = pd.DataFrame(index_raw)
     index_raw_file_path = os.path.join(output_dir, "index_raw.parquet")
@@ -243,11 +240,11 @@ def raw_data_fixture(tmp_path_factory):
 #    mixed data types in a single column - are they reported and coerced correctly?
 #    drifting clocks - are they detected and corrected?
 #    less records than expected - are they reported?
-def add_raw_data_test_case(base_date, household_df, huis_id_raw, project_id_raw, rng, interval = None):
+def add_raw_data_test_case(base_date, household_df, household_id_raw, project_id_raw, rng, interval = None):
     if interval is None:
         interval = pd.Timedelta(minutes=5)
 
-    if (huis_id_raw == "Huis1") and (project_id_raw == "Project1"):
+    if (household_id_raw == "Huis1") and (project_id_raw == "Project1"):
         # There is a gap in data but after gap it continues (shift data down 24h)
         # Define conditions
         gap_start = base_date + pd.Timedelta(days=30)
@@ -255,7 +252,7 @@ def add_raw_data_test_case(base_date, household_df, huis_id_raw, project_id_raw,
         var = cumulative_columns[0]
         household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length, shift = True)
 
-    elif (huis_id_raw == "Huis2") and (project_id_raw == "Project1"):
+    elif (household_id_raw == "Huis2") and (project_id_raw == "Project1"):
         # there is a gap in data but after gap it continues with the same starting value (shift data down 24h + copying the last value)
         # Define conditions
         gap_start = base_date + pd.Timedelta(days=60)
@@ -269,7 +266,7 @@ def add_raw_data_test_case(base_date, household_df, huis_id_raw, project_id_raw,
         # fill value at gap_end time with the last value before the gap
         household_df.loc[household_df['ReadingDate'] == gap_end, var] = last_value
 
-    elif (huis_id_raw == "Huis3") and (project_id_raw == "Project1"):
+    elif (household_id_raw == "Huis3") and (project_id_raw == "Project1"):
         # there is a gap in data and after the gap, the meter was reset to 0. Subtract the last value before the gap from all values after the gap.
         # Define conditions
         gap_start = base_date + pd.Timedelta(days=90)
@@ -279,20 +276,20 @@ def add_raw_data_test_case(base_date, household_df, huis_id_raw, project_id_raw,
         household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length, shift = True)
         household_df = reset_cumulative_column(household_df=household_df, columns=[var], reset_time=gap_end, check_negative = True)
 
-    elif (huis_id_raw == "Huis4") and (project_id_raw == "Project1"):
+    elif (household_id_raw == "Huis4") and (project_id_raw == "Project1"):
         # there is no gap in the data but the meter was reset to 0 at some point. Subtract the last value before the reset from all values after the reset.
         meter_reset_date = base_date + pd.Timedelta(days=120)
         var = cumulative_columns[3]
         household_df = reset_cumulative_column(household_df=household_df, columns=[var], reset_time=meter_reset_date, check_negative = True)
 
-    elif (huis_id_raw == "Huis5") and (project_id_raw == "Project1"):
+    elif (household_id_raw == "Huis5") and (project_id_raw == "Project1"):
         # there is 24 hour gap in the data. Delete 24hrs of data and do not shift it down. There should be a big jump in the value as a result.
         gap_start = base_date + pd.Timedelta(days=150)
         gap_length = pd.Timedelta(hours=24)
         var = cumulative_columns[4]
         household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length, shift = False)
 
-    elif (huis_id_raw in ["Huis6","Huis7", "Huis8", "Huis9", "Huis10"]) and (project_id_raw == "Project2"):
+    elif (household_id_raw in ["Huis6","Huis7", "Huis8", "Huis9", "Huis10"]) and (project_id_raw == "Project2"):
         # at the same time for each household there is 24h gap in all data. Delete 24hs of data and do not shift it down. There should be a big jump in the value as a result.
         gap_start = base_date + pd.Timedelta(days=180)
         gap_length = pd.Timedelta(hours=24)
@@ -416,18 +413,26 @@ def _list_files_data_fixture(folder_path):
     return {f[:-8]: f for f in os.listdir(folder_path) if f.endswith(".parquet") and "index" not in f}
 
 
-def _process_data_fixture_file(huis_code, file_name, etd_test_fixture_path, mapped_folder_path):
+def _process_data_fixture_file(household_id, file_name, etd_test_fixture_path, mapped_folder_path):
     file_path = os.path.join(etd_test_fixture_path, file_name)
     new_file_path = os.path.join(
-        mapped_folder_path, f"household_{int(huis_code)}_table.parquet"
+        mapped_folder_path, f"household_{int(household_id)}_table.parquet"
     )
 
     data_fixture_df = pd.read_parquet(file_path)
 
+    # Identifier columns belong to the index, not the household data, and are
+    # not part of the data model -- read them before the mapping steps.
+    project_id = (
+        str(data_fixture_df["ProjectIdLeverancier"].iloc[0])
+        if "ProjectIdLeverancier" in data_fixture_df.columns
+        else "unknown"
+    )
+
     data_fixture_df = mapping.ensure_intervals(data_fixture_df)
 
     data_fixture_df = mapping.rearrange_model_columns(
-        household_df=data_fixture_df, add_columns=True, context=f"{huis_code}/{file_name}"
+        household_df=data_fixture_df, add_columns=True, context=f"{household_id}/{file_name}"
     )
 
     data_fixture_df = mapping.fill_down_infrequent_devices(
@@ -435,31 +440,24 @@ def _process_data_fixture_file(huis_code, file_name, etd_test_fixture_path, mapp
         columns=("ElektriciteitsgebruikBoilervat", "ElektriciteitsgebruikRadiator", "ElektriciteitsgebruikBooster"),
     )
 
-    data_fixture_df = mapping.add_diff_columns(data_fixture_df, context=f"{huis_code}/{file_name}")
+    data_fixture_df = mapping.add_diff_columns(data_fixture_df, context=f"{household_id}/{file_name}")
 
     for flag, condition in record_flag_conditions.items():
         try:
             data_fixture_df[flag] = condition(data_fixture_df)
         except Exception as e:
             logging.error(
-                f"Error validating with {flag} for household {huis_code} / {file_name}: {e}",
+                f"Error validating with {flag} for household {household_id} / {file_name}: {e}",
                 exc_info=True,
             )
             data_fixture_df[flag] = pd.NA
 
     data_fixture_df.to_parquet(new_file_path, engine="pyarrow")
 
-    project_id = (
-        str(data_fixture_df["ProjectIdLeverancier"].iloc[0])
-        if "ProjectIdLeverancier" in data_fixture_df.columns
-        else "unknown"
-    )
-
     return {
         "HuisIdLeverancier": f'Huis{int(file_name.replace("household_", "").replace("_table.parquet", "")):02}',
         "ProjectIdLeverancier": project_id,
-        "HuisCode": huis_code,
-        "HuisIdBSV": huis_code,
+        "HuisIdBSV": household_id,
     }
 
 
@@ -484,10 +482,11 @@ def mapped_fixtures(raw_data_fixture):
     etdmap.options.bsv_metadata_file = Path(config['etdmap_configuration']['bsv_metadata_file'])
 
     # Fixture HuisBatch sync CSV next to the fixture BSV metadata: the REAL
-    # registry write path (save_index_to_parquet) then builds
-    # batch_index.parquet exactly as production does -- fixtures exercise
-    # production code, no fixture-only derivation. Meenemen is EMPTY here:
-    # the researcher adds the rows (ids + batch + cadence) and reviews later.
+    # registry write path (save_index_to_parquet) then populates the
+    # household-batch columns of index.parquet exactly as production does --
+    # fixtures exercise production code, no fixture-only derivation.
+    # Meenemen is EMPTY here: the researcher adds the rows (ids + batch +
+    # cadence) and reviews later.
     _fixtures_dir = Path(str(etdmap.options.bsv_metadata_file)).parent
     _sync_rows = 10
     pd.DataFrame({
@@ -496,12 +495,12 @@ def mapped_fixtures(raw_data_fixture):
         "BatchIdBSV": pd.array([1] * _sync_rows, dtype="Int64"),
         "ProjectIdBSV": pd.array([1] * _sync_rows, dtype="Int64"),
         "Meenemen": pd.array([pd.NA] * _sync_rows, dtype="boolean"),
-        "Gegevensfrequentie": pd.array(["5-minute"] * _sync_rows, dtype="string"),
+        "Gegevensfrequentie": pd.array(["5min"] * _sync_rows, dtype="string"),
         "Leverancierfrequentie": pd.array([pd.NA] * _sync_rows, dtype="string"),
         "Startdatum": ["2024-01-01 00:00:00 UTC"] * _sync_rows,
         "Einddatum": ["2025-01-01 00:00:00 UTC"] * _sync_rows,
-    }).to_csv(_fixtures_dir / "huisbatch_sync.csv", index=False)
-    etdmap.options.huisbatch_csv_path = _fixtures_dir / "huisbatch_sync.csv"
+    }).to_csv(_fixtures_dir / "household_batch_sync.csv", index=False)
+    etdmap.options.household_batch_csv_path = _fixtures_dir / "household_batch_sync.csv"
 
     # The fixture pipeline runs in the FIRST-MAPPING state: Meenemen is not
     # reviewed yet, so the BSV metadata the Meenemen stamp reads is a variant
@@ -525,22 +524,22 @@ def mapped_fixtures(raw_data_fixture):
 
     limit_houses = 10
     count = 0
-    for huis_code, file_name in household_id_pairs:
+    for household_id, file_name in household_id_pairs:
         if count >= limit_houses:
             break
         count += 1
         logging.info(f"Starting {file_name}")
         new_entry = _process_data_fixture_file(
-            huis_code, file_name, raw_data_fixture, etdmap.options.mapped_folder_path
+            household_id, file_name, raw_data_fixture, etdmap.options.mapped_folder_path
         )
         index_df = etdmap.index_helpers.update_index(index_df, new_entry, data_provider="etdmap")
 
     etdmap.options.project_mapping_csv_path = config['etdmap_configuration']['project_mapping_csv_path']
     metadata_file_path = Path(config['etdmap_configuration']['supplier_metadata_xlsx_file'])
     metadata_df = read_metadata(metadata_file_path)
-    etdmap.index_helpers.add_supplier_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
+    etdmap.index_helpers.add_supplier_metadata_to_index(index_df, metadata_df, data_supplier="etdmap")
 
-    # batch_index.parquet was written together with index.parquet by the
+    # The household-batch columns were written into index.parquet by the
     # save calls above (single registry write path; the fixture sync CSV
     # supplied the batch fields; Meenemen is EMPTY -- the honest
     # first-mapping state). Downstream suites (etdtransform) apply the

@@ -358,29 +358,29 @@ def test_sample_values_equal_expected(mapped_fixtures, load_metadata):
 # autouse clean fixture is irrelevant here.
 # ---------------------------------------------------------------------------
 
-def _meenemen_index_df(huisidbsv, huisidlev, dataleverancier="etdmap"):
-    n = len(huisidbsv)
+def _meenemen_index_df(household_ids, household_ids_supplier, data_supplier="etdmap"):
+    n = len(household_ids)
     df = pd.DataFrame({
-        "HuisIdLeverancier": huisidlev,
-        "HuisIdBSV": huisidbsv,
+        "HuisIdLeverancier": household_ids_supplier,
+        "HuisIdBSV": household_ids,
         "ProjectIdLeverancier": ["P1"] * n,
         "ProjectIdBSV": [1] * n,
-        "Dataleverancier": [dataleverancier] * n,
+        "Dataleverancier": [data_supplier] * n,
         "Meenemen": [pd.NA] * n,   # pre-existing column -> exercises the drop() path
         "Notities": [pd.NA] * n,
     })
     return df.astype(index_helpers.metadata_dtypes)
 
 
-def _meenemen_bsv_df(huisidbsv, huisidlev, meenemen, dataleverancier="etdmap"):
-    n = len(huisidbsv)
+def _meenemen_bsv_df(household_ids, household_ids_supplier, include, data_supplier="etdmap"):
+    n = len(household_ids)
     return pd.DataFrame({
-        "HuisIdLeverancier": huisidlev,
-        "HuisIdBSV": huisidbsv,
+        "HuisIdLeverancier": household_ids_supplier,
+        "HuisIdBSV": household_ids,
         "ProjectIdLeverancier": ["P1"] * n,
         "ProjectIdBSV": [1] * n,
-        "Dataleverancier": [dataleverancier] * n,
-        "Meenemen": meenemen,
+        "Dataleverancier": [data_supplier] * n,
+        "Meenemen": include,
         "Notities": [pd.NA] * n,
     })
 

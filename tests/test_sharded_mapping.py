@@ -1,11 +1,9 @@
 """
-TDD (red-first) contract for the sharded-mapping WRITE primitive.
+Contract tests for the sharded-mapping WRITE primitive.
 
-Sharding originates at mapping (etdmap), not in a downstream etdtransform "default"
-step (see etdworkflow/docs/refactoring/NATIVE_RESOLUTION_DESIGN.md, Draft ADR F).
-`save_household_shard` writes ONE household's mapped data as a hive-partitioned
-shard -- the atomic, per-household, idempotent unit the parallel standardized
-mapping pipeline builds on. It does NOT exist yet -> red at import until it lands.
+Sharding originates at mapping: `save_household_shard` writes ONE household's
+mapped data as a hive-partitioned shard -- the atomic, per-household,
+idempotent unit the mapping pipeline builds on.
 
 Contract:
 - Writes to `<root>/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/part.parquet`.
@@ -121,21 +119,20 @@ class TestSaveMappedHousehold:
 
 
 class TestPipelineOutputFormat:
-    """run_standard_pipeline honours etdmap.options.mapped_output_format -- the
-    same existing API, no new caller-facing parameter (ADR D). Sharded is the
-    DEFAULT from the refactor onward; "flat" is the flag (tests / legacy /
-    pinned production until the sharded read side lands). Sharded output goes to
-    <mapped_folder_path>/sharded/ (the sharded-subfolder convention); the 1:1 era
-    batch id equals HuisIdBSV."""
+    """run_standard_pipeline honours etdmap.options.mapped_output_format --
+    the same existing API, no new caller-facing parameter. Sharded is the
+    default; "flat" writes the legacy one-file-per-household layout. Sharded
+    output goes to <mapped_folder_path>/sharded/; the writer assigns
+    HuisBatchIdBSV equal to HuisIdBSV (a household in more than one batch is
+    not yet supported)."""
 
     def test_default_output_format_is_sharded(self):
-        # New Options default; refactor decision: one-way to sharded.
         assert etdmap.options.mapped_output_format == "sharded"
 
     def test_sharded_mode_writes_shard_not_flat(self, tmp_path):
         with _output_format("sharded"):
             run_standard_pipeline(
-                _pipeline_df(), huis_code=42, huis_id="HuisX",
+                _pipeline_df(), household_id=42, household_id_supplier="HuisX",
                 mapped_folder_path=tmp_path,
             )
         shard = tmp_path / "sharded" / "HuisIdBSV=42" / "HuisBatchIdBSV=42" / "part.parquet"
@@ -145,7 +142,7 @@ class TestPipelineOutputFormat:
     def test_flat_mode_unchanged_legacy(self, tmp_path):
         with _output_format("flat"):
             run_standard_pipeline(
-                _pipeline_df(), huis_code=42, huis_id="HuisX",
+                _pipeline_df(), household_id=42, household_id_supplier="HuisX",
                 mapped_folder_path=tmp_path,
             )
         assert (tmp_path / "household_42_table.parquet").exists()
@@ -161,12 +158,12 @@ class TestPipelineOutputFormat:
         shard_dir.mkdir()
         with _output_format("flat"):
             run_standard_pipeline(
-                _pipeline_df(), huis_code=7, huis_id="H7",
+                _pipeline_df(), household_id=7, household_id_supplier="H7",
                 mapped_folder_path=flat_dir,
             )
         with _output_format("sharded"):
             run_standard_pipeline(
-                _pipeline_df(), huis_code=7, huis_id="H7",
+                _pipeline_df(), household_id=7, household_id_supplier="H7",
                 mapped_folder_path=shard_dir,
             )
         flat = pd.read_parquet(flat_dir / "household_7_table.parquet",
@@ -181,6 +178,6 @@ class TestPipelineOutputFormat:
         with _output_format("banana"):
             with pytest.raises(ValueError):
                 run_standard_pipeline(
-                    _pipeline_df(), huis_code=1, huis_id="H1",
+                    _pipeline_df(), household_id=1, household_id_supplier="H1",
                     mapped_folder_path=tmp_path,
                 )

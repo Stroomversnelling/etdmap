@@ -1,6 +1,6 @@
 {
     "num_rows": 105120,
-    "num_columns": 188,
+    "num_columns": 186,
     "column_details": {
         "TemperatuurWaterOmgeving": {
             "statistics": {
@@ -462,20 +462,6 @@
                 "min": null,
                 "max": null,
                 "null_count": 105120
-            }
-        },
-        "HuisIdLeverancier": {
-            "statistics": {
-                "min": "Huis07",
-                "max": "Huis07",
-                "null_count": 0
-            }
-        },
-        "ProjectIdLeverancier": {
-            "statistics": {
-                "min": "Project02",
-                "max": "Project02",
-                "null_count": 0
             }
         },
         "ElektriciteitNetgebruikHoogDiff": {

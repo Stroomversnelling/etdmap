@@ -57,7 +57,8 @@ def rearrange_model_columns(
     This function performs the following operations:
     1. Validates and coerces column types to match expected types.
     2. Rearranges columns to match the order defined in model_column_order.
-    3. Keeps original columns that are not included in the ETD data model at the end of the dataframe.
+    3. Drops columns that are not part of the ETD data model -- raw supplier
+       columns that were never mapped do not belong in mapped output.
     4. Optionally adds missing columns with NA values.
 
     Parameters
@@ -85,7 +86,9 @@ def rearrange_model_columns(
     Notes
     -----
     - The function uses the global variables model_column_type and model_column_order.
-    - Columns not in model_column_order are appended at the end of the DataFrame.
+    - Columns not in model_column_order are dropped. Statistics over the raw
+      supplier files still cover them: those are produced by the raw-data
+      checks, which read the supplier files directly.
     - When coercing types, any values that fail to convert are replaced with pd.NA.
     - Logging is used to warn about type mismatches and missing columns.
 
@@ -129,10 +132,7 @@ def rearrange_model_columns(
         # Track which columns exist before reindex — reindex adds missing model columns as
         # float64 with np.nan, not Float64 with pd.NA. We fix these immediately after.
         existing_cols = set(household_df.columns)
-        household_df = household_df.reindex(
-            columns=model_column_order
-            + [col for col in household_df.columns if col not in model_column_order],
-        )
+        household_df = household_df.reindex(columns=model_column_order)
         for col in model_column_order:
             if col not in existing_cols:
                 if col not in model_column_type:
@@ -148,14 +148,7 @@ def rearrange_model_columns(
         # Keep only columns that are in both model_column_order and the original DataFrame
         household_df = household_df[
             [col for col in model_column_order if col in household_df.columns]
-            + [col for col in household_df.columns if col not in model_column_order]
         ]
-
-    # ADR 5: coerce any remaining float64 extra (non-model) columns to Float64 so that
-    # all missing values in the output use pd.NA, never np.nan.
-    for col in household_df.columns:
-        if col not in model_column_order and str(household_df[col].dtype) == "float64":
-            household_df[col] = household_df[col].astype("Float64")
 
     return household_df
 
@@ -1507,13 +1500,13 @@ _THRESHOLD_REMOVAL_DTYPES = {
 }
 
 
-def threshold_stats_to_rows(huis_id_bsv, threshold_stats):
+def threshold_stats_to_rows(household_id, threshold_stats):
     """
     Flatten one household's threshold_stats dict into sidecar rows.
 
     Parameters
     ----------
-    huis_id_bsv : int
+    household_id : int
         The household's HuisIdBSV.
     threshold_stats : dict
         {column: {"n_below", "n_above", "min_removed", "max_removed"}} as
@@ -1529,7 +1522,7 @@ def threshold_stats_to_rows(huis_id_bsv, threshold_stats):
     for col, s in (threshold_stats or {}).items():
         rows.append(
             {
-                "HuisIdBSV": huis_id_bsv,
+                "HuisIdBSV": household_id,
                 "column": col,
                 "n_below": s["n_below"],
                 "n_above": s["n_above"],
@@ -1563,7 +1556,7 @@ def write_threshold_removals(
     return path
 
 
-def save_household_shard(df, huis_id_bsv, huis_batch_id_bsv, sharded_folder_path):
+def save_household_shard(df, household_id, household_batch_id, sharded_folder_path):
     """
     Write one household's mapped data as a hive-partitioned shard:
     ``<sharded_folder_path>/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/part.parquet``.
@@ -1581,9 +1574,9 @@ def save_household_shard(df, huis_id_bsv, huis_batch_id_bsv, sharded_folder_path
     ----------
     df : pd.DataFrame
         The mapped household frame (ReadingDate + data columns, nullable dtypes).
-    huis_id_bsv : int
-        HuisIdBSV -- the household id (the flat pipeline's ``huis_code``).
-    huis_batch_id_bsv : int
+    household_id : int
+        HuisIdBSV -- the household id (the flat pipeline's ``household_id``).
+    household_batch_id : int
         HuisBatchIdBSV (equals HuisIdBSV in the initial 1:1 state).
     sharded_folder_path : str or Path
         Root of the sharded mapped dataset.
@@ -1595,8 +1588,8 @@ def save_household_shard(df, huis_id_bsv, huis_batch_id_bsv, sharded_folder_path
     """
     part_dir = os.path.join(
         str(sharded_folder_path),
-        f"HuisIdBSV={int(huis_id_bsv)}",
-        f"HuisBatchIdBSV={int(huis_batch_id_bsv)}",
+        f"HuisIdBSV={int(household_id)}",
+        f"HuisBatchIdBSV={int(household_batch_id)}",
     )
     # Idempotent per (household, batch): clear any prior part files for this shard
     # so a re-run leaves exactly one file, never stale duplicates.
@@ -1611,7 +1604,7 @@ def save_household_shard(df, huis_id_bsv, huis_batch_id_bsv, sharded_folder_path
     return out_path
 
 
-def save_mapped_household(df, huis_code, mapped_folder_path) -> str:
+def save_mapped_household(df, household_id, mapped_folder_path) -> str:
     """
     Save one household's mapped data in the configured output format -- THE
     single save primitive for all mappers.
@@ -1619,9 +1612,8 @@ def save_mapped_household(df, huis_code, mapped_folder_path) -> str:
     Honours ``etdmap.options.mapped_output_format``:
     - "sharded" (default): hive shard under
       ``<mapped_folder_path>/sharded/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/``
-      (HuisBatchIdBSV = HuisIdBSV while each household has one batch; a registry
-    lookup replaces this when second batches
-      exist);
+      (this writer assigns HuisBatchIdBSV = HuisIdBSV; mapping a household
+      that appears in more than one batch is not yet supported);
     - "flat": the legacy ``household_<n>_table.parquet`` (tests / legacy escape
       hatch via the map scripts' --flat flag).
 
@@ -1635,15 +1627,15 @@ def save_mapped_household(df, huis_code, mapped_folder_path) -> str:
     output_format = etdmap.options.mapped_output_format
     if output_format == "flat":
         path = os.path.join(
-            str(mapped_folder_path), f"household_{int(huis_code)}_table.parquet"
+            str(mapped_folder_path), f"household_{int(household_id)}_table.parquet"
         )
         df.to_parquet(path, engine="pyarrow")
         return path
     if output_format == "sharded":
         return save_household_shard(
             df,
-            huis_id_bsv=int(huis_code),
-            huis_batch_id_bsv=int(huis_code),
+            household_id=int(household_id),
+            household_batch_id=int(household_id),
             sharded_folder_path=os.path.join(str(mapped_folder_path), "sharded"),
         )
     raise ValueError(
@@ -1657,10 +1649,10 @@ _HUISID_DIR_RE = re.compile(r"^HuisIdBSV=(\d+)$")
 _HUISBATCHID_DIR_RE = re.compile(r"^HuisBatchIdBSV=(\d+)$")
 
 
-def prune_stale_household_files(mapped_folder_path, keep_huis_ids):
+def prune_stale_household_files(mapped_folder_path, keep_household_ids):
     """
     Delete flat mapped household files whose HuisIdBSV is KNOWN stale -- i.e. not
-    in ``keep_huis_ids`` (the current authoritative household set, from the index).
+    in ``keep_household_ids`` (the current authoritative household set, from the index).
 
     Only files matching ``household_<n>_table.parquet`` are considered; ``index.parquet``
     and any other content are never touched. This is a targeted delete-with-manifest,
@@ -1671,7 +1663,7 @@ def prune_stale_household_files(mapped_folder_path, keep_huis_ids):
     ----------
     mapped_folder_path : str or Path
         Folder holding the flat mapped household files.
-    keep_huis_ids : iterable of int
+    keep_household_ids : iterable of int
         HuisIdBSV values that SHOULD exist; everything else matching the pattern is
         removed.
 
@@ -1680,7 +1672,7 @@ def prune_stale_household_files(mapped_folder_path, keep_huis_ids):
     list of dict
         Manifest of removed files: ``[{"HuisIdBSV": n, "path": ...}, ...]``.
     """
-    keep = {int(h) for h in keep_huis_ids}
+    keep = {int(h) for h in keep_household_ids}
     folder = str(mapped_folder_path)
     removed = []
     if not os.path.isdir(folder):
@@ -1702,7 +1694,8 @@ def prune_stale_household_files(mapped_folder_path, keep_huis_ids):
 def prune_stale_household_shards(sharded_folder_path, keep_pairs):
     """
     Delete sharded household partitions whose ``(HuisIdBSV, HuisBatchIdBSV)`` is KNOWN
-    stale -- i.e. not in ``keep_pairs`` (the current authoritative set from batch_index).
+    stale -- i.e. not in ``keep_pairs`` (the current authoritative set from
+    the registry index).
 
     Only ``HuisIdBSV=<n>/HuisBatchIdBSV=<p>`` partition directories are considered;
     other content is never touched. A ``HuisIdBSV=<n>`` parent is removed once its last
@@ -1754,8 +1747,8 @@ def prune_stale_household_shards(sharded_folder_path, keep_pairs):
 
 def run_standard_pipeline(
     df: pd.DataFrame,
-    huis_code: int,
-    huis_id: str,
+    household_id: int,
+    household_id_supplier: str,
     mapped_folder_path,
     context: str = "",
 ) -> dict:
@@ -1776,7 +1769,7 @@ def run_standard_pipeline(
       7. add_diff_columns
       8. Apply record_flag_conditions (try/except per flag; pd.NA on error)
       9. apply_thresholds_to_df
-     10. Save to {mapped_folder_path}/household_{huis_code}_table.parquet
+     10. Save to {mapped_folder_path}/household_{household_id}_table.parquet
 
     Note: fill_down_infrequent_devices is intentionally NOT part of this pipeline.
     Filling down is a supplier-specific imputation choice — for some data sources
@@ -1788,23 +1781,23 @@ def run_standard_pipeline(
     ----------
     df : pd.DataFrame
         Household time-series data with BSV column names.
-    huis_code : int
+    household_id : int
         BSV household ID (HuisIdBSV).
-    huis_id : str
+    household_id_supplier : str
         Supplier household ID (HuisIdLeverancier).
     mapped_folder_path : str or Path
         Destination folder for the processed parquet file.
     context : str
-        Optional log prefix, e.g. '{huis_id}/{huis_code}'.
+        Optional log prefix, e.g. '{household_id_supplier}/{household_id}'.
 
     Returns
     -------
     dict
-        {'HuisIdLeverancier': huis_id, 'HuisIdBSV': huis_code}
+        {'HuisIdLeverancier': household_id_supplier, 'HuisIdBSV': household_id}
     """
     ctx = f"{context}: " if context else ""
     new_file_path = os.path.join(
-        mapped_folder_path, f"household_{huis_code}_table.parquet"
+        mapped_folder_path, f"household_{household_id}_table.parquet"
     )
     logging.info(
         f"[run_standard_pipeline] {ctx}Processing household -> {new_file_path}"
@@ -1918,15 +1911,15 @@ def run_standard_pipeline(
     # 10. Save via the single format-aware primitive (sharded default; flat is
     #     the legacy escape hatch)
     # ------------------------------------------------------------------
-    saved_path = save_mapped_household(df, huis_code, mapped_folder_path)
+    saved_path = save_mapped_household(df, household_id, mapped_folder_path)
     logging.info(
         f"[run_standard_pipeline] {ctx}Saved to {saved_path} "
         f"({len(df)} rows, {len(df.columns)} columns)"
     )
 
     return {
-        "HuisIdLeverancier": huis_id,
-        "HuisIdBSV": huis_code,
+        "HuisIdLeverancier": household_id_supplier,
+        "HuisIdBSV": household_id,
         "_validation_summary": {
             "flags": flag_counts,
             "thresholds": threshold_counts,

@@ -107,16 +107,17 @@ project_mapping_csv_path = Option(
     callback=None,
 )
 
-huisbatch_csv_path = Option(
-    key="huisbatch_csv_path",
+household_batch_csv_path = Option(
+    key="household_batch_csv_path",
     default_value=None,
     doc=(
         "Path to the synced HuisBatch table CSV: one row per household batch "
         "with HuisIdBSV, HuisBatchIdBSV, BatchIdBSV, Meenemen, "
         "Gegevensfrequentie, Leverancierfrequentie, Startdatum and Einddatum. "
         "The project's data-management tooling produces this file; "
-        "save_index_to_parquet reads it to build batch_index.parquet. When "
-        "unset or missing, the batch registry file is skipped with a warning."
+        "save_index_to_parquet reads it to populate the household-batch "
+        "columns of index.parquet. When unset or missing, those columns are "
+        "omitted with a warning."
     ),
     validator=None,
     callback=None,
@@ -147,7 +148,7 @@ options = Options(
         "etdmodel_csv_path": etdmodel_csv_path,
         "supplier_mapping_csv_path": supplier_mapping_csv_path,
         "project_mapping_csv_path": project_mapping_csv_path,
-        "huisbatch_csv_path": huisbatch_csv_path,
+        "household_batch_csv_path": household_batch_csv_path,
         "mapped_output_format": mapped_output_format,
     }
 )

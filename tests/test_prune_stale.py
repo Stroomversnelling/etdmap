@@ -1,14 +1,13 @@
 """
-TDD (red-first) contract for the KNOWN-stale household prune helpers.
+Contract tests for the known-stale household prune helpers.
 
-"Known stale" = a household output whose id is NOT in the current authoritative
-set (from index / batch_index). We remove ONLY those, keep everything in the set,
-and never touch anything that does not match the household naming pattern. Each
-removal is returned in a manifest (delete-with-manifest, not a blanket glob-delete,
-and not a retire -- the user chose delete-with-manifest for these known-stale ones).
+"Known stale" = a household output whose id is NOT in the current
+authoritative set (from the registry index). Only those are
+removed; everything in the set is kept, and anything that does not match the
+household naming pattern is never touched. Each removal is returned in a
+manifest -- delete-with-manifest, not a blanket glob-delete.
 
-Two helpers -- flat mapped files and sharded shards (the user chose both scopes).
-Neither exists yet -> red at import until they land.
+Two helpers: flat mapped files and sharded shards.
 """
 
 import pandas as pd  # noqa: F401  (ensures etdmap import env is consistent)
@@ -32,7 +31,7 @@ class TestPruneStaleFlat:
         _touch(tmp_path / "index.parquet")      # must NOT be touched
         _touch(tmp_path / "notes.txt")          # unrelated; must NOT be touched
 
-        removed = prune_stale_household_files(tmp_path, keep_huis_ids={1, 2})
+        removed = prune_stale_household_files(tmp_path, keep_household_ids={1, 2})
 
         assert not (tmp_path / "household_3_table.parquet").exists()
         assert (tmp_path / "household_1_table.parquet").exists()
@@ -44,13 +43,13 @@ class TestPruneStaleFlat:
     def test_nothing_removed_when_all_kept(self, tmp_path):
         for n in (1, 2):
             _touch(tmp_path / f"household_{n}_table.parquet")
-        removed = prune_stale_household_files(tmp_path, keep_huis_ids={1, 2})
+        removed = prune_stale_household_files(tmp_path, keep_household_ids={1, 2})
         assert removed == []
 
 
 class TestPruneStaleShards:
-    def _make_shard(self, root, huis_id, huis_batch_id):
-        _touch(root / f"HuisIdBSV={huis_id}" / f"HuisBatchIdBSV={huis_batch_id}" / "part.parquet")
+    def _make_shard(self, root, household_id, household_batch_id):
+        _touch(root / f"HuisIdBSV={household_id}" / f"HuisBatchIdBSV={household_batch_id}" / "part.parquet")
 
     def test_removes_only_unknown_pairs(self, tmp_path):
         for n in (1, 2, 3):

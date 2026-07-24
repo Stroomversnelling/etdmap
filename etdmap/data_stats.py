@@ -377,14 +377,14 @@ def _cast_stats_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 # Per-entity collectors
 # ---------------------------------------------------------------------------
 
-def collect_mapped_data_stats(huis_id_bsv, seasonal=False, seasons=None):
+def collect_mapped_data_stats(household_id, seasonal=False, seasons=None):
     """
     Collect statistics for each column in the DataFrame corresponding to a
     specific HuisIdBSV.
 
     Parameters
     ----------
-    huis_id_bsv : str or int
+    household_id : str or int
         The identifier for the household to process.
     seasonal : bool, optional
         If True, emit one row per (HuisIdBSV, numeric column, season) where
@@ -403,10 +403,10 @@ def collect_mapped_data_stats(huis_id_bsv, seasonal=False, seasons=None):
         Stats dicts produced by collect_column_stats, each with an extra
         'season' key.
     """
-    logging.info(f"Processing stats from columns where HuisIdBSV = {huis_id_bsv}")
+    logging.info(f"Processing stats from columns where HuisIdBSV = {household_id}")
     file_summary_data = []
     try:
-        df = get_mapped_data(huis_id_bsv)
+        df = get_mapped_data(household_id)
         # Fill in any Hoog/Laag tariff-pair root columns that are missing
         # or empty so downstream stats compare projects on the root name
         # apples-to-apples regardless of how a supplier reports the data.
@@ -419,12 +419,12 @@ def collect_mapped_data_stats(huis_id_bsv, seasonal=False, seasons=None):
                     or pd.api.types.is_bool_dtype(col_data)
                 ):
                     continue
-                stats = collect_column_stats(huis_id_bsv, col_data)
+                stats = collect_column_stats(household_id, col_data)
                 stats["season"] = season
                 file_summary_data.append(stats)
     except Exception as e:
         logging.error(
-            f"Failed to process stats from columns where HuisIdBSV = {huis_id_bsv}: {str(e)}",
+            f"Failed to process stats from columns where HuisIdBSV = {household_id}: {str(e)}",
             exc_info=True,
         )
 
@@ -565,9 +565,9 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
                 results = executor.map(worker, index_df["HuisIdBSV"])
                 summary_data = [item for sublist in results for item in sublist]
         else:
-            for huis_id in index_df["HuisIdBSV"]:
-                logging.info(f"Collecting stats for HuisIdBSV = {huis_id}")
-                summary_data.extend(worker(huis_id))
+            for household_id in index_df["HuisIdBSV"]:
+                logging.info(f"Collecting stats for HuisIdBSV = {household_id}")
+                summary_data.extend(worker(household_id))
         df = pd.DataFrame(summary_data)
         df = _cast_stats_dtypes(df)
         # Shape-stable schema (see docstring): copy the mode-driver

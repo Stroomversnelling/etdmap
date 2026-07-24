@@ -67,10 +67,10 @@ etdmap.options.bsv_metadata_file = 'filepath_of_bsv_metadata'  # combined BSV/ET
 etdmap.options.aggregate_folder_path = 'aggregate_folder_path'  # folder where aggregated files are stored
 
 # Optional (enables the household-batch registry, see below):
-etdmap.options.huisbatch_csv_path = 'filepath_of_huisbatch_csv'  # synced household-batch table
+etdmap.options.household_batch_csv_path = 'filepath_of_household_batch_csv'  # synced household-batch table
 ```
 
-The first time raw files are mapped, a new index is generated (or an existing one is updated) and every household receives an auto-generated `HuisIdBSV`. The BSV metadata file links those ids to additional metadata, such as the `ProjectIdBSV` that assigns households to projects and the `Meenemen` boolean that marks which households should be included in analysis (`True`) or excluded (`False`). `Meenemen` starts **empty** when a household is first mapped: a researcher reviews the mapped data afterwards and records the decision in the project's metadata administration, from where it reaches the metadata file at the next sync. Aggregation steps only include households with `Meenemen = True`, so an unreviewed household is never silently analysed. Some reasons to exclude a household may be:
+The first time raw files are mapped, a new index is generated (or an existing one is updated) and every household receives an auto-generated `HuisIdBSV`. The BSV metadata file links those ids to additional metadata, such as the `ProjectIdBSV` that assigns households to projects and the `Meenemen` boolean that marks whether a delivered batch of household data should be included in analysis (`True`) or excluded (`False`). `Meenemen` is a property of the household batch, not the household (see "Households, batches, and the registry" below). It starts **empty** when a household is first mapped: a researcher reviews the mapped data afterwards and records the decision in the project's metadata administration, from where it reaches the metadata file at the next sync. Aggregation steps only include data with `Meenemen = True`, so an unreviewed delivery is never silently analysed. Some reasons to exclude a household may be:
 
 - By request from the data supplier
 - Due to missing data that could skew analyses or is insufficient
@@ -218,28 +218,26 @@ re-delivery at a different measurement frequency -- and each delivery can have
 its own period, its own frequency (`Gegevensfrequentie`) and its own quality
 review.
 
-The registry is stored as two files that are always written together by
-`save_index_to_parquet()`:
-
-- `index.parquet` -- one row per household (`HuisIdBSV`). This is the
-  original index and remains the reference for tools that work per household.
-- `batch_index.parquet` -- one row per household batch (`HuisBatchIdBSV`),
-  carrying the batch fields: `BatchIdBSV`, `Meenemen`, `Gegevensfrequentie`,
-  `Leverancierfrequentie`, `Startdatum` and `Einddatum`.
+The registry is a single file, `index.parquet`, written by
+`save_index_to_parquet()`. It holds one row per household batch
+(`HuisBatchIdBSV`), carrying the household columns (`HuisIdBSV`,
+`HuisIdLeverancier`, `ProjectIdBSV`, `Meenemen`, validation flags, ...) plus
+the batch fields: `BatchIdBSV`, `Gegevensfrequentie`, `Leverancierfrequentie`,
+`Startdatum` and `Einddatum`.
 
 Ids are always assigned locally by this library, never by external tooling.
 The batch fields come from a synced household-batch table (a CSV whose path
-is configured as `etdmap.options.huisbatch_csv_path`); households that do not
-have a row in that table yet are *pending*: they stay in the registry with
-empty batch fields, and a paste-ready `pending_huisbatch_additions.csv` is
-written to help add them. Because both files are written from the same state
-in the same call, they cannot disagree.
+is configured as `etdmap.options.household_batch_csv_path`); households that do
+not have a row in that table yet are *pending*: they stay in the registry with
+empty batch fields, and a paste-ready `pending_household_batch_additions.csv`
+is written to help add them.
 
-As long as every household has exactly one batch, `HuisBatchIdBSV` equals
-`HuisIdBSV` and the two files describe the same set of rows. The moment a
-household appears in a second batch, functions that assume one file or one
-row per household raise `HuisBatchOverlapError` rather than mixing data from
-different deliveries.
+In the data model households are not unique across batches, and `Meenemen`
+and the other batch fields belong to the household batch, not the household.
+A household appearing in more than one batch is not supported yet: today
+`HuisBatchIdBSV` equals `HuisIdBSV` and there is one row per household, and
+functions that assume one row or one file per household raise
+`HuisBatchOverlapError` rather than mixing data from different deliveries.
 
 ## Storage layouts
 

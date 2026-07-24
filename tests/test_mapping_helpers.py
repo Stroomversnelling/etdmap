@@ -78,17 +78,25 @@ class TestRearrangeModelColumns:
         for col in model_cols_except_reading_date:
             assert result[col].isna().all(), f"Newly added column '{col}' should be all NA"
 
-    def test_extra_columns_appended_at_end(self):
+    def test_unmapped_supplier_columns_are_dropped(self):
+        """Mapped output carries the data model, not whatever the supplier sent."""
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range("2023-01-01", periods=2, freq="5min"),
+            "CustomSupplierCol": [1, 2],
+            "alklimaHeatPump_firmware_version": [3, 4],
+            "nan [nan]": [5, 6],
+        })
+        result = rearrange_model_columns(df, add_columns=True)
+        assert set(result.columns) == set(model_column_order)
+
+    def test_unmapped_dropped_when_add_columns_false(self):
         df = pd.DataFrame({
             "ReadingDate": pd.date_range("2023-01-01", periods=2, freq="5min"),
             "CustomSupplierCol": [1, 2],
         })
-        result = rearrange_model_columns(df, add_columns=True)
-        assert "CustomSupplierCol" in result.columns
-        # Extra column should appear after all model columns
-        model_end = max(result.columns.tolist().index(c) for c in model_column_order if c in result.columns)
-        extra_idx = result.columns.tolist().index("CustomSupplierCol")
-        assert extra_idx > model_end
+        result = rearrange_model_columns(df, add_columns=False)
+        assert "CustomSupplierCol" not in result.columns
+        assert list(result.columns) == ["ReadingDate"]
 
     def test_add_columns_false_keeps_only_present_model_cols(self):
         df = pd.DataFrame({"ReadingDate": pd.date_range("2023-01-01", periods=2, freq="5min")})
@@ -454,9 +462,9 @@ class TestCombineSourceColumns:
 
 
 class TestRunStandardPipeline:
-    """Characterizes the LEGACY flat mapping output, so the flat mode is pinned
-    explicitly (the default mapped_output_format is 'sharded' since the
-    refactor; sharded behaviour is covered in test_sharded_mapping.py)."""
+    """Characterizes the flat (one file per household) mapping output. The
+    default mapped_output_format is 'sharded', so flat is pinned explicitly
+    here; sharded behaviour is covered in test_sharded_mapping.py."""
 
     @pytest.fixture(autouse=True)
     def _flat_output_format(self):
@@ -469,17 +477,17 @@ class TestRunStandardPipeline:
     def test_raises_key_error_when_no_reading_date(self, tmp_path):
         df = pd.DataFrame({"SomeCol": [1, 2, 3]})
         with pytest.raises(KeyError, match="ReadingDate"):
-            run_standard_pipeline(df, huis_code=1, huis_id="HuisA", mapped_folder_path=tmp_path)
+            run_standard_pipeline(df, household_id=1, household_id_supplier="HuisA", mapped_folder_path=tmp_path)
 
     def test_raises_value_error_when_reading_date_unparseable(self, tmp_path):
         df = pd.DataFrame({"ReadingDate": ["bad", "also-bad"]})
         with pytest.raises((ValueError, Exception)):
-            run_standard_pipeline(df, huis_code=1, huis_id="HuisA", mapped_folder_path=tmp_path)
+            run_standard_pipeline(df, household_id=1, household_id_supplier="HuisA", mapped_folder_path=tmp_path)
 
     def test_saves_parquet_and_returns_entry(self, tmp_path):
         """End-to-end smoke test: pipeline writes a file and returns the index entry."""
         df = _minimal_pipeline_df(n=12)
-        result = run_standard_pipeline(df, huis_code=42, huis_id="HuisX", mapped_folder_path=tmp_path)
+        result = run_standard_pipeline(df, household_id=42, household_id_supplier="HuisX", mapped_folder_path=tmp_path)
         result.pop("_validation_summary", None)
         assert result == {"HuisIdLeverancier": "HuisX", "HuisIdBSV": 42}
         out_file = tmp_path / "household_42_table.parquet"
@@ -489,14 +497,14 @@ class TestRunStandardPipeline:
         """Rows must be in ascending ReadingDate order in the saved file."""
         df = _minimal_pipeline_df(n=6)
         df = df.iloc[::-1].reset_index(drop=True)  # reverse the order
-        run_standard_pipeline(df, huis_code=1, huis_id="H", mapped_folder_path=tmp_path)
+        run_standard_pipeline(df, household_id=1, household_id_supplier="H", mapped_folder_path=tmp_path)
         out = pd.read_parquet(tmp_path / "household_1_table.parquet")
         assert (out["ReadingDate"].diff().dropna() >= pd.Timedelta(0)).all()
 
     def test_output_has_model_columns(self, tmp_path):
         """Output parquet must contain all model columns."""
         df = _minimal_pipeline_df(n=6)
-        run_standard_pipeline(df, huis_code=2, huis_id="H2", mapped_folder_path=tmp_path)
+        run_standard_pipeline(df, household_id=2, household_id_supplier="H2", mapped_folder_path=tmp_path)
         out = pd.read_parquet(tmp_path / "household_2_table.parquet")
         for col in model_column_order:
             assert col in out.columns, f"Model column '{col}' missing from output"
@@ -1237,3 +1245,33 @@ class TestApplyThresholds:
         assert out["X"].isna().tolist() == [False, True, False]
         assert stats["X"]["n_above"] == 1
         assert stats["X"]["max_removed"] == 5.0
+
+
+class TestPipelineDropsUnmappedColumns:
+    """End-to-end: run_standard_pipeline must not write unmapped columns, but
+    must still write its derived Diff and validate_* columns."""
+
+    @pytest.fixture(autouse=True)
+    def _flat_output_format(self):
+        import etdmap
+        prev = etdmap.options.mapped_output_format
+        etdmap.options.mapped_output_format = "flat"
+        yield
+        etdmap.options.mapped_output_format = prev
+
+    def test_unmapped_dropped_derived_kept(self, tmp_path):
+        df = _minimal_pipeline_df(n=12)
+        df["alklimaHeatPump_holiday"] = pd.array([1] * 12, dtype="Int64")
+        df["nan [nan]"] = pd.array([0] * 12, dtype="Int64")
+
+        run_standard_pipeline(
+            df, household_id=77, household_id_supplier="H77",
+            mapped_folder_path=tmp_path,
+        )
+        out = pd.read_parquet(tmp_path / "household_77_table.parquet")
+
+        assert "alklimaHeatPump_holiday" not in out.columns
+        assert "nan [nan]" not in out.columns
+        # the pipeline's own derived columns are added after the drop
+        assert any(c.endswith("Diff") for c in out.columns)
+        assert any(c.startswith("validate_") for c in out.columns)

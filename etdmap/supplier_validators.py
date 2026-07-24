@@ -38,7 +38,7 @@ def _project_id_matches(proj_id_cell: str, project_id: str) -> bool:
     return project_id in [p.strip() for p in str(proj_id_cell).split(",")]
 
 
-def _build_column_index(
+def _build_column_map(
     mapping_df: pd.DataFrame,
     supplier: str,
     project_id: str,
@@ -49,11 +49,11 @@ def _build_column_index(
     Matches rows by Dataleverancier == supplier AND ProjectIdBSV containing project_id.
     If project_id is None, matches all rows for the supplier regardless of project.
 
-    Returns {variabele: {"meenemen": float|None, "bsv": str|None}}
+    Returns {source_variable: {"include": float|None, "target_variable": str|None}}
     for all rows matching (supplier, project_id).
     Multiple rows for the same Variabele are not expected; the last one wins.
     """
-    index = {}
+    column_map = {}
     for _, row in mapping_df.iterrows():
         if row.get("Dataleverancier") != supplier:
             continue
@@ -61,25 +61,31 @@ def _build_column_index(
             if not _project_id_matches(row.get("ProjectIdBSV", ""), project_id):
                 continue
 
-        variabele = str(row.get("Variabele", "")).strip()
-        if not variabele:
+        source_variable = str(row.get("Variabele", "")).strip()
+        if not source_variable:
             continue
 
         raw_meenemen = row.get("Mapping_Meenemen", None)
         if pd.isna(raw_meenemen) or str(raw_meenemen).strip() == "":
-            meenemen = None
+            include = None
         else:
             try:
-                meenemen = float(raw_meenemen)
+                include = float(raw_meenemen)
             except (ValueError, TypeError):
-                meenemen = None
+                include = None
 
-        bsv = row.get("Mapping_VariabeleBSV", None)
-        bsv = None if (pd.isna(bsv) or str(bsv).strip() == "") else str(bsv).strip()
+        target_variable = row.get("Mapping_VariabeleBSV", None)
+        target_variable = (
+            None if (pd.isna(target_variable) or str(target_variable).strip() == "")
+            else str(target_variable).strip()
+        )
 
-        index[variabele] = {"meenemen": meenemen, "bsv": bsv}
+        column_map[source_variable] = {
+            "include": include,
+            "target_variable": target_variable,
+        }
 
-    return index
+    return column_map
 
 
 def validate_mapping_coverage(
@@ -115,7 +121,7 @@ def validate_mapping_coverage(
     """
     skip = set(skip_columns) if skip_columns else set()
     mapping_df = _load_mapping_df(csv_path)
-    col_index = _build_column_index(mapping_df, supplier, project_id)
+    column_map = _build_column_map(mapping_df, supplier, project_id)
 
     errors = []
     project_label = f"ProjectIdBSV={project_id!r}" if project_id is not None else "all projects"
@@ -127,7 +133,7 @@ def validate_mapping_coverage(
             )
             continue
 
-        if col not in col_index:
+        if col not in column_map:
             errors.append(
                 f"Column '{col}' ({project_label}): not found in mapping CSV for "
                 f"supplier '{supplier}'. Add a row to the DatamodelLeverancier table "
@@ -139,33 +145,34 @@ def validate_mapping_coverage(
             )
             continue
 
-        entry = col_index[col]
-        meenemen = entry["meenemen"]
-        bsv = entry["bsv"]
+        entry = column_map[col]
+        include = entry["include"]
+        target_variable = entry["target_variable"]
 
-        if meenemen is None:
+        if include is None:
             errors.append(
                 f"Column '{col}' ({project_label}): Mapping_Meenemen is empty. "
                 f"Set to 1 (include with BSV target) or 0 (explicitly exclude)."
             )
-        elif meenemen == 1.0:
-            if bsv is None:
+        elif include == 1.0:
+            if target_variable is None:
                 errors.append(
                     f"Column '{col}' ({project_label}): Mapping_Meenemen=1 but "
                     f"Mapping_VariabeleBSV is empty. Add the BSV target column name."
                 )
             else:
                 logging.debug(
-                    f"[validate_mapping_coverage] '{col}' -> '{bsv}' (finalized). OK."
+                    f"[validate_mapping_coverage] '{col}' -> '{target_variable}' "
+                    f"(finalized). OK."
                 )
-        elif meenemen == 0.0:
+        elif include == 0.0:
             logging.debug(
                 f"[validate_mapping_coverage] '{col}' explicitly excluded "
                 f"(Mapping_Meenemen=0). OK."
             )
         else:
             errors.append(
-                f"Column '{col}' ({project_label}): Mapping_Meenemen={meenemen} "
+                f"Column '{col}' ({project_label}): Mapping_Meenemen={include} "
                 f"is not a valid value. Use 1 (include) or 0 (exclude)."
             )
 
