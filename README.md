@@ -33,14 +33,16 @@ The dataset includes two primary types of variables:
 |                  | `TemperatuurWoonkamer`        | Number     | Current living room temperature in degrees Celsius.          |
 |                  | `Zon-opwekTotaal`             | Number     | Total solar energy generated (kWh, cumulative).              |
 
-This categorization ensures the dataset is comprehensive for energy-related policy and planning while maintaining clarity for data contributors and users.
+This categorization ensures the dataset is comprehensive for energy-related policy and planning while maintaining clarity for data contributors and users. Future data models are likely to add further category breakdowns, perhaps including district heating, weather data and other categories and data types.
 
 See the section on data processing and mapping to learn more about how to access this metadata in a python script.
 
-There are two levels of data ultimately used:
+There are two levels of data ultimately used in analysis:
 
 - data for a connected unit in the built environment, such as a household or, perhaps in the future, a charging point, and
 - project level data, an aggregated collection of network connected units with similar characteristics.
+
+Each data set is provided under a "batch" to be able to differentiate different types of datasets and also to be able to submit data at different times from the same source and about the same unit, e.g. households. These datasets may or may not have overlapping data ranges and may share some or all columns. Within each "batch", there will be one or more unique datasets, e.g. one per household. The household batch table contains one record per unit/household in each batch. 
 
 # Installation and quick start
 
@@ -66,11 +68,11 @@ etdmap.options.mapped_folder_path = 'mapped_folder_path'  # folder where mapped 
 etdmap.options.bsv_metadata_file = 'filepath_of_bsv_metadata'  # combined BSV/ETD metadata file (not supplier metadata)
 etdmap.options.aggregate_folder_path = 'aggregate_folder_path'  # folder where aggregated files are stored
 
-# Optional (enables the household-batch registry, see below):
+# Enables the household-batch table and fields - in the future this will be required due to the new data model - it is optional at the moment to still allow legacy datasets :
 etdmap.options.household_batch_csv_path = 'filepath_of_household_batch_csv'  # synced household-batch table
 ```
 
-The first time raw files are mapped, a new index is generated (or an existing one is updated) and every household receives an auto-generated `HuisIdBSV`. The BSV metadata file links those ids to additional metadata, such as the `ProjectIdBSV` that assigns households to projects and the `Meenemen` boolean that marks whether a delivered batch of household data should be included in analysis (`True`) or excluded (`False`). `Meenemen` is a property of the household batch, not the household (see "Households, batches, and the registry" below). It starts **empty** when a household is first mapped: a researcher reviews the mapped data afterwards and records the decision in the project's metadata administration, from where it reaches the metadata file at the next sync. Aggregation steps only include data with `Meenemen = True`, so an unreviewed delivery is never silently analysed. Some reasons to exclude a household may be:
+The first time raw files are mapped, a new index is generated (or an existing one is updated) and every household receives an auto-generated  id, e.g. `HuisIdBSV`. The BSV metadata file links those ids to additional metadata, such as the `ProjectIdBSV` that assigns households to projects and the `Meenemen` boolean that marks whether a delivered batch of data from a particular household/unit should be included in analysis (`True`) or excluded (`False`). `Meenemen` is a property of the household batch, not the household (see "Households, batches, and the index" below). It starts **empty** when a household is first mapped: a researcher reviews the mapped data afterwards and records the decision in the project's metadata administration, from where it reaches the metadata file at the next sync. Aggregation steps only include data with `Meenemen = True`, so an unreviewed delivery is never silently analysed. Some reasons to exclude a household may be:
 
 - By request from the data supplier
 - Due to missing data that could skew analyses or is insufficient
@@ -207,7 +209,7 @@ From `index_helpers.py`:
    - **Purpose**: Adds metadata columns to the index.
    - **Description**: Updates the index with additional metadata from the supplier, matching on the HuisIdLeverancier column.
 
-## Households, batches, and the registry
+## Households, batches, and the index
 
 A **batch** is one delivery of data: a set of households supplied together,
 covering a real period (`Startdatum` to `Einddatum`). A **household batch**
@@ -218,17 +220,17 @@ re-delivery at a different measurement frequency -- and each delivery can have
 its own period, its own frequency (`Gegevensfrequentie`) and its own quality
 review.
 
-The registry is a single file, `index.parquet`, written by
+The index is a single file, `index.parquet`, written by
 `save_index_to_parquet()`. It holds one row per household batch
 (`HuisBatchIdBSV`), carrying the household columns (`HuisIdBSV`,
 `HuisIdLeverancier`, `ProjectIdBSV`, `Meenemen`, validation flags, ...) plus
 the batch fields: `BatchIdBSV`, `Gegevensfrequentie`, `Leverancierfrequentie`,
 `Startdatum` and `Einddatum`.
 
-Ids are always assigned locally by this library, never by external tooling.
+Ids are always assigned locally by this library, not by external tooling except in exceptional carefully checked fashion.
 The batch fields come from a synced household-batch table (a CSV whose path
 is configured as `etdmap.options.household_batch_csv_path`); households that do
-not have a row in that table yet are *pending*: they stay in the registry with
+not have a row in that table yet are *pending*: they stay in the index with
 empty batch fields, and a paste-ready `pending_household_batch_additions.csv`
 is written to help add them.
 
@@ -237,13 +239,13 @@ and the other batch fields belong to the household batch, not the household.
 A household appearing in more than one batch is not supported yet: today
 `HuisBatchIdBSV` equals `HuisIdBSV` and there is one row per household, and
 functions that assume one row or one file per household raise
-`HuisBatchOverlapError` rather than mixing data from different deliveries.
+`HouseBatchOverlapError` rather than mixing data from different deliveries.
 
 ## Storage layouts
 
 Mapped household data is stored in one of two layouts:
 
-- **flat**: one parquet file per household,
+- **flat (deprecated)**: one parquet file per household,
   `household_<HuisIdBSV>_table.parquet`.
 - **sharded** (the default for new output): a partitioned folder tree in
   which the directory names carry the ids --

@@ -45,7 +45,7 @@ def test_already_on_grid_is_unchanged():
     """Timestamps already on grid boundaries pass through unmodified."""
     df = pd.DataFrame({
         "ReadingDate": [slot(0), slot(1), slot(2)],
-        "val": [1.0, 2.0, 3.0],
+        "val": pd.array([1.0, 2.0, 3.0], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 
@@ -57,7 +57,7 @@ def test_uniform_offset_snaps_to_grid():
     """All rows with the same constant offset snap correctly to their nearest slot."""
     df = pd.DataFrame({
         "ReadingDate": [at(0, 22), at(1, 22), at(2, 22)],
-        "val": [1.0, 2.0, 3.0],
+        "val": pd.array([1.0, 2.0, 3.0], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 
@@ -69,7 +69,7 @@ def test_single_row():
     """Single-row input returns exactly one row with the snapped timestamp."""
     df = pd.DataFrame({
         "ReadingDate": [at(0, 22)],
-        "val": [42.0],
+        "val": pd.array([42.0], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 
@@ -87,7 +87,7 @@ def test_output_row_count_equals_unique_slots():
             slot(1), at(1, 22),
             slot(2), at(2, 22),
         ],
-        "val": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        "val": pd.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 
@@ -109,8 +109,10 @@ def test_two_stream_merge_non_overlapping_columns():
     n = 4
     df = pd.DataFrame({
         "ReadingDate": [at(i, 22) for i in range(n)] + [slot(i) for i in range(n)],
-        "col_a": [float(i) for i in range(n)] + [None] * n,        # +22s stream only
-        "col_b": [None] * n + [float(i * 10) for i in range(n)],   # +0s stream only
+        # +22s stream only
+        "col_a": pd.array([float(i) for i in range(n)] + [pd.NA] * n, dtype="Float64"),
+        # +0s stream only
+        "col_b": pd.array([pd.NA] * n + [float(i * 10) for i in range(n)], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 
@@ -152,18 +154,20 @@ def test_two_stream_kpass_modal_picks_correct_row():
     df = pd.DataFrame({
         "ReadingDate": clean_22 + clean_0 + cont_22 + cont_0,
         # col_a: correct in +22s stream, sentinel 99.0 in +0s contested rows
-        "col_a": (
+        "col_a": pd.array(
             [float(i + 1) for i in range(n_regular)]   # clean +22s: correct
-            + [None] * n_regular                         # clean +0s:  NA
+            + [pd.NA] * n_regular                        # clean +0s:  NA
             + [10.0, 20.0]                               # contested +22s: correct
-            + [99.0] * n_contested                       # contested +0s: sentinel
+            + [99.0] * n_contested,                      # contested +0s: sentinel
+            dtype="Float64",
         ),
         # col_b: correct in +0s stream, sentinel 99.0 in +22s contested rows
-        "col_b": (
-            [None] * n_regular                                       # clean +22s: NA
+        "col_b": pd.array(
+            [pd.NA] * n_regular                                      # clean +22s: NA
             + [float((i + 1) * 10) for i in range(n_regular)]       # clean +0s: correct
             + [99.0] * n_contested                                   # contested +22s: sentinel
-            + [100.0, 200.0]                                         # contested +0s: correct
+            + [100.0, 200.0],                                        # contested +0s: correct
+            dtype="Float64",
         ),
     })
     result = snap_readings_to_grid(df)
@@ -197,9 +201,13 @@ def test_three_stream_merge_k_equals_3():
             + [at(i, 22) for i in range(n)]
             + [at(i, 45) for i in range(n)]
         ),
-        "col_0":  [float(i) for i in range(n)] + [None] * (n * 2),
-        "col_22": [None] * n + [float(i * 10) for i in range(n)] + [None] * n,
-        "col_45": [None] * (n * 2) + [float(i * 100) for i in range(n)],
+        "col_0": pd.array(
+            [float(i) for i in range(n)] + [pd.NA] * (n * 2), dtype="Float64"),
+        "col_22": pd.array(
+            [pd.NA] * n + [float(i * 10) for i in range(n)] + [pd.NA] * n,
+            dtype="Float64"),
+        "col_45": pd.array(
+            [pd.NA] * (n * 2) + [float(i * 100) for i in range(n)], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 
@@ -227,9 +235,9 @@ def test_irregular_timing_single_value_per_column_per_slot():
     offsets_s = [10, 60, 120, 310, 360, 430]
     df = pd.DataFrame({
         "ReadingDate": [T0 + pd.Timedelta(seconds=s) for s in offsets_s],
-        "col_a": [1.0, None, None, 2.0, None, None],
-        "col_b": [None, 10.0, None, None, 20.0, None],
-        "col_c": [None, None, 100.0, None, None, 200.0],
+        "col_a": pd.array([1.0, pd.NA, pd.NA, 2.0, pd.NA, pd.NA], dtype="Float64"),
+        "col_b": pd.array([pd.NA, 10.0, pd.NA, pd.NA, 20.0, pd.NA], dtype="Float64"),
+        "col_c": pd.array([pd.NA, pd.NA, 100.0, pd.NA, pd.NA, 200.0], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 
@@ -257,7 +265,7 @@ def test_irregular_timing_modal_wins_with_competing_values():
     contested = n_regular
     df = pd.DataFrame({
         "ReadingDate": regular_times + [at(contested, 22), at(contested, 30)],
-        "col_a": regular_vals + [10.0, 99.0],
+        "col_a": pd.array(regular_vals + [10.0, 99.0], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 
@@ -277,8 +285,8 @@ def test_all_na_column_does_not_crash():
     """
     df = pd.DataFrame({
         "ReadingDate": [slot(0), slot(1), slot(2)],
-        "good_col":  [1.0, 2.0, 3.0],
-        "empty_col": [None, None, None],
+        "good_col":  pd.array([1.0, 2.0, 3.0], dtype="Float64"),
+        "empty_col": pd.array([pd.NA, pd.NA, pd.NA], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 
@@ -295,7 +303,7 @@ def test_non_numeric_column_passes_through():
     df = pd.DataFrame({
         "ReadingDate": [slot(0), at(0, 22), slot(1), at(1, 22)],
         "label": pd.array(["A", pd.NA, "B", pd.NA], dtype="string"),
-        "num":   [None, 1.0, None, 2.0],
+        "num":   pd.array([pd.NA, 1.0, pd.NA, 2.0], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 
@@ -308,7 +316,7 @@ def test_custom_date_column_name():
     """The function respects a non-default date column name."""
     df = pd.DataFrame({
         "Timestamp": [slot(0), slot(1)],
-        "val": [1.0, 2.0],
+        "val": pd.array([1.0, 2.0], dtype="Float64"),
     })
     result = snap_readings_to_grid(df, date_column="Timestamp")
 
@@ -328,7 +336,7 @@ def test_freq_minutes_parameter():
             T0 + pd.Timedelta(minutes=5),
             T0 + pd.Timedelta(minutes=7),
         ],
-        "val": [1.0, 2.0, 3.0],
+        "val": pd.array([1.0, 2.0, 3.0], dtype="Float64"),
     })
     result = snap_readings_to_grid(df, freq_minutes=15)
 
@@ -356,8 +364,10 @@ def test_cumulative_column_stream_consistency():
 
     df = pd.DataFrame({
         "ReadingDate": [at(i, 22) for i in range(n)] + [slot(i) for i in range(n)],
-        "ElektriciteitCum": cum_values + [None] * n,    # present only in +22s stream
-        "OtherCol":         [None] * n + [float(i * 2) for i in range(n)],
+        # present only in +22s stream
+        "ElektriciteitCum": pd.array(cum_values + [pd.NA] * n, dtype="Float64"),
+        "OtherCol": pd.array(
+            [pd.NA] * n + [float(i * 2) for i in range(n)], dtype="Float64"),
     })
     result = snap_readings_to_grid(df)
 

@@ -111,7 +111,7 @@ class TestSourceReadTargets:
 
     def test_absent_households_are_skipped_not_fatal(self, tmp_path):
         """An artifact holds only the households that reached that stage, so a
-        registry-derived request can name households with no data here."""
+        index-derived request can name households with no data here."""
         from etdmap.storage import source_read_targets
         self._artifact(tmp_path, [1])
         targets = source_read_targets(tmp_path, household_ids=[1, 99999])

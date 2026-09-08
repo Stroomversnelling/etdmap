@@ -482,7 +482,7 @@ def mapped_fixtures(raw_data_fixture):
     etdmap.options.bsv_metadata_file = Path(config['etdmap_configuration']['bsv_metadata_file'])
 
     # Fixture HuisBatch sync CSV next to the fixture BSV metadata: the REAL
-    # registry write path (save_index_to_parquet) then populates the
+    # index write path (save_index_to_parquet) then populates the
     # household-batch columns of index.parquet exactly as production does --
     # fixtures exercise production code, no fixture-only derivation.
     # Meenemen is EMPTY here: the researcher adds the rows (ids + batch +
@@ -506,7 +506,7 @@ def mapped_fixtures(raw_data_fixture):
     # reviewed yet, so the BSV metadata the Meenemen stamp reads is a variant
     # of the fixture metadata with the Meenemen values blanked. The option is
     # restored to the reviewed metadata afterwards, so later tests (e.g. the
-    # update_meenemen tests) exercise the review transition -- the suite
+    # update_include tests) exercise the review transition -- the suite
     # covers BOTH states, in lifecycle order.
     _reviewed_metadata = Path(str(etdmap.options.bsv_metadata_file))
     _first_mapping_metadata = _fixtures_dir / "metadata_first_mapping.csv"
@@ -540,10 +540,41 @@ def mapped_fixtures(raw_data_fixture):
     etdmap.index_helpers.add_supplier_metadata_to_index(index_df, metadata_df, data_supplier="etdmap")
 
     # The household-batch columns were written into index.parquet by the
-    # save calls above (single registry write path; the fixture sync CSV
+    # save calls above (single index write path; the fixture sync CSV
     # supplied the batch fields; Meenemen is EMPTY -- the honest
     # first-mapping state). Downstream suites (etdtransform) apply the
     # review step themselves. Restore the option to the REVIEWED metadata so
     # later etdmap tests exercise the review transition.
     etdmap.options.bsv_metadata_file = _reviewed_metadata
     return etdmap.options.mapped_folder_path
+
+# ---------------------------------------------------------------------------
+# No skipped tests (ADR-007). A skip hides a missing prerequisite or an
+# unmet condition as "not run", which reads as green when it is not. This
+# hook turns ANY skip -- pytest.skip(), skip/skipif markers, importorskip --
+# into a hard failure at runtime.
+#
+# THE RULE: if a test is there, you may not write skipping in code. Make the
+# prerequisite available (build the fixture/artifact it needs), or let the
+# test fail so the gap is visible. Do not add pytest.skip.
+# ---------------------------------------------------------------------------
+import os as _os
+import pytest as _pytest
+
+
+@_pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    # Enforcement is OPT-IN via ETD_NO_SKIPS=1, for the FINAL/complete run.
+    # A quick run DURING development may skip; the final run sets the env
+    # var so any skip becomes a hard failure that must be resolved.
+    if report.skipped and _os.environ.get("ETD_NO_SKIPS"):
+        reason = report.longrepr
+        report.outcome = "failed"
+        report.longrepr = (
+            "SKIPS ARE NOT ALLOWED in a final run (ETD_NO_SKIPS=1, ADR-007). If a test is there, you may not "
+            "write skipping in code -- provide the prerequisite it needs or let "
+            "it fail, never skip. "
+            f"Attempted skip: {reason!r}"
+        )

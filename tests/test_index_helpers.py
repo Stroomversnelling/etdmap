@@ -350,7 +350,7 @@ def test_sample_values_equal_expected(mapped_fixtures, load_metadata):
 
 
 # ---------------------------------------------------------------------------
-# update_meenemen(): populates the index `Meenemen` column from BSV metadata,
+# update_include(): populates the index `Meenemen` column from BSV metadata,
 # and is the ADR-002/003 guard (raises on household-key mismatch, key-value
 # mismatch, and any NA Meenemen). Self-contained: builds a tiny aligned index +
 # BSV metadata in tmp_path and points etdmap.options at them via monkeypatch
@@ -358,8 +358,10 @@ def test_sample_values_equal_expected(mapped_fixtures, load_metadata):
 # autouse clean fixture is irrelevant here.
 # ---------------------------------------------------------------------------
 
-def _meenemen_index_df(household_ids, household_ids_supplier, data_supplier="etdmap"):
+# Creates fixtures
+def _include_index_df(household_ids, household_ids_supplier, data_supplier="etdmap"):
     n = len(household_ids)
+    assert n == len(household_ids_supplier)
     df = pd.DataFrame({
         "HuisIdLeverancier": household_ids_supplier,
         "HuisIdBSV": household_ids,
@@ -372,8 +374,10 @@ def _meenemen_index_df(household_ids, household_ids_supplier, data_supplier="etd
     return df.astype(index_helpers.metadata_dtypes)
 
 
-def _meenemen_bsv_df(household_ids, household_ids_supplier, include, data_supplier="etdmap"):
+def _include_bsv_df(household_ids, household_ids_supplier, include, data_supplier="etdmap"):
     n = len(household_ids)
+    assert n == len(household_ids_supplier)
+    assert n == len(include)
     return pd.DataFrame({
         "HuisIdLeverancier": household_ids_supplier,
         "HuisIdBSV": household_ids,
@@ -385,7 +389,7 @@ def _meenemen_bsv_df(household_ids, household_ids_supplier, include, data_suppli
     })
 
 
-def _setup_meenemen(tmp_path, monkeypatch, index_df, bsv_df):
+def _setup_include(tmp_path, monkeypatch, index_df, bsv_df):
     index_df.to_parquet(tmp_path / "index.parquet", engine="pyarrow")
     bsv_path = tmp_path / "bsv.csv"
     bsv_df.to_csv(bsv_path, index=False)
@@ -394,13 +398,13 @@ def _setup_meenemen(tmp_path, monkeypatch, index_df, bsv_df):
 
 
 class TestUpdateMeenemen:
-    def test_happy_path_populates_meenemen(self, tmp_path, monkeypatch):
-        _setup_meenemen(
+    def test_happy_path_populates_include(self, tmp_path, monkeypatch):
+        _setup_include(
             tmp_path, monkeypatch,
-            _meenemen_index_df([1, 2, 3], ["H1", "H2", "H3"]),
-            _meenemen_bsv_df([1, 2, 3], ["H1", "H2", "H3"], [True, False, True]),
+            _include_index_df([1, 2, 3], ["H1", "H2", "H3"]),
+            _include_bsv_df([1, 2, 3], ["H1", "H2", "H3"], [True, False, True]),
         )
-        result = index_helpers.update_meenemen()
+        result = index_helpers.update_include()
         got = dict(zip(result["HuisIdBSV"].tolist(), result["Meenemen"].tolist()))
         assert got == {1: True, 2: False, 3: True}
         assert len(result) == 3
@@ -409,42 +413,42 @@ class TestUpdateMeenemen:
         assert int(on_disk["Meenemen"].isna().sum()) == 0
 
     def test_raises_when_household_missing_in_metadata(self, tmp_path, monkeypatch):
-        _setup_meenemen(
+        _setup_include(
             tmp_path, monkeypatch,
-            _meenemen_index_df([1, 2, 3], ["H1", "H2", "H3"]),
-            _meenemen_bsv_df([1, 2], ["H1", "H2"], [True, False]),
+            _include_index_df([1, 2, 3], ["H1", "H2", "H3"]),
+            _include_bsv_df([1, 2], ["H1", "H2"], [True, False]),
         )
         with pytest.raises(ValueError, match="Household mismatch detected"):
-            index_helpers.update_meenemen()
+            index_helpers.update_include()
 
     def test_raises_when_household_missing_in_index(self, tmp_path, monkeypatch):
-        _setup_meenemen(
+        _setup_include(
             tmp_path, monkeypatch,
-            _meenemen_index_df([1, 2], ["H1", "H2"]),
-            _meenemen_bsv_df([1, 2, 3], ["H1", "H2", "H3"], [True, False, True]),
+            _include_index_df([1, 2], ["H1", "H2"]),
+            _include_bsv_df([1, 2, 3], ["H1", "H2", "H3"], [True, False, True]),
         )
         with pytest.raises(ValueError, match="Household mismatch detected"):
-            index_helpers.update_meenemen()
+            index_helpers.update_include()
 
     def test_raises_on_key_value_mismatch(self, tmp_path, monkeypatch):
         # Same HuisIdBSV set (so the missing-household check passes) but a key
         # column value differs -> reaches and trips the compare/merge branch.
-        _setup_meenemen(
+        _setup_include(
             tmp_path, monkeypatch,
-            _meenemen_index_df([1, 2, 3], ["H1", "H2", "H3"]),
-            _meenemen_bsv_df([1, 2, 3], ["H1", "DIFFERENT", "H3"], [True, False, True]),
+            _include_index_df([1, 2, 3], ["H1", "H2", "H3"]),
+            _include_bsv_df([1, 2, 3], ["H1", "DIFFERENT", "H3"], [True, False, True]),
         )
         with pytest.raises(Exception, match="Mismatching index and bsv metadata values"):
-            index_helpers.update_meenemen()
+            index_helpers.update_include()
 
-    def test_raises_on_na_meenemen(self, tmp_path, monkeypatch):
-        _setup_meenemen(
+    def test_raises_on_na_include(self, tmp_path, monkeypatch):
+        _setup_include(
             tmp_path, monkeypatch,
-            _meenemen_index_df([1, 2, 3], ["H1", "H2", "H3"]),
-            _meenemen_bsv_df([1, 2, 3], ["H1", "H2", "H3"], [True, pd.NA, True]),
+            _include_index_df([1, 2, 3], ["H1", "H2", "H3"]),
+            _include_bsv_df([1, 2, 3], ["H1", "H2", "H3"], [True, pd.NA, True]),
         )
         with pytest.raises(Exception, match="Not all rows in the BSV metadata file have defined Meenemen"):
-            index_helpers.update_meenemen()
+            index_helpers.update_include()
 
 
 if __name__ == "__main__":

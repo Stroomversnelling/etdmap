@@ -1645,8 +1645,8 @@ def save_mapped_household(df, household_id, mapped_folder_path) -> str:
 
 
 _HOUSEHOLD_FILE_RE = re.compile(r"^household_(\d+)_table\.parquet$")
-_HUISID_DIR_RE = re.compile(r"^HuisIdBSV=(\d+)$")
-_HUISBATCHID_DIR_RE = re.compile(r"^HuisBatchIdBSV=(\d+)$")
+_HOUSEID_DIR_RE = re.compile(r"^HuisIdBSV=(\d+)$")
+_HOUSEBATCHID_DIR_RE = re.compile(r"^HuisBatchIdBSV=(\d+)$")
 
 
 def prune_stale_household_files(mapped_folder_path, keep_household_ids):
@@ -1695,7 +1695,7 @@ def prune_stale_household_shards(sharded_folder_path, keep_pairs):
     """
     Delete sharded household partitions whose ``(HuisIdBSV, HuisBatchIdBSV)`` is KNOWN
     stale -- i.e. not in ``keep_pairs`` (the current authoritative set from
-    the registry index).
+    the index).
 
     Only ``HuisIdBSV=<n>/HuisBatchIdBSV=<p>`` partition directories are considered;
     other content is never touched. A ``HuisIdBSV=<n>`` parent is removed once its last
@@ -1721,7 +1721,7 @@ def prune_stale_household_shards(sharded_folder_path, keep_pairs):
     if not os.path.isdir(root):
         return removed
     for hid_name in sorted(os.listdir(root)):
-        hid_m = _HUISID_DIR_RE.match(hid_name)
+        hid_m = _HOUSEID_DIR_RE.match(hid_name)
         if not hid_m:
             continue
         hid_dir = os.path.join(root, hid_name)
@@ -1729,7 +1729,7 @@ def prune_stale_household_shards(sharded_folder_path, keep_pairs):
             continue
         hid = int(hid_m.group(1))
         for hbid_name in sorted(os.listdir(hid_dir)):
-            hbid_m = _HUISBATCHID_DIR_RE.match(hbid_name)
+            hbid_m = _HOUSEBATCHID_DIR_RE.match(hbid_name)
             if not hbid_m:
                 continue
             hbid = int(hbid_m.group(1))

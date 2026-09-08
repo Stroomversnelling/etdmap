@@ -16,6 +16,10 @@ _DTYPE_MAP = {
     "boolean": "boolean",
 }
 
+_YES_NO_CHOICE = frozenset({"ja", "nee"})
+
+peak_offpeak_substrings = ["Hoog", "Laag"]
+
 
 def load_etdmodel() -> pd.DataFrame:
     """
@@ -90,10 +94,7 @@ def load_thresholds_as_dict() -> dict:
     return thresholds_dict
 
 
-_JA_NEE_CHOICE = frozenset({"ja", "nee"})
-
-
-def _validate_ja_nee_column(df: pd.DataFrame, column: str) -> None:
+def _validate_yes_no_column(df: pd.DataFrame, column: str) -> None:
     """Raise ``ValueError`` if ``df[column]`` contains anything other than
     ``"ja"``, ``"nee"``, or empty/NA.
 
@@ -103,7 +104,7 @@ def _validate_ja_nee_column(df: pd.DataFrame, column: str) -> None:
     failure at import time is the right behaviour.
     """
     series = df[column].dropna()
-    bad_mask = ~series.astype(str).isin(_JA_NEE_CHOICE)
+    bad_mask = ~series.astype(str).isin(_YES_NO_CHOICE)
     if bad_mask.any():
         offenders = (
             df.loc[series.index[bad_mask], ["Variabele", column]]
@@ -111,7 +112,7 @@ def _validate_ja_nee_column(df: pd.DataFrame, column: str) -> None:
         )
         raise ValueError(
             f"etdmodel.csv: {column} is a choice field and must be one of "
-            f"{sorted(_JA_NEE_CHOICE)} (or empty). Offending rows: {offenders}. "
+            f"{sorted(_YES_NO_CHOICE)} (or empty). Offending rows: {offenders}. "
             f"Fix the source data model and re-sync."
         )
 
@@ -231,7 +232,7 @@ def _build_derived_structures():
     # something to normalise away. Fail loud at import time so the gap
     # surfaces immediately.
     for _classifier_col in ("Cumulatief", "Momentaan", "Diff"):
-        _validate_ja_nee_column(df, _classifier_col)
+        _validate_yes_no_column(df, _classifier_col)
 
     # Cumulative meter-reading columns.
     # Exclude date-type columns (ReadingDate may be flagged Cumulatief in some
@@ -319,12 +320,16 @@ data_analysis_columns = model_column_order
 # In the future we expect to replace this with explicit metadata about pairs.
 # ---------------------------------------------------------------------------
 
-_TARIFF_RE = re.compile(r"^(?P<root>.+?)(?P<tariff>Hoog|Laag)(?P<suffix>Diff)?$")
+_TARIFF_RE = re.compile(
+    r"^(?P<root>.+?)(?P<tariff>" +
+    "|".join(peak_offpeak_substrings) +
+    r")(?P<suffix>Diff)?$"
+)
 
 
 def _build_tariff_register_pairs() -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
     """
-    Derive Hoog/Laag tariff register pair structures from etdmodel.csv.
+    Derive peak/off-peak tariff register pair structures from etdmodel.csv.
 
     Returns
     -------
@@ -352,12 +357,12 @@ def _build_tariff_register_pairs() -> tuple[dict[str, str], dict[str, tuple[str,
             continue
         root = m.group("root")
         suffix = m.group("suffix") or ""
-        laag_var = f"{root}Laag{suffix}"
-        if laag_var not in variables:
+        off_peak_var = f"{root}{peak_offpeak_substrings[1]}{suffix}"
+        if off_peak_var not in variables:
             continue
-        partners[var] = laag_var
-        partners[laag_var] = var
-        root_to_splits[root + suffix] = (var, laag_var)
+        partners[var] = off_peak_var
+        partners[off_peak_var] = var
+        root_to_splits[root + suffix] = (var, off_peak_var)
 
     return partners, root_to_splits
 

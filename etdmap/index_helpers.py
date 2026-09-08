@@ -49,7 +49,7 @@ metadata_dtypes = {
     "Dataleverancier": pd.StringDtype(),
 }
 
-class HuisBatchOverlapError(ValueError):
+class HouseBatchOverlapError(ValueError):
     """
     Raised when a household (HuisIdBSV) has data in more than one household
     batch (HuisBatchIdBSV) in a context that can only represent one batch per
@@ -64,32 +64,32 @@ class HuisBatchOverlapError(ValueError):
     """
 
 
-def validate_gegevensfrequentie_present(registry_df):
+def validate_data_frequency_present(index_df):
     """
     Raise if a row with Meenemen == True lacks a Gegevensfrequentie.
 
     Included rows enter the pipeline and must be fully specified. Other rows
     may legitimately have NA batch fields: Meenemen starts empty when a
     household is first mapped, and a household may not have its synced
-    HuisBatch row yet. A registry without a Gegevensfrequentie column (an
-    older dataset) passes unchecked.
+    HuisBatch row yet. An index without a Gegevensfrequentie column (an
+    older dataset) is not checked.
     """
-    if "Gegevensfrequentie" not in registry_df.columns:
+    if "Gegevensfrequentie" not in index_df.columns:
         return
-    col = registry_df["Gegevensfrequentie"]
+    col = index_df["Gegevensfrequentie"]
     missing_mask = col.isna() | (col.fillna("").astype(str).str.strip() == "")
-    if "Meenemen" in registry_df.columns:
-        included_mask = registry_df["Meenemen"].fillna(False).astype(bool)
+    if "Meenemen" in index_df.columns:
+        included_mask = index_df["Meenemen"].fillna(False).astype(bool)
         missing_mask = missing_mask & included_mask
     if bool(missing_mask.any()):
         id_col = (
             "HuisBatchIdBSV"
-            if "HuisBatchIdBSV" in registry_df.columns
+            if "HuisBatchIdBSV" in index_df.columns
             else "HuisIdBSV"
         )
         bad = sorted(
             int(h) for h in
-            registry_df.loc[missing_mask, id_col].dropna().tolist()
+            index_df.loc[missing_mask, id_col].dropna().tolist()
         )
         raise ValueError(
             f"Gegevensfrequentie missing for {id_col} {bad} although "
@@ -97,9 +97,9 @@ def validate_gegevensfrequentie_present(registry_df):
         )
 
 
-# Household-batch columns of the registry (one row per HuisBatchIdBSV).
+# Household-batch columns of the index (one row per HuisBatchIdBSV).
 # All nullable pandas dtypes (ADR-005); Startdatum/Einddatum are parsed to
-# tz-aware UTC datetimes when the registry is written.
+# tz-aware UTC datetimes when the index is written.
 batch_field_dtypes = {
     "HuisBatchIdBSV": pd.Int64Dtype(),
     "BatchIdBSV": pd.Int64Dtype(),
@@ -126,9 +126,9 @@ def _parse_synced_datetime(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, utc=True)
 
 
-def _read_meenemen_from_bsv_metadata():
+def _read_include_from_bsv_metadata():
     """
-    HuisIdBSV -> Meenemen from the combined BSV metadata, or None when no
+    HuisIdBSV -> Meenemen (include boolean) from the combined BSV metadata, or None when no
     metadata file is configured or present (legacy and fixture datasets).
 
     Reads ONLY those two columns: the metadata file carries PII columns
@@ -233,7 +233,7 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
 
 def read_index(mapped_folder_path=None) -> tuple[pd.DataFrame, str]:
     """
-    Read the registry index.parquet.
+    Read index.parquet.
 
     One row per household batch (HuisBatchIdBSV). Older datasets carry one
     row per household without the household-batch columns; they are read
@@ -272,7 +272,7 @@ def read_index(mapped_folder_path=None) -> tuple[pd.DataFrame, str]:
     for col, dtype in batch_field_dtypes.items():
         if col in index_df.columns:
             index_df[col] = index_df[col].astype(dtype)
-    validate_gegevensfrequentie_present(index_df)
+    validate_data_frequency_present(index_df)
 
     return index_df, index_path
 
@@ -514,7 +514,7 @@ def update_meta_validators(index_df):
     return index_df
 
 
-def update_meenemen() -> pd.DataFrame:
+def update_include() -> pd.DataFrame:
     """Updates the index DataFrame to include information about which households should be included in the "Meenemen" column based on BSV metadata.
 
     This function performs the following steps:
@@ -624,10 +624,10 @@ def update_meenemen() -> pd.DataFrame:
     if bsv_metadata_df["Meenemen"].isna().sum() > 0:
         raise Exception("Not all rows in the BSV metadata file have defined Meenemen")
 
-    bsv_meenemen = bsv_metadata_df[["HuisIdBSV", "Meenemen"]]
+    bsv_include = bsv_metadata_df[["HuisIdBSV", "Meenemen"]]
 
     index_df.drop(columns=["Meenemen"], inplace=True)
-    index_df = index_df.merge(bsv_meenemen, on=["HuisIdBSV"])
+    index_df = index_df.merge(bsv_include, on=["HuisIdBSV"])
 
 
     #bsv_metadata_df.set_index("HuisIdBSV", inplace=True)
@@ -856,7 +856,7 @@ def add_supplier_metadata_to_index(
 
 def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     """
-    THE single registry write: one file, index.parquet, one row per
+    THE single index write: one file, index.parquet, one row per
     household batch (HuisBatchIdBSV).
 
     1. Meenemen values are copied onto the index from the combined BSV
@@ -864,9 +864,9 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
        not in that file get NA: Meenemen starts empty when a household is
        first mapped, and the researcher fills it in afterwards in the
        metadata administration after reviewing the mapping. Without a
-       metadata file the index values pass through unchanged. Meenemen is
+       metadata file the index values are left unchanged. Meenemen is
        defined per household within each batch (see the README,
-       "Households, batches, and the registry").
+       "Households, batches, and the index").
     2. The household-batch columns are added: HuisBatchIdBSV (assigned
        locally -- the externally maintained HuisBatch table is a
        hand-maintained copy of these ids, never a source of new rows) plus
@@ -882,7 +882,7 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
 
     Raises
     ------
-    HuisBatchOverlapError
+    HouseBatchOverlapError
         The synced CSV holds more than one batch row for a household. A
         household in more than one batch is valid in the data model but
         not yet supported.
@@ -893,7 +893,7 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     index_df = index_df.copy().reset_index(drop=True)
 
     # -- 1. Meenemen from the combined BSV metadata --------------------------
-    include_df = _read_meenemen_from_bsv_metadata()
+    include_df = _read_include_from_bsv_metadata()
     if include_df is not None:
         stamp = dict(zip(
             (int(h) for h in include_df["HuisIdBSV"].dropna()),
@@ -918,7 +918,7 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
             "etdmap.options.household_batch_csv_path is not set or the file does "
             "not exist."
         )
-        _write_registry_index(index_df, index_path)
+        _write_index(index_df, index_path)
         return None
     sync_csv = str(sync_csv)
 
@@ -930,7 +930,7 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
         multi = sorted(
             int(h) for h in sync_df.loc[dup, "HuisIdBSV"].dropna().unique()
         )
-        raise HuisBatchOverlapError(
+        raise HouseBatchOverlapError(
             f"The synced HuisBatch table holds more than one batch row for "
             f"HuisIdBSV {multi}. A household in more than one batch is valid "
             f"in the data model but not yet supported."
@@ -945,7 +945,7 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     missing = sorted(set(index_ids) - synced_ids)
     if missing:
         # PENDING households: newly mapped, not yet added to the HuisBatch
-        # table by the researcher. They stay in the registry with NA batch
+        # table by the researcher. They stay in the index with NA batch
         # fields; the paste-ready proposal supports the manual addition
         # (HuisBatchIdBSV = HuisIdBSV for a first batch).
         missing_df = index_df[index_df["HuisIdBSV"].isin(missing)]
@@ -1017,22 +1017,22 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
         else pd.Series(pd.NaT, index=range(n)).dt.tz_localize("UTC")
     )
 
-    validate_gegevensfrequentie_present(index_df)
+    validate_data_frequency_present(index_df)
 
     # -- 3. the write ----------------------------------------------------------
-    _write_registry_index(index_df, index_path)
+    _write_index(index_df, index_path)
     return None
 
 
-def _write_registry_index(index_df: pd.DataFrame, index_path: str) -> None:
-    """Cast the registry dtypes and write index.parquet."""
+def _write_index(index_df: pd.DataFrame, index_path: str) -> None:
+    """Cast the index dtypes and write index.parquet."""
     index_df = set_metadata_dtypes(metadata_df=index_df, strict=True)
     for col, dtype in batch_field_dtypes.items():
         if col in index_df.columns:
             index_df[col] = index_df[col].astype(dtype)
     index_df.to_parquet(index_path, engine="pyarrow")
     logging.info(
-        f"[save_index_to_parquet] Wrote registry index.parquet "
+        f"[save_index_to_parquet] Wrote index.parquet "
         f"({len(index_df)} household-batch row(s)) -> {index_path}"
     )
 

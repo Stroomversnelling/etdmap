@@ -2,7 +2,7 @@
 Contract tests for the known-stale household prune helpers.
 
 "Known stale" = a household output whose id is NOT in the current
-authoritative set (from the registry index). Only those are
+authoritative set (from the index). Only those are
 removed; everything in the set is kept, and anything that does not match the
 household naming pattern is never touched. Each removal is returned in a
 manifest -- delete-with-manifest, not a blanket glob-delete.

@@ -119,10 +119,10 @@ def mapped_household_paths(mapped_folder_path=None, fmt="auto") -> dict:
     - "auto"    -- flat when any flat file exists, else sharded.
 
     One path per household: a household with more than one batch shard raises
-    HuisBatchOverlapError, because a single path cannot represent it. An
+    HouseBatchOverlapError, because a single path cannot represent it. An
     unparseable shard directory name raises rather than being guessed.
     """
-    from etdmap.index_helpers import HuisBatchOverlapError
+    from etdmap.index_helpers import HouseBatchOverlapError
 
     if mapped_folder_path is None:
         mapped_folder_path = etdmap.options.mapped_folder_path
@@ -155,7 +155,7 @@ def mapped_household_paths(mapped_folder_path=None, fmt="auto") -> dict:
                     )
                 household_id = int(m.group(1))
                 if household_id in out:
-                    raise HuisBatchOverlapError(
+                    raise HouseBatchOverlapError(
                         f"HuisIdBSV {household_id} has more than one batch shard "
                         f"under {base}; a single path per household cannot "
                         f"represent it. A household in more than one batch is "
@@ -287,7 +287,7 @@ def source_read_targets(path, household_ids=None):
             absent.append(household_id)
     if absent:
         # Normal: an artifact holds only the households that reached this
-        # stage, so a registry-derived request (e.g. a whole project) can name
+        # stage, so an index-derived request (e.g. a whole project) can name
         # households the excluded ones among them never produced.
         logging.debug(
             f"[source_read_targets] {len(absent)} requested household(s) have "

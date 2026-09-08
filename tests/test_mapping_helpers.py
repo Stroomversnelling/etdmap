@@ -169,7 +169,7 @@ class TestFillDownInfrequentDevices:
     def _make_df(self):
         col = self._FILL_COLS[0]
         return pd.DataFrame({
-            col: [1.0, None, None, 2.0, None],
+            col: pd.array([1.0, pd.NA, pd.NA, 2.0, pd.NA], dtype="Float64"),
         })
 
     def test_forward_fills_gaps(self):
@@ -181,24 +181,27 @@ class TestFillDownInfrequentDevices:
 
     def test_backward_fills_leading_na(self):
         col = self._FILL_COLS[0]
-        df = pd.DataFrame({col: [None, None, 5.0]})
+        df = pd.DataFrame({col: pd.array([pd.NA, pd.NA, 5.0], dtype="Float64")})
         result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
         assert result[col].iloc[0] == 5.0  # bfilled
 
     def test_all_na_replaced_with_zero(self):
         col = self._FILL_COLS[0]
-        df = pd.DataFrame({col: [None, None, None]})
+        df = pd.DataFrame({col: pd.array([pd.NA] * 3, dtype="Float64")})
         result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
         assert (result[col] == 0.0).all()
+        assert result[col].dtype == "Float64"  # no silent downcast on fill
 
     def test_ignores_unknown_columns(self):
-        df = pd.DataFrame({"NotAFillCol": [None, None, 3.0]})
+        df = pd.DataFrame({
+            "NotAFillCol": pd.array([pd.NA, pd.NA, 3.0], dtype="Float64"),
+        })
         result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
         # NotAFillCol is not in the fill list -- should remain unchanged
         assert pd.isna(result["NotAFillCol"].iloc[0])
 
     def test_custom_columns_parameter(self):
-        df = pd.DataFrame({"MyCol": [None, None, 7.0]})
+        df = pd.DataFrame({"MyCol": pd.array([pd.NA, pd.NA, 7.0], dtype="Float64")})
         result = fill_down_infrequent_devices(df, columns=("MyCol",))
         assert result["MyCol"].iloc[0] == 7.0
 

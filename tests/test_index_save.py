@@ -1,7 +1,7 @@
 """
-Contract for save_index_to_parquet as THE single registry write.
+Contract for save_index_to_parquet as THE single index write.
 
-One path, one function, one file: saving the index IS saving the registry.
+One path, one function, one file: index.parquet is the whole index.
 index.parquet holds one row per household batch (HuisBatchIdBSV).
 
 1. Meenemen is stamped onto the index from the combined BSV metadata (the one
@@ -25,10 +25,10 @@ import pytest
 
 import etdmap
 from etdmap.index_helpers import (
-    HuisBatchOverlapError,
+    HouseBatchOverlapError,
     read_index,
     save_index_to_parquet,
-    validate_gegevensfrequentie_present,
+    validate_data_frequency_present,
 )
 
 _START = "2024-05-01 00:00:00 UTC"
@@ -82,13 +82,13 @@ def _write_sync_csv(folder, rows):
     return path
 
 
-def _read_registry(folder):
+def _read_index(folder):
     return pd.read_parquet(folder / "index.parquet",
                            dtype_backend="numpy_nullable")
 
 
 @pytest.fixture
-def registry_options(tmp_path):
+def index_options(tmp_path):
     prev = (
         etdmap.options.mapped_folder_path,
         etdmap.options.bsv_metadata_file,
@@ -105,15 +105,15 @@ def registry_options(tmp_path):
     ) = prev
 
 
-class TestSingleRegistryWrite:
-    def test_one_save_writes_registry_with_batch_columns(self, registry_options):
-        tmp = registry_options
+class TestSingleIndexWrite:
+    def test_one_save_writes_index_with_batch_columns(self, index_options):
+        tmp = index_options
         _write_bsv_metadata(tmp, [(1, True), (2, False)])
         _write_sync_csv(tmp, [_sync_row(1), _sync_row(2)])
         # index carries STALE Meenemen; the save must stamp from the metadata
         save_index_to_parquet(_index_df([1, 2], include=[False, True]))
 
-        idx = _read_registry(tmp)
+        idx = _read_index(tmp)
         assert idx.set_index("HuisIdBSV")["Meenemen"].to_dict() == {1: True, 2: False}
         # ids locally assigned; batch fields joined from the synced CSV
         assert (idx["HuisBatchIdBSV"] == idx["HuisIdBSV"]).all()
@@ -122,33 +122,33 @@ class TestSingleRegistryWrite:
         assert idx["Startdatum"].iloc[0] == pd.Timestamp(_START_EPOCH, unit="s", tz="UTC")
         assert idx["Einddatum"].iloc[0] == pd.Timestamp(_END_EPOCH, unit="s", tz="UTC")
 
-    def test_epoch_second_dates_also_accepted(self, registry_options):
-        tmp = registry_options
+    def test_epoch_second_dates_also_accepted(self, index_options):
+        tmp = index_options
         _write_bsv_metadata(tmp, [(1, True)])
         _write_sync_csv(tmp, [_sync_row(1, start=_START_EPOCH, end=_END_EPOCH)])
         save_index_to_parquet(_index_df([1]))
-        idx = _read_registry(tmp)
+        idx = _read_index(tmp)
         assert idx["Startdatum"].iloc[0] == pd.Timestamp(_START_EPOCH, unit="s", tz="UTC")
 
-    def test_meenemen_empty_until_reviewed(self, registry_options):
+    def test_meenemen_empty_until_reviewed(self, index_options):
         """Meenemen starts empty when a household is first mapped -- a
         household absent from the BSV metadata gets NA and nothing raises."""
-        tmp = registry_options
+        tmp = index_options
         _write_bsv_metadata(tmp, [(1, True)])  # HH2 not reviewed yet
         _write_sync_csv(tmp, [_sync_row(1), _sync_row(2, freq=None)])
         save_index_to_parquet(_index_df([1, 2]))
-        idx = _read_registry(tmp)
+        idx = _read_index(tmp)
         assert idx.set_index("HuisIdBSV")["Meenemen"].isna().to_dict() == {1: False, 2: True}
 
-    def test_pending_household_present_with_na_fields(self, registry_options, caplog):
-        """No synced HuisBatch row yet: the household is still IN the registry
+    def test_pending_household_present_with_na_fields(self, index_options, caplog):
+        """No synced HuisBatch row yet: the household is still IN the index
         (rows come from the index), with NA batch fields, a warning, and a
         paste-ready proposal CSV."""
-        tmp = registry_options
+        tmp = index_options
         _write_bsv_metadata(tmp, [(1, True)])
         _write_sync_csv(tmp, [_sync_row(1)])  # HH2 + HH3 pending
         save_index_to_parquet(_index_df([1, 2, 3]))
-        idx = _read_registry(tmp)
+        idx = _read_index(tmp)
         assert set(int(x) for x in idx["HuisIdBSV"]) == {1, 2, 3}
         assert idx.set_index("HuisIdBSV")["BatchIdBSV"].isna().to_dict() == {
             1: False, 2: True, 3: True}
@@ -159,8 +159,8 @@ class TestSingleRegistryWrite:
         assert sorted(prop["HuisIdBSV"].tolist()) == [2, 3]
         assert (prop["HuisBatchIdBSV"] == prop["HuisIdBSV"]).all()
 
-    def test_pending_file_removed_when_resolved(self, registry_options):
-        tmp = registry_options
+    def test_pending_file_removed_when_resolved(self, index_options):
+        tmp = index_options
         # HH2 pending: absent from BOTH intermediates (Meenemen lives on the
         # external HuisBatch table, so a household without its row cannot have
         # a Meenemen value either).
@@ -174,72 +174,72 @@ class TestSingleRegistryWrite:
         save_index_to_parquet(_index_df([1, 2]))
         assert not (tmp / "pending_household_batch_additions.csv").exists()
 
-    def test_synced_only_households_warned(self, registry_options, caplog):
-        tmp = registry_options
+    def test_synced_only_households_warned(self, index_options, caplog):
+        tmp = index_options
         _write_bsv_metadata(tmp, [(1, True)])
         _write_sync_csv(tmp, [_sync_row(1), _sync_row(99)])
         save_index_to_parquet(_index_df([1]))
         warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
         assert any("99" in w for w in warnings)
-        idx = _read_registry(tmp)
+        idx = _read_index(tmp)
         assert set(int(x) for x in idx["HuisIdBSV"]) == {1}
 
-    def test_two_batches_in_synced_table_raises(self, registry_options):
-        tmp = registry_options
+    def test_two_batches_in_synced_table_raises(self, index_options):
+        tmp = index_options
         _write_bsv_metadata(tmp, [(1, True), (2, True)])
         _write_sync_csv(tmp, [
             _sync_row(1), _sync_row(2), _sync_row(1, hbid=9, batch=2),
         ])
-        with pytest.raises(HuisBatchOverlapError):
+        with pytest.raises(HouseBatchOverlapError):
             save_index_to_parquet(_index_df([1, 2]))
 
-    def test_missing_cadence_for_included_household_raises(self, registry_options):
-        tmp = registry_options
+    def test_missing_cadence_for_included_household_raises(self, index_options):
+        tmp = index_options
         _write_bsv_metadata(tmp, [(1, True)])  # included -> cadence required
         _write_sync_csv(tmp, [_sync_row(1, freq=None)])
         with pytest.raises(ValueError):
             save_index_to_parquet(_index_df([1]))
 
-    def test_missing_cadence_tolerated_when_not_included(self, registry_options):
-        tmp = registry_options
+    def test_missing_cadence_tolerated_when_not_included(self, index_options):
+        tmp = index_options
         _write_bsv_metadata(tmp, [(1, False)])  # reviewed and excluded
         _write_sync_csv(tmp, [_sync_row(1, freq=None)])
         save_index_to_parquet(_index_df([1]))  # must not raise
-        idx = _read_registry(tmp)
+        idx = _read_index(tmp)
         assert idx["Gegevensfrequentie"].isna().all()
 
-    def test_no_sync_csv_omits_batch_fields_with_warning(self, registry_options, caplog):
-        tmp = registry_options
+    def test_no_sync_csv_omits_batch_fields_with_warning(self, index_options, caplog):
+        tmp = index_options
         _write_bsv_metadata(tmp, [(1, True)])
         save_index_to_parquet(_index_df([1]))  # must not raise
-        idx = _read_registry(tmp)
+        idx = _read_index(tmp)
         # HuisBatchIdBSV is always assigned; the synced batch fields are not
         assert (idx["HuisBatchIdBSV"] == idx["HuisIdBSV"]).all()
         assert "Gegevensfrequentie" not in idx.columns
         assert any("household-batch fields" in r.message for r in caplog.records
                    if r.levelname == "WARNING")
 
-    def test_no_bsv_metadata_keeps_index_meenemen(self, registry_options):
+    def test_no_bsv_metadata_keeps_index_meenemen(self, index_options):
         """Legacy / fixture datasets without a BSV metadata file: the index
         Meenemen values pass through unchanged."""
-        tmp = registry_options
+        tmp = index_options
         _write_sync_csv(tmp, [_sync_row(1), _sync_row(2)])
         save_index_to_parquet(_index_df([1, 2], include=[True, False]))
-        idx = _read_registry(tmp)
+        idx = _read_index(tmp)
         assert idx.set_index("HuisIdBSV")["Meenemen"].to_dict() == {1: True, 2: False}
 
-    def test_idempotent_rerun(self, registry_options):
-        tmp = registry_options
+    def test_idempotent_rerun(self, index_options):
+        tmp = index_options
         _write_bsv_metadata(tmp, [(1, True)])
         _write_sync_csv(tmp, [_sync_row(1)])
         save_index_to_parquet(_index_df([1]))
         save_index_to_parquet(_index_df([1]))
-        idx = _read_registry(tmp)
+        idx = _read_index(tmp)
         assert len(idx) == 1
 
 
-class TestGegevensfrequentieValidator:
-    def _registry_df(self, rows, gegevensfrequentie="5min"):
+class TestDatasetFrequencyValidator:
+    def _index_df(self, rows, gegevensfrequentie="5min"):
         """rows: list of (HuisIdBSV, HuisBatchIdBSV, Meenemen)."""
         return pd.DataFrame({
             "HuisIdBSV": pd.array([r[0] for r in rows], dtype="Int64"),
@@ -250,39 +250,39 @@ class TestGegevensfrequentieValidator:
         })
 
     def test_all_present_passes(self):
-        validate_gegevensfrequentie_present(
-            self._registry_df([(1, 1, True), (2, 2, True)]))
+        validate_data_frequency_present(
+            self._index_df([(1, 1, True), (2, 2, True)]))
 
     def test_missing_na_for_included_raises(self):
-        df = self._registry_df([(1, 1, True), (2, 2, True)])
+        df = self._index_df([(1, 1, True), (2, 2, True)])
         df.loc[1, "Gegevensfrequentie"] = pd.NA
         with pytest.raises(ValueError):
-            validate_gegevensfrequentie_present(df)
+            validate_data_frequency_present(df)
 
     def test_empty_string_for_included_raises(self):
-        df = self._registry_df([(1, 1, True)])
+        df = self._index_df([(1, 1, True)])
         df.loc[0, "Gegevensfrequentie"] = ""
         with pytest.raises(ValueError):
-            validate_gegevensfrequentie_present(df)
+            validate_data_frequency_present(df)
 
     def test_missing_tolerated_when_not_included(self):
-        df = self._registry_df([(1, 1, False), (2, 2, pd.NA)],
+        df = self._index_df([(1, 1, False), (2, 2, pd.NA)],
                                gegevensfrequentie=None)
-        validate_gegevensfrequentie_present(df)  # must not raise
+        validate_data_frequency_present(df)  # must not raise
 
     def test_absent_column_passes(self):
-        # An older dataset's registry without batch fields passes unchecked.
+        # An older dataset's index without batch fields passes unchecked.
         df = pd.DataFrame({
             "HuisIdBSV": pd.array([1], dtype="Int64"),
             "Meenemen": pd.array([True], dtype="boolean"),
         })
-        validate_gegevensfrequentie_present(df)
+        validate_data_frequency_present(df)
 
 
 class TestReadIndexGuard:
-    def test_read_raises_on_included_row_without_cadence(self, registry_options):
-        tmp = registry_options
-        # Bypass the save-time guard: write a corrupt registry directly.
+    def test_read_raises_on_included_row_without_cadence(self, index_options):
+        tmp = index_options
+        # Bypass the save-time guard: write a corrupt index directly.
         df = _index_df([1], include=[True])
         df["HuisBatchIdBSV"] = pd.array([1], dtype="Int64")
         df["Gegevensfrequentie"] = pd.array([pd.NA], dtype="string")
@@ -290,8 +290,8 @@ class TestReadIndexGuard:
         with pytest.raises(ValueError):
             read_index(tmp)
 
-    def test_read_accepts_registry_without_batch_columns(self, registry_options):
-        tmp = registry_options
+    def test_read_accepts_index_without_batch_columns(self, index_options):
+        tmp = index_options
         _index_df([1, 2], include=[True, False]).to_parquet(tmp / "index.parquet")
         idx, path = read_index(tmp)
         assert len(idx) == 2
