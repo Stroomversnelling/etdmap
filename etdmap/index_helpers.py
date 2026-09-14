@@ -441,7 +441,7 @@ def update_index(
         f"household_{household_id}_table.parquet",
     )
     if os.path.exists(dataset_file):
-        df = pd.read_parquet(dataset_file)
+        df = pd.read_parquet(dataset_file, dtype_backend="numpy_nullable")
         for flag, condition in dataset_flag_conditions.items():
             # Add flag column if it does not exist and ensure it's BooleanDtype
             if flag not in index_df.columns:
@@ -1105,5 +1105,5 @@ def get_mapped_data(household_id: int) -> pd.DataFrame:
     file_path = get_mapped_file_path(household_id)
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"The file for HuisIdBSV {household_id} does not exist at {file_path}.")
-    household_df = pd.read_parquet(file_path)
+    household_df = pd.read_parquet(file_path, dtype_backend="numpy_nullable")
     return household_df

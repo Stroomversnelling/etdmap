@@ -444,7 +444,7 @@ def process_raw_data_file(args, seasonal=False, seasons=None, timestamp_candidat
     file_path = os.path.join(raw_data_folder_path, file)
     logging.info(f"Opening {file_path}")
 
-    df = pd.read_parquet(file_path)
+    df = pd.read_parquet(file_path, dtype_backend="numpy_nullable")
     df = _synthesise_tariff_roots(df)
     # Derive a proper datetime ReadingDate using the canonical mapper helper, so
     # the per-project timestamp column name + format (incl. tz-aware object

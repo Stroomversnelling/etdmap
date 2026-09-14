@@ -419,7 +419,7 @@ def _process_data_fixture_file(household_id, file_name, etd_test_fixture_path, m
         mapped_folder_path, f"household_{int(household_id)}_table.parquet"
     )
 
-    data_fixture_df = pd.read_parquet(file_path)
+    data_fixture_df = pd.read_parquet(file_path, dtype_backend="numpy_nullable")
 
     # Identifier columns belong to the index, not the household data, and are
     # not part of the data model -- read them before the mapping steps.

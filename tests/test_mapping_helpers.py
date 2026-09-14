@@ -501,14 +501,14 @@ class TestRunStandardPipeline:
         df = _minimal_pipeline_df(n=6)
         df = df.iloc[::-1].reset_index(drop=True)  # reverse the order
         run_standard_pipeline(df, household_id=1, household_id_supplier="H", mapped_folder_path=tmp_path)
-        out = pd.read_parquet(tmp_path / "household_1_table.parquet")
+        out = pd.read_parquet(tmp_path / "household_1_table.parquet", dtype_backend="numpy_nullable")
         assert (out["ReadingDate"].diff().dropna() >= pd.Timedelta(0)).all()
 
     def test_output_has_model_columns(self, tmp_path):
         """Output parquet must contain all model columns."""
         df = _minimal_pipeline_df(n=6)
         run_standard_pipeline(df, household_id=2, household_id_supplier="H2", mapped_folder_path=tmp_path)
-        out = pd.read_parquet(tmp_path / "household_2_table.parquet")
+        out = pd.read_parquet(tmp_path / "household_2_table.parquet", dtype_backend="numpy_nullable")
         for col in model_column_order:
             assert col in out.columns, f"Model column '{col}' missing from output"
 
@@ -1271,7 +1271,7 @@ class TestPipelineDropsUnmappedColumns:
             df, household_id=77, household_id_supplier="H77",
             mapped_folder_path=tmp_path,
         )
-        out = pd.read_parquet(tmp_path / "household_77_table.parquet")
+        out = pd.read_parquet(tmp_path / "household_77_table.parquet", dtype_backend="numpy_nullable")
 
         assert "alklimaHeatPump_holiday" not in out.columns
         assert "nan [nan]" not in out.columns

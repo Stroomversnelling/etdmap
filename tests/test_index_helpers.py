@@ -72,14 +72,14 @@ def test_creation_validation_columns_index_data_files(mapped_fixtures, request):
     assert len(files) == limit_houses, f"Expected {limit_houses} files, but found {len(files)}"
 
     # check for 1 file if it contains all the right columns
-    df_hh = pd.read_parquet(os.path.join(folder_path, files[0]))
+    df_hh = pd.read_parquet(os.path.join(folder_path, files[0]), dtype_backend="numpy_nullable")
     # columns that should be added by record_validators
     assert all("validate_" + col + "Diff" in df_hh.columns for col in cumulative_columns)
     assert all('validate_' + col + 'Diff_outliers' in df_hh.columns for col in cumulative_columns)
     assert all('validate_' + col in df_hh.columns for col in columns_5min_momentaan)
 
     # Check the index.parquet file
-    df_index = pd.read_parquet(os.path.join(folder_path, 'index.parquet'))
+    df_index = pd.read_parquet(os.path.join(folder_path, 'index.parquet'), dtype_backend="numpy_nullable")
     # Columns that should be added to index.parquet
     # as defined in dataset_validors.py (and applied in the index_helpers.py)
     special_checks = (
@@ -125,6 +125,26 @@ def _check_metadatafiles_are_equal(load_metadata, stored_path, generated_path):
     return results, expected_metadata, actual_metadata
 
 
+def _read_sample_parquet(path):
+    """
+    Reads a parquet sample under the nullable backend, keeping the row index a
+    plain integer index.
+
+    ADR-005 requires ``dtype_backend="numpy_nullable"`` on every parquet read,
+    but that backend is applied to every stored column -- including a
+    materialised row index. A row index is a label, not data: it can never
+    legitimately hold pd.NA, so a nullable ``Int64`` index is a wrong dtype, not
+    a stylistic choice. It only arises here because the sample fixtures are the
+    only parquet files in the project written from a non-range index (a
+    ``.sample()`` result); every pipeline file carries a RangeIndex. Cast it
+    back so the index dtype matches what the rest of the codebase produces.
+    """
+    df = pd.read_parquet(path, dtype_backend="numpy_nullable")
+    if str(df.index.dtype) == "Int64":
+        df.index = df.index.astype("int64")
+    return df
+
+
 def _check_samples_are_equal(expected_path, generated_path):
     """
     Checks if expected vs. generated samples of .parquet files are equal.
@@ -138,9 +158,9 @@ def _check_samples_are_equal(expected_path, generated_path):
         - new_cols: columns in generated but not in fixture (model expanded)
         - removed_cols: columns in fixture but not in generated (model shrank)
     """
-    df_expected = pd.read_parquet(expected_path)
+    df_expected = _read_sample_parquet(expected_path)
 
-    df_generated_full = pd.read_parquet(generated_path)
+    df_generated_full = _read_sample_parquet(generated_path)
     sample_size = min(100, len(df_generated_full))
     df_generated_sample = df_generated_full.sample(n=sample_size, random_state=42)
 
@@ -167,8 +187,8 @@ def _check_sample_values_equal(expected_path, generated_path):
 
     Returns the same tuple shape as _check_samples_are_equal.
     """
-    df_expected = pd.read_parquet(expected_path)
-    df_generated_full = pd.read_parquet(generated_path)
+    df_expected = _read_sample_parquet(expected_path)
+    df_generated_full = _read_sample_parquet(generated_path)
     sample_size = min(100, len(df_generated_full))
     df_generated_sample = df_generated_full.sample(n=sample_size, random_state=42)
 

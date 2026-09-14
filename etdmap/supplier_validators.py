@@ -310,7 +310,7 @@ def run_mapping_coverage_preflight(
             folder_project_id = None
             for path in paths:
                 try:
-                    sample = _pd.read_parquet(path, columns=[raw_project_col])
+                    sample = _pd.read_parquet(path, columns=[raw_project_col], dtype_backend="numpy_nullable")
                     if not sample.empty:
                         site_value = str(sample[raw_project_col].iloc[0]).strip()
                         folder_project_id = site_to_project_id.get(site_value)
