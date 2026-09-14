@@ -181,3 +181,130 @@ class TestPipelineOutputFormat:
                     _pipeline_df(), household_id=1, household_id_supplier="H1",
                     mapped_folder_path=tmp_path,
                 )
+
+
+class TestDatasetValidatorsReadBothLayouts:
+    """Dataset-level flags must be computed under BOTH mapped layouts.
+
+    update_index used to build the flat filename `household_<id>_table.parquet`
+    and guard on os.path.exists. Under the sharded default that guard was always
+    False, so NO dataset-level flag was computed for any household -- and the
+    omission was silent, which is why it survived. These tests fail against that
+    version under "sharded" and pass under "flat".
+    """
+
+    HOUSEHOLD_ID = 42
+
+    def _index_df(self):
+        return pd.DataFrame({
+            "HuisIdBSV": pd.array([self.HOUSEHOLD_ID], dtype="Int64"),
+            "HuisIdLeverancier": pd.array(["Huis42"], dtype="string"),
+            "ProjectIdLeverancier": pd.array(["P1"], dtype="string"),
+            "Dataleverancier": pd.array(["etdmap"], dtype="string"),
+        })
+
+    def _update_index_for(self, tmp_path, monkeypatch, fmt):
+        from etdmap.index_helpers import update_index
+        from etdmap.mapping_helpers import save_mapped_household
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        with _output_format(fmt):
+            save_mapped_household(_mapped_df(), self.HOUSEHOLD_ID, tmp_path)
+
+        entry = {
+            "HuisIdLeverancier": "Huis42",
+            "ProjectIdLeverancier": "P1",
+            "HuisIdBSV": self.HOUSEHOLD_ID,
+        }
+        return update_index(
+            self._index_df(), entry, data_provider="etdmap", save=False
+        )
+
+    @pytest.mark.parametrize("fmt", ["flat", "sharded"])
+    def test_dataset_flags_are_evaluated(self, tmp_path, monkeypatch, fmt):
+        from etdmap.dataset_validators import dataset_flag_conditions
+
+        out = self._update_index_for(tmp_path, monkeypatch, fmt)
+
+        present = [f for f in dataset_flag_conditions if f in out.columns]
+        assert present, (
+            f"no dataset flag column was created under the {fmt} layout -- "
+            f"the validators did not run"
+        )
+
+        evaluated = [f for f in present if out[f].notna().any()]
+        assert evaluated, (
+            f"dataset flag columns exist but none holds a verdict under the "
+            f"{fmt} layout"
+        )
+
+    def test_missing_household_raises(self, tmp_path, monkeypatch):
+        """A household with no mapped data is a hard failure, not a silent skip.
+
+        update_index cannot do half its job: without the data there are no
+        dataset-level flags, and an index row that merely lacks them is
+        indistinguishable from one whose validators all returned NA.
+        """
+        from etdmap.index_helpers import update_index
+        from etdmap.mapping_helpers import save_mapped_household
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        # Another household's shard exists, so the layout is detectable but
+        # household 42 has no data of its own.
+        with _output_format("sharded"):
+            save_mapped_household(_mapped_df(), 99, tmp_path)
+
+        entry = {
+            "HuisIdLeverancier": "Huis42",
+            "ProjectIdLeverancier": "P1",
+            "HuisIdBSV": self.HOUSEHOLD_ID,
+        }
+        with pytest.raises(FileNotFoundError, match=str(self.HOUSEHOLD_ID)):
+            update_index(
+                self._index_df(), entry, data_provider="etdmap", save=False
+            )
+
+
+class TestGetMappedDataReadsBothLayouts:
+    """get_mapped_data resolved the flat filename and raised when it was
+    absent, so under the sharded layout it raised for EVERY household -- which
+    took the per-household statistics collector down with it."""
+
+    @pytest.mark.parametrize("fmt", ["flat", "sharded"])
+    def test_reads_either_layout(self, tmp_path, monkeypatch, fmt):
+        from etdmap.index_helpers import get_mapped_data
+        from etdmap.mapping_helpers import save_mapped_household
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        written = _mapped_df()
+        with _output_format(fmt):
+            save_mapped_household(written, 42, tmp_path)
+
+        got = get_mapped_data(42)
+        pd.testing.assert_frame_equal(got, written)
+
+    @pytest.mark.parametrize("fmt", ["flat", "sharded"])
+    def test_does_not_leak_identifier_columns(self, tmp_path, monkeypatch, fmt):
+        """Callers iterate the returned columns to compute per-column stats, so
+        an injected identifier would be counted as a measured variable."""
+        from etdmap.index_helpers import get_mapped_data
+        from etdmap.mapping_helpers import save_mapped_household
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        with _output_format(fmt):
+            save_mapped_household(_mapped_df(), 42, tmp_path)
+
+        cols = get_mapped_data(42).columns
+        assert "HuisIdBSV" not in cols
+        assert "HuisBatchIdBSV" not in cols
+
+    def test_missing_household_raises(self, tmp_path, monkeypatch):
+        from etdmap.index_helpers import get_mapped_data
+        from etdmap.mapping_helpers import save_mapped_household
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        with _output_format("sharded"):
+            save_mapped_household(_mapped_df(), 99, tmp_path)
+
+        with pytest.raises(FileNotFoundError, match="42"):
+            get_mapped_data(42)

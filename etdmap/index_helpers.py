@@ -11,6 +11,7 @@ from etdmap.data_model import (
     cumulative_columns,
 )
 from etdmap.dataset_validators import dataset_flag_conditions
+from etdmap.storage import read_mapped_households
 
 class HouseholdKey(NamedTuple):
     """Composite key uniquely identifying a household within a supplier dataset.
@@ -434,37 +435,51 @@ def update_index(
         new_entry_df = pd.DataFrame([new_entry])
         index_df = pd.concat([index_df, new_entry_df], ignore_index=True)
 
-    # Recalculate or add flag columns
+    # Recalculate or add flag columns.
+    #
+    # Read format-aware. A mapped dataset is either flat
+    # (household_<id>_table.parquet) or sharded
+    # (sharded/HuisIdBSV=<id>/HuisBatchIdBSV=<n>/*.parquet), and sharded is the
+    # default. Building the flat filename here and guarding on os.path.exists
+    # meant that under the sharded layout the guard was always False, so NO
+    # dataset-level flag was computed for any household and the omission was
+    # silent.
+    #
+    # read_mapped_households resolves either layout and concatenates a
+    # multi-batch household into one frame, which is the grain these validators
+    # expect (they ask questions about a household's whole series).
     household_id = new_entry["HuisIdBSV"]
-    dataset_file = os.path.join(
-        etdmap.options.mapped_folder_path,
-        f"household_{household_id}_table.parquet",
-    )
-    if os.path.exists(dataset_file):
-        df = pd.read_parquet(dataset_file, dtype_backend="numpy_nullable")
-        for flag, condition in dataset_flag_conditions.items():
-            # Add flag column if it does not exist and ensure it's BooleanDtype
-            if flag not in index_df.columns:
-                index_df[flag] = pd.Series(
-                    pd.NA,
-                    dtype="boolean", # "bool" is the standard non-nullable Boolean type (backed by NumPy), while "boolean" is pandas' nullable Boolean extension type (pd.BooleanDtype) that supports NA values.
-                    index=index_df.index,
-                )
-            try:
-                validation_result = condition(df)
-                index_df.loc[index_df["HuisIdBSV"] == household_id, flag] = (
-                    validation_result
-                )
-            except Exception as e:
-                logging.error(
-                    f"Error validating with {flag} for household "
-                    f"{household_id}: {e}",
-                    exc_info=True,
-                )
-                index_df.loc[
-                    index_df["HuisIdBSV"] == household_id,
-                    flag,
-                ] = pd.NA
+    try:
+        df = read_mapped_households([household_id])
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"update_index: cannot compute dataset-level flags for HuisIdBSV "
+            f"{household_id} -- the household has no mapped data. {e}"
+        ) from e
+
+    for flag, condition in dataset_flag_conditions.items():
+        # Add flag column if it does not exist and ensure it's BooleanDtype
+        if flag not in index_df.columns:
+            index_df[flag] = pd.Series(
+                pd.NA,
+                dtype="boolean", # "bool" is the standard non-nullable Boolean type (backed by NumPy), while "boolean" is pandas' nullable Boolean extension type (pd.BooleanDtype) that supports NA values.
+                index=index_df.index,
+            )
+        try:
+            validation_result = condition(df)
+            index_df.loc[index_df["HuisIdBSV"] == household_id, flag] = (
+                validation_result
+            )
+        except Exception as e:
+            logging.error(
+                f"Error validating with {flag} for household "
+                f"{household_id}: {e}",
+                exc_info=True,
+            )
+            index_df.loc[
+                index_df["HuisIdBSV"] == household_id,
+                flag,
+            ] = pd.NA
 
     # Ensure all flag columns are of BooleanDtype
     for flag in dataset_flag_conditions.keys():
@@ -1076,6 +1091,14 @@ def get_mapped_file_path(household_id: int) -> str:
     -------
     str
         The full file path to the mapped household data in Parquet format.
+
+    Warnings
+    --------
+    FLAT LAYOUT ONLY. This builds the legacy ``household_<id>_table.parquet``
+    name and is not format-aware, so the path it returns does not exist under
+    the sharded layout (the default). To read a household's mapped data use
+    ``get_mapped_data`` / ``etdmap.storage.read_mapped_households``; to resolve
+    its file(s) use ``etdmap.storage.mapped_household_files``.
     """
 
     file_name = f"household_{household_id}_table.parquet"
@@ -1099,11 +1122,21 @@ def get_mapped_data(household_id: int) -> pd.DataFrame:
     Raises
     ------
     FileNotFoundError
-        If the specified file does not exist at the expected path.
+        If the household has no mapped data under either layout.
+
+    Notes
+    -----
+    Format-aware: resolves the flat ``household_<id>_table.parquet`` or the
+    sharded ``sharded/HuisIdBSV=<id>/HuisBatchIdBSV=<n>/*.parquet`` files. A
+    household spanning several batches is returned as one frame.
+
+    The returned frame carries the household's mapped COLUMNS ONLY. The
+    identifier columns that ``read_mapped_households`` injects for batch reads
+    are dropped here, because identifiers live in the index and in the shard
+    path, not in the household frame -- callers of this function iterate its
+    columns (per-column statistics), so an injected id would be counted as a
+    measured variable.
     """
 
-    file_path = get_mapped_file_path(household_id)
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"The file for HuisIdBSV {household_id} does not exist at {file_path}.")
-    household_df = pd.read_parquet(file_path, dtype_backend="numpy_nullable")
-    return household_df
+    household_df = read_mapped_households([household_id])
+    return household_df.drop(columns=["HuisIdBSV", "HuisBatchIdBSV"])
