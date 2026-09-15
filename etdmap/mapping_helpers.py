@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import shutil
+from typing import NamedTuple
 
 import pandas as pd
 
@@ -9,12 +10,14 @@ import etdmap
 
 from etdmap.data_model import (
     cumulative_columns,
-    load_thresholds_as_dict,
     model_column_order,
     model_column_type,
+    performance_column_dtypes,
     required_performance_data_columns,
+    thresholds_dict,
 )
 from etdmap.index_helpers import get_mapped_data, read_index
+from etdmap.flags import MappingFlag, bound_flags
 from etdmap.record_validators import (
     record_flag_conditions,
     record_quality_flag_conditions,
@@ -56,9 +59,12 @@ def rearrange_model_columns(
 
     This function performs the following operations:
     1. Validates and coerces column types to match expected types.
-    2. Rearranges columns to match the order defined in model_column_order.
-    3. Drops columns that are not part of the ETD data model -- raw supplier
-       columns that were never mapped do not belong in mapped output.
+    2. Rearranges columns into data model order.
+    3. Drops columns that are not part of the ETD data model -- supplier
+       columns that were never mapped do not belong in mapped output. Any
+       data model column is kept, whatever its Entiteit: the model is a
+       theoretical model of what may exist, not a claim about what a given
+       supplier delivers.
     4. Optionally adds missing columns with NA values.
 
     Parameters
@@ -66,8 +72,9 @@ def rearrange_model_columns(
     household_df : pd.DataFrame
         The input DataFrame containing household data.
     add_columns : bool, optional
-        If True, add missing columns from model_column_order to the DataFrame.
-        If False, only keep columns that are in both the DataFrame and model_column_order.
+        If True, materialise the model_column_order placeholders that are missing,
+        as all-NA columns of the declared dtype. If False, nothing is added.
+        Either way the output keeps every delivered data model column.
         Default is True.
     context : str, optional
         A string to prepend to log messages for context. If provided, a colon and space
@@ -85,10 +92,11 @@ def rearrange_model_columns(
 
     Notes
     -----
-    - The function uses the global variables model_column_type and model_column_order.
-    - Columns not in model_column_order are dropped. Statistics over the raw
-      supplier files still cover them: those are produced by the raw-data
-      checks, which read the supplier files directly.
+    - Membership is decided by performance_column_dtypes, which spans the whole
+      data model; model_column_order only supplies the add_columns placeholders.
+    - Columns outside the data model are dropped. Statistics over the supplier
+      files still cover them: those are produced by the raw-data checks, which
+      read the supplier files directly.
     - When coercing types, any values that fail to convert are replaced with pd.NA.
     - Logging is used to warn about type mismatches and missing columns.
 
@@ -128,27 +136,21 @@ def rearrange_model_columns(
                     logging.error(f"{context}Failed to coerce column '{col}' type: {e}")
                     raise ValueError(f"{context}Failed to coerce column '{col}' type: {e!s}")  # noqa: B904
 
+    # A column in the data model may exist; anything else is dropped.
+    # Membership decides, nothing else — any model column is valid delivered
+    # data regardless of Entiteit. add_columns materialises the empty placeholders
+    # a mapped file must carry; the rest are kept when delivered, not invented here.
     if add_columns:
-        # Track which columns exist before reindex — reindex adds missing model columns as
-        # float64 with np.nan, not Float64 with pd.NA. We fix these immediately after.
-        existing_cols = set(household_df.columns)
-        household_df = household_df.reindex(columns=model_column_order)
         for col in model_column_order:
-            if col not in existing_cols:
-                if col not in model_column_type:
-                    logging.warning(
-                        f"{context}Model column '{col}' has no dtype in model_column_type "
-                        f"(Type variabele missing in etdmodel.csv). Defaulting to Float64."
-                    )
+            if col not in household_df.columns:
                 household_df[col] = pd.array(
                     [pd.NA] * len(household_df),
-                    dtype=model_column_type.get(col, "Float64"),
+                    dtype=performance_column_dtypes.get(col, "Float64"),
                 )
-    else:
-        # Keep only columns that are in both model_column_order and the original DataFrame
-        household_df = household_df[
-            [col for col in model_column_order if col in household_df.columns]
-        ]
+
+    household_df = household_df[
+        [col for col in performance_column_dtypes if col in household_df.columns]
+    ]
 
     return household_df
 
@@ -250,18 +252,21 @@ def validate_cumulative_variables(
                 )
                 result['no_negative_diff'] = False
 
-                first_date = (reading_dates).min()
-                filtered_group['zero'] = filtered_group[[col]] == 0
-                if any(filtered_group['zero']):
-                    reading_dates = filtered_group[
-                        (filtered_group['ReadingDate'] >= first_date)
-                        & (filtered_group['zero'])
-                    ]['ReadingDate']
-                    last_date = reading_dates.max()
+                # A register that has recorded a total cannot return to zero.
+                # Leading zeros are a meter that has not started counting and
+                # are not a fault.
+                has_accumulated = (
+                    (filtered_group[col] > 0).cumsum().shift(1, fill_value=0) > 0
+                )
+                zero_after_total = (filtered_group[col] == 0) & has_accumulated
+                if zero_after_total.any():
+                    reading_dates = filtered_group.loc[
+                        zero_after_total, 'ReadingDate'
+                    ]
                     logging.warning(
-                        f"{context}Column {col} has unexpected zero values "
-                        f"in cumulative values from {first_date} to "
-                        f"{last_date}. This will be removed",
+                        f"{context}Column {col} returns to zero after recording "
+                        f"a total at 'ReadingDate': {reading_dates.to_list()}. "
+                        f"This will be removed",
                     )
                     result['no_unexpected_zero'] = False
 
@@ -279,73 +284,149 @@ def validate_cumulative_variables(
     return result
 
 
-def _apply_negative_diff_corrections(group, col, context_string):
+class _NegativeDiffCases(NamedTuple):
     """
-    Vectorized correction of negative diffs in one cumulative column.
+    Every negative diff in one cumulative column, classified.
 
-    Replaces the ``for rd in reading_dates:`` loop in ``add_diff_columns`` with a
-    single-pass helper-column approach:
+    ``readings`` holds the rows of the column that carry a value, each with the
+    diff to the previous reading (``<col>Diff_no_gap``) and, in ``_next_val`` /
+    ``_next_date``, the value and date of the next non-zero diff that follows it.
+    ``dates_ns`` is the ReadingDate of those same rows as epoch nanoseconds.
 
-    1. Build ``_next_val`` / ``_next_date`` for every row simultaneously using
-       ``.where().shift(-1).bfill()`` — O(N).
-    2. Classify each negative-diff row into one of three cases using bitwise masks.
-    3. Mark the rows to set to NA:
-       - Case 1/2 (range blanking): sweep-line via concat/groupby/cumsum — O(K log K + N).
-       - Case no_next (all remaining): direct positional mark.
-       - Case 3 (meter reset): vectorised searchsorted + boolean index.
-    4. Apply a single ``group.loc[..., col] = pd.NA`` at the end.
+    ``flags`` is aligned to ``readings`` and carries the ``MappingFlag`` bits
+    found in this column. Every decreasing reading gets exactly one of
+    ``CUMULATIVE_JUMP_BACK``, ``CUMULATIVE_REPEAT_NEGATIVE``,
+    ``CUMULATIVE_METER_RESET`` or ``CUMULATIVE_NO_RECOVERY``.
+    ``CUMULATIVE_ZERO_TOTAL`` is independent of those four and may sit on the
+    same reading or on its own.
+    """
 
-    Modifies *group* in-place.  Helper columns live only on the local ``fg`` copy.
+    readings: pd.DataFrame
+    dates_ns: pd.Series
+    flags: pd.Series
+
+
+def _detect_negative_diff_cases(group, col):
+    """
+    Classify the negative diffs in one cumulative column.
+
+    Reads ``group['ReadingDate']`` and ``group[col]`` and returns the
+    classification. Nothing is written back to *group*, so this is safe to run
+    on every column regardless of what any validator reported.
 
     Parameters
     ----------
     group : pd.DataFrame
-        Per-household DataFrame, sorted by ReadingDate.  Must already contain
-        ``col`` and ``col + 'Diff'`` columns.
+        Per-household DataFrame, sorted by ReadingDate, containing ``col``.
+    col : str
+        Name of the cumulative column being classified.
+
+    Returns
+    -------
+    _NegativeDiffCases or None
+        None when the column holds no negative diff, so callers can skip the
+        correction step entirely.
+    """
+    readings = group[['ReadingDate', col]].dropna().copy()
+    diff_no_gap = col + 'Diff_no_gap'
+    readings[diff_no_gap] = readings[col].diff().round(10)
+
+    # The first reading has no predecessor, so its NA diff is not a decrease.
+    # Resolving it here keeps pd.NA out of the flags entirely.
+    is_negative = (readings[diff_no_gap] < 0).fillna(False)
+    if not is_negative.any():
+        return None
+
+    # Next non-zero diff for every row in one pass: blank the zero-diff rows,
+    # shift up by one so each row looks past itself, then back-fill so every row
+    # carries the first non-zero diff that follows it.
+    is_nonzero = readings[diff_no_gap] != 0
+    readings['_next_val'] = readings[diff_no_gap].where(is_nonzero).shift(-1).bfill()
+    readings['_next_date'] = readings['ReadingDate'].where(is_nonzero).shift(-1).bfill()
+
+    has_next = readings['_next_val'].notna()
+    jump_back = is_negative & has_next & (readings['_next_val'] >= -readings[diff_no_gap])
+    repeat_negative = is_negative & has_next & (readings['_next_val'] < 0)
+    meter_reset = is_negative & has_next & ~(jump_back | repeat_negative)
+    no_recovery = is_negative & ~has_next
+
+    # A register that has recorded a total cannot return to zero. Leading zeros
+    # are a meter that has not started counting, which is not a fault -- what
+    # follows them may be (a large first reading is accumulated catch-up), but
+    # that is a different fault on a different reading. Not exclusive with the
+    # four cases above: a reset can land on a zero reading.
+    has_accumulated = (readings[col] > 0).cumsum().shift(1, fill_value=0) > 0
+    zero_total = (readings[col] == 0) & has_accumulated
+
+    # .value throughout: a Flag member is iterable on Python 3.11+, so pandas
+    # would read the enum itself as array-like.
+    flags = (
+        jump_back.astype('Int64') * MappingFlag.CUMULATIVE_JUMP_BACK.value
+        | repeat_negative.astype('Int64') * MappingFlag.CUMULATIVE_REPEAT_NEGATIVE.value
+        | meter_reset.astype('Int64') * MappingFlag.CUMULATIVE_METER_RESET.value
+        | no_recovery.astype('Int64') * MappingFlag.CUMULATIVE_NO_RECOVERY.value
+        | zero_total.astype('Int64') * MappingFlag.CUMULATIVE_ZERO_TOTAL.value
+    )
+
+    return _NegativeDiffCases(
+        readings=readings,
+        # Epoch nanoseconds so that searchsorted against the group never compares
+        # a tz-aware timestamp with a tz-naive one: some suppliers deliver
+        # ReadingDate as datetime64[ns, UTC] and the coercion in
+        # rearrange_model_columns does not always strip the tz.
+        dates_ns=readings['ReadingDate'].astype('int64'),
+        flags=flags,
+    )
+
+
+def _apply_negative_diff_corrections(group, col, cases, context_string):
+    """
+    Set the cumulative readings that *cases* condemns to pd.NA.
+
+    Modifies *group* in place, with a single assignment at the end. The four
+    flags resolve to three deletion scopes:
+
+    - ``CUMULATIVE_DECREASE_RANGE`` (jump-back or repeat-negative) blanks the
+      half-open date range from the dip up to the recovery, accumulated with a
+      sweep line so overlapping ranges collapse.
+    - ``CUMULATIVE_NO_RECOVERY`` blanks everything from the earliest unrecovered
+      dip onward.
+    - ``CUMULATIVE_METER_RESET`` blanks the single reading at the dip, and only
+      when the diff already computed for that row is negative. Where that diff is
+      NA a gap in the data already prevents a negative diff, so the reading is
+      kept.
+
+    Parameters
+    ----------
+    group : pd.DataFrame
+        Per-household DataFrame, sorted by ReadingDate. Must already contain
+        ``col`` and ``col + 'Diff'``.
     col : str
         Name of the cumulative column being corrected.
+    cases : _NegativeDiffCases
+        Classification from ``_detect_negative_diff_cases``.
     context_string : str
         Prefix for log messages (e.g. ``"HH-42: "``).
     """
-    fg = group[['ReadingDate', col]].dropna().copy()
-    fg[col + 'Diff_no_gap'] = fg[col].diff().round(10)
+    readings = cases.readings
 
-    is_neg = fg[col + 'Diff_no_gap'] < 0
-    if not is_neg.any():
-        return  # nothing to correct
+    def selected(flag):
+        return (cases.flags & flag.value) != 0
 
-    # --- helper columns: next non-zero diff value and date (single O(N) pass) ---
-    is_nonzero = fg[col + 'Diff_no_gap'] != 0
-    nonzero_vals  = fg[col + 'Diff_no_gap'].where(is_nonzero)
-    nonzero_dates = fg['ReadingDate'].where(is_nonzero)
-    fg['_next_val']  = nonzero_vals.shift(-1).bfill()
-    fg['_next_date'] = nonzero_dates.shift(-1).bfill()
-
-    # --- case classification (pure bitwise, no loops) ---
-    has_next = fg['_next_val'].notna()
-
-    case_1      = is_neg & has_next & (fg['_next_val'] >= -fg[col + 'Diff_no_gap'])  # meter jumps back up
-    case_2      = is_neg & has_next & (fg['_next_val'] < 0)                           # two consecutive negatives → error
-    case_1_or_2 = case_1 | case_2
-    case_3       = is_neg & has_next & ~case_1_or_2       # meter reset
-    case_no_next = is_neg & ~has_next                     # no recovery
-
-    # positional index over group rows (group itself may have any index label)
-    # Use epoch nanoseconds (int64) for searchsorted to avoid tz-aware vs tz-naive
-    # comparison errors -- some suppliers' ReadingDate arrives as datetime64[ns, UTC] and
-    # pd.to_datetime coercion in rearrange_model_columns does not always strip tz.
+    # Positional index over group rows; group itself may carry any index label.
     group_dates_ns = group['ReadingDate'].astype('int64').reset_index(drop=True)
-    fg_dates_ns    = fg['ReadingDate'].astype('int64')
     n = len(group_dates_ns)
     na_mask = pd.Series(False, index=range(n))
 
-    # --- Case 1/2: sweep-line range marking ---
-    if case_1_or_2.any():
-        # Case 2: two consecutive negative diffs — genuine data error
-        if case_2.any():
+    repeat_negative = selected(MappingFlag.CUMULATIVE_REPEAT_NEGATIVE)
+    no_recovery = selected(MappingFlag.CUMULATIVE_NO_RECOVERY)
+    meter_reset = selected(MappingFlag.CUMULATIVE_METER_RESET)
+    range_scope = selected(MappingFlag.CUMULATIVE_DECREASE_RANGE)
+    if range_scope.any():
+        if repeat_negative.any():
             for rd, next_date in zip(
-                fg.loc[case_2, 'ReadingDate'].values,
-                fg.loc[case_2, '_next_date'].values,
+                readings.loc[repeat_negative, 'ReadingDate'].values,
+                readings.loc[repeat_negative, '_next_date'].values,
             ):
                 logging.error(
                     f"{context_string}Two negative diffs "
@@ -354,10 +435,10 @@ def _apply_negative_diff_corrections(group, col, context_string):
                     f"these values for {col}."
                 )
 
-        starts_ns = fg_dates_ns.loc[case_1_or_2]
-        ends_ns   = fg.loc[case_1_or_2, '_next_date'].astype('int64')
-        si_arr    = group_dates_ns.searchsorted(starts_ns.values)
-        ei_arr    = group_dates_ns.searchsorted(ends_ns.values)
+        starts_ns = cases.dates_ns.loc[range_scope]
+        ends_ns = readings.loc[range_scope, '_next_date'].astype('int64')
+        si_arr = group_dates_ns.searchsorted(starts_ns.values)
+        ei_arr = group_dates_ns.searchsorted(ends_ns.values)
 
         # +1 at each range start, -1 at each range end; groupby handles duplicates
         events = pd.concat([
@@ -367,46 +448,43 @@ def _apply_negative_diff_corrections(group, col, context_string):
 
         na_mask |= events.cumsum() > 0
         logging.debug(
-            f"{context_string}Case 1/2: marking {case_1_or_2.sum()} interval(s) "
+            f"{context_string}Marking {int(range_scope.sum())} interval(s) "
             f"as NA in '{col}'"
         )
 
-    # --- Case no_next: all rows from earliest unrecovered date onward ---
-    if case_no_next.any():
-        earliest_ns = int(fg_dates_ns.loc[case_no_next].min())
+    if no_recovery.any():
+        earliest_ns = int(cases.dates_ns.loc[no_recovery].min())
         si = int(group_dates_ns.searchsorted(earliest_ns))
         na_mask.iloc[si:] = True
-        earliest_disp = fg.loc[case_no_next, 'ReadingDate'].min()
+        earliest_disp = readings.loc[no_recovery, 'ReadingDate'].min()
         logging.warning(
-            f"{context_string}Removing all values in '{col}' after {earliest_disp} — "
+            f"{context_string}Removing all values in '{col}' after {earliest_disp} -- "
             f"no subsequent increases after the negative diff."
         )
 
-    # --- Case 3: meter reset — mark single row only if original diff is negative ---
-    if case_3.any():
-        case_3_dates_ns = fg_dates_ns.loc[case_3]
-        si_3      = group_dates_ns.searchsorted(case_3_dates_ns.values)
-        diff_vals = group.iloc[si_3][col + 'Diff']
+    if meter_reset.any():
+        reset_dates_ns = cases.dates_ns.loc[meter_reset]
+        si_reset = group_dates_ns.searchsorted(reset_dates_ns.values)
+        diff_vals = group.iloc[si_reset][col + 'Diff']
         is_neg_diff = (diff_vals < 0).fillna(False)
-        is_na_diff  = diff_vals.isna()
-        is_error    = ~is_neg_diff & ~is_na_diff
+        is_na_diff = diff_vals.isna()
+        is_error = ~is_neg_diff & ~is_na_diff
 
         if is_error.any():
-            case_3_dates_disp = fg.loc[case_3, 'ReadingDate']
-            for rd in case_3_dates_disp.values[is_error.values]:
+            reset_dates_disp = readings.loc[meter_reset, 'ReadingDate']
+            for rd in reset_dates_disp.values[is_error.values]:
                 logging.error(
                     f"{context_string}Negative gap jump at {rd}. Diff is not "
                     f"negative, and not <NA>. Check for errors, e.g duplicate "
                     f"reading dates!"
                 )
-        na_mask.iloc[si_3[is_neg_diff.values]] = True
+        na_mask.iloc[si_reset[is_neg_diff.values]] = True
         if is_na_diff.any():
             logging.debug(
                 f"{context_string}Negative gap jump(s) in '{col}'. "
                 f"Diff is NA, not removing any values."
             )
 
-    # --- single assignment — one O(N) pandas operation ---
     group.loc[group.index[na_mask.values], col] = pd.NA
 
 
@@ -420,12 +498,15 @@ def add_diff_columns(
     """
     Add difference columns for cumulative variables and handle data inconsistencies.
 
-    Vectorized implementation using helper-column sweep-line approach.
-    Negative-diff corrections are applied by ``_apply_negative_diff_corrections``
-    which replaces the original per-date loop with pandas vectorised operations.
+    Per cumulative column: compute the difference to the previous reading,
+    classify any decrease with ``_detect_negative_diff_cases``, blank the
+    readings that classification condemns with
+    ``_apply_negative_diff_corrections``, then recompute the difference from the
+    corrected readings.
 
-    See ``add_diff_columns_legacy`` for the original loop-based implementation
-    (kept until this version has been fully validated in production).
+    Detection runs for every column and has no effect on the data; only the
+    correction depends on what was detected. ``validate_func`` decides whether a
+    group is kept or dropped, not whether its readings are corrected.
 
     Parameters
     ----------
@@ -470,12 +551,30 @@ def add_diff_columns(
                 )
                 continue
 
-            logging.debug(f"{context_string}Calculating diff for {col}")
-            group[col + 'Diff'] = group[col].diff().round(10)
-            group.loc[group.index[0], col + 'Diff'] = 0
+            # A supplier may deliver the interval column itself. Derive only when
+            # the cumulative column carries data (it stays authoritative), or when
+            # there is no delivered interval column to preserve. An all-NA
+            # cumulative beside a delivered interval column is the one case where
+            # deriving would destroy a real measurement.
+            diff_col = col + 'Diff'
+            _delivered_interval = (
+                diff_col in group.columns and group[diff_col].notna().any()
+            )
+            if group[col].notna().any() or not _delivered_interval:
+                logging.debug(f"{context_string}Calculating diff for {col}")
+                group[diff_col] = group[col].diff().round(10)
+                group.loc[group.index[0], diff_col] = 0
+            else:
+                logging.info(
+                    f"{context_string}'{col}' is empty and '{diff_col}' was "
+                    f"delivered; keeping the delivered interval values."
+                )
 
-            if not valid_result['no_negative_diff']:
-                _apply_negative_diff_corrections(group, col, context_string)
+            # Detection reads the column and writes nothing, so it runs for every
+            # column. Only the correction is conditional, on what was detected.
+            cases = _detect_negative_diff_cases(group, col)
+            if cases is not None:
+                _apply_negative_diff_corrections(group, col, cases, context_string)
 
                 logging.debug(
                     f"{context_string}Re-calculating diff for {col} after corrections."
@@ -745,9 +844,234 @@ def add_diff_columns_legacy(
         )
 
 
+# Nullable dtypes (ADR-005) for the per-column cadence table. cadence_minutes
+# and cadence_source are added by the resolution step at the end.
+_CADENCE_DTYPES = {
+    'column': 'string',
+    'cadence_detected': 'Int64',
+    'confidence': 'Float64',
+    'n_readings': 'Int64',
+}
+
+_CADENCE_TABLE_DTYPES = {
+    'column': 'string',
+    'cadence_minutes': 'Int64',
+    'cadence_source': 'string',
+    'cadence_detected': 'Int64',
+    'confidence': 'Float64',
+    'n_readings': 'Int64',
+}
+
+
+def cadence_label(minutes) -> str:
+    """
+    Render a cadence the way the metadata writes it, in its natural unit.
+
+    A cadence is a duration, so it is written the way durations are written:
+    ``30s``, ``5min``, ``1h``, ``24h``. Whole hours read as hours rather than as
+    ``1440min``, which is the same duration but not how anyone says it. Hours are
+    the coarsest unit written, so a daily reading is ``24h`` rather than ``1d``.
+
+    This is for display. **Do not compare cadences as text.** The metadata writes
+    a cadence in whichever unit suits the variable, so ``24h`` and ``1440min``
+    are the same cadence written two ways and would compare unequal. Read a
+    declared cadence with ``pd.Timedelta`` and compare the numbers.
+
+    Returns pd.NA unchanged, so an unknown cadence stays unknown.
+    """
+    if pd.isna(minutes):
+        return pd.NA
+
+    minutes = float(minutes)
+    if minutes < 1:
+        return f"{int(round(minutes * 60))}s"
+    if minutes % 60 == 0:
+        return f"{int(minutes // 60)}h"
+    return f"{int(minutes)}min"
+
+
+def _modal_gap_minutes(timestamps: pd.Series):
+    """
+    The most common gap between consecutive timestamps, in minutes.
+
+    Returns (minutes, confidence), where confidence is the share of gaps that sit
+    at that value, or (pd.NA, pd.NA) when there is nothing to measure.
+
+    Gaps are rounded to the minute so that a timestamp offset varying slightly
+    between readings does not split one cadence into several.
+    """
+    gaps = timestamps.diff().dropna().dt.total_seconds().div(60).round()
+    gaps = gaps[gaps > 0]
+    if gaps.empty:
+        return pd.NA, pd.NA
+
+    modal = gaps.mode()
+    if modal.empty:
+        return pd.NA, pd.NA
+
+    minutes = int(modal.iloc[0])
+    return minutes, float((gaps == minutes).sum() / len(gaps))
+
+
+def detect_column_cadence(
+    df: pd.DataFrame,
+    columns: tuple[str, ...] | list[str] | None = None,
+    date_column: str = 'ReadingDate',
+    declared: dict | None = None,
+    min_readings: int = 3,
+    min_confidence: float = 0.8,
+    context: str = '',
+) -> pd.DataFrame:
+    """
+    Infer how often each column actually reports, from its own timestamps.
+
+    A column's cadence is the most common gap between the readings it carries.
+    Only rows where the column has a value count, so a 15-minute register sitting
+    on a 5-minute grid reports 15 minutes rather than the grid's 5.
+
+    ``date_column`` is measured too and comes back as its own row. That is the
+    dataset's cadence -- the grid the data sits on, and the floor on any column's
+    cadence, since nothing can report more often than the dataset records.
+
+    Cadence is settled here, once. Three sources, in order of authority:
+
+    1. **Declared.** The metadata wins. Corrections are made there, because the
+       delivered data is static and cannot be changed.
+    2. **Detected**, where the readings were regular enough to trust.
+    3. **The dataset's own cadence**, as the floor and last resort.
+
+    A declaration that disagrees with a confident detection is logged and kept in
+    ``cadence_detected`` so a report can surface it. The declaration still wins.
+
+    Everything downstream reads ``cadence_minutes`` rather than measuring again.
+
+    Must run on data as delivered, before any fill. ``fill_down_infrequent_devices``
+    makes every row non-missing, which erases the evidence this reads.
+
+    Taking the most common *gap* rather than counting readings per day is what
+    makes a partial opening day harmless. The ingestion window is cut on Dutch
+    midnight while data is bucketed in UTC, so a record's first day can carry
+    only a couple of hours -- 24 readings on a 5-minute register, exactly what a
+    complete hourly register produces. The counts collide; the gaps do not.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Data as delivered. ``date_column`` must be datetime dtype and is assumed
+        sorted ascending.
+    columns : tuple or list of str, optional
+        Columns to measure. Defaults to every column, ``date_column`` included.
+    date_column : str
+        Name of the timestamp column. Default 'ReadingDate'.
+    declared : dict, optional
+        Column -> cadence in minutes, as declared in the metadata. Absent columns
+        mean nothing was declared, which is the normal case: ``Meetfrequentie``
+        is unpopulated by design.
+    min_readings : int
+        Fewest readings that can support a cadence. Below this the column gets
+        pd.NA rather than a guess. Default 3, which is two gaps.
+    min_confidence : float
+        Lowest confidence at which a detected cadence is trusted.
+    context : str
+        Optional prefix for log messages, e.g. a household identifier.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per column:
+
+        - ``cadence_minutes`` (Int64) -- the cadence to use.
+        - ``cadence_source`` (string) -- 'declared', 'detected' or 'dataset'.
+        - ``cadence_detected`` (Int64) -- what the readings themselves showed,
+          kept even when a declaration overrides it so the report can surface
+          the disagreement.
+        - ``confidence`` (Float64) -- the share of gaps at the detected cadence.
+          A low share means the readings are irregular and the measurement is a
+          weak claim.
+        - ``n_readings`` (Int64).
+    """
+    ctx = (context + ': ') if context else ''
+    if columns is None:
+        columns = list(df.columns)
+
+    dates = df[date_column]
+    rows = []
+    for col in columns:
+        if col not in df.columns:
+            continue
+
+        present = dates[df[col].notna()]
+        n_readings = len(present)
+        minutes, confidence = pd.NA, pd.NA
+
+        if n_readings >= min_readings:
+            minutes, confidence = _modal_gap_minutes(present)
+
+        if pd.isna(minutes):
+            logging.debug(
+                f"{ctx}detect_column_cadence: '{col}' has {n_readings} "
+                f"reading(s), too few to infer a cadence."
+            )
+        rows.append(
+            {
+                'column': col,
+                'cadence_detected': minutes,
+                'confidence': confidence,
+                'n_readings': n_readings,
+            }
+        )
+
+    out = pd.DataFrame(rows, columns=_CADENCE_DTYPES.keys()).astype(_CADENCE_DTYPES)
+
+    declared_minutes = pd.array(
+        [(declared or {}).get(col, pd.NA) for col in out['column']], dtype='Int64'
+    )
+    declared_minutes = pd.Series(declared_minutes, index=out.index)
+    # An unmeasured column has no confidence, which is not a low confidence --
+    # but a mask must not carry pd.NA, or it reads as True where it is unknown.
+    trusted = (out['confidence'] >= min_confidence).fillna(False)
+    grid = dict(zip(out['column'], out['cadence_detected'])).get(date_column, pd.NA)
+
+    # Declared, then a detection regular enough to trust, then the grid.
+    out['cadence_minutes'] = (
+        declared_minutes
+        .combine_first(out['cadence_detected'].where(trusted))
+        .fillna(grid)
+        .astype('Int64')
+    )
+    out['cadence_source'] = (
+        pd.Series('dataset', index=out.index, dtype='string')
+        .mask(trusted, 'detected')
+        .mask(declared_minutes.notna(), 'declared')
+    )
+
+    drifted = (
+        declared_minutes.notna() & trusted
+        & (declared_minutes != out['cadence_detected'])
+    )
+    if drifted.any():
+        logging.warning(
+            f"{ctx}Declared cadence disagrees with the data for "
+            + ', '.join(
+                f"'{col}' ({cadence_label(dec)} declared, reports every "
+                f"{cadence_label(det)})"
+                for col, dec, det in zip(
+                    out.loc[drifted, 'column'],
+                    declared_minutes[drifted],
+                    out.loc[drifted, 'cadence_detected'],
+                )
+            )
+            + ". Using the declared values."
+        )
+
+    return out[list(_CADENCE_TABLE_DTYPES)]
+
+
 def fill_down_infrequent_devices(
     df: pd.DataFrame,
     columns: tuple[str, ...] | list[str],
+    cadence: pd.DataFrame | None = None,
+    date_column: str = 'ReadingDate',
 ) -> pd.DataFrame:
     """
     Fill down (forward fill) and then up (backward fill) values for specified columns.
@@ -759,6 +1083,28 @@ def fill_down_infrequent_devices(
     The column list is intentionally required -- it must be defined per project/mapper
     script because the set of optional devices differs between data suppliers.
 
+    Filling at the device's cadence
+    -------------------------------
+    Given *cadence*, a filled value is placed only on the slots the device
+    actually reports on, leaving pd.NA in between. A reading that covers fifteen
+    minutes then sits on one fifteen-minute slot rather than being repeated
+    across three five-minute rows, so imputation spreads its energy over the
+    window it accumulated in instead of seeing a flat line and one spike.
+
+    Delivered readings are never touched. Only the *filled* values are placed on
+    cadence slots; a real reading that arrives off-slot is kept where it is.
+
+    Without *cadence*, or for a column whose cadence could not be measured, the
+    fallback is the **dataset's own cadence** -- every row, which is the behaviour
+    this function has always had. Not a fixed five minutes: the grid may be
+    coarser, in which case five-minute slots do not exist, and a column cannot
+    report more often than the dataset records anyway.
+
+    Slots are stepped in **rows**, not in wall-clock time, so a grid of any
+    cadence works and a column's cadence need not divide the hour. The step is
+    anchored on the device's first real reading, which puts the slots where its
+    data actually is.
+
     Parameters
     ----------
     df : pd.DataFrame
@@ -766,6 +1112,11 @@ def fill_down_infrequent_devices(
     columns : tuple or list of str
         Cumulative column names to fill. Must be provided by the caller; there is no
         default. Only columns that exist in df are processed; others are silently skipped.
+    cadence : pd.DataFrame, optional
+        The output of ``detect_column_cadence``, measured on this data before any
+        fill. Columns absent from it fall back to the dataset's cadence.
+    date_column : str
+        Name of the timestamp column. Default 'ReadingDate'.
 
     Returns
     -------
@@ -778,9 +1129,41 @@ def fill_down_infrequent_devices(
     (households where the sensor was never present).
     Only meaningful for cumulative variables -- do not apply to instantaneous sensors.
     """
+    minutes_by_column = {}
+    if cadence is not None and not cadence.empty:
+        # detect_column_cadence has already settled this. Nothing is measured or
+        # decided here -- the value is read.
+        minutes_by_column = dict(
+            zip(cadence['column'], cadence['cadence_minutes'])
+        )
+
+    grid_minutes = minutes_by_column.get(date_column, pd.NA)
+    position = pd.Series(range(len(df)), index=df.index)
+
     for col in columns:
-        if col in df.columns:
-            df[col] = df[col].ffill().bfill().fillna(0.0)
+        if col not in df.columns:
+            continue
+
+        delivered = df[col].notna()
+        filled = df[col].ffill().bfill().fillna(0.0)
+
+        minutes = minutes_by_column.get(col, pd.NA)
+        if pd.isna(minutes) or pd.isna(grid_minutes):
+            df[col] = filled
+            continue
+
+        # Step in rows, not in wall-clock time: the grid may be any cadence, and
+        # a column's cadence need not divide the hour. Anchoring on the device's
+        # first real reading puts the slots where its data actually is.
+        step = int(round(int(minutes) / int(grid_minutes)))
+        if step <= 1 or not delivered.any():
+            df[col] = filled
+            continue
+
+        anchor = int(position[delivered].iloc[0])
+        on_cadence = (position - anchor) % step == 0
+        df[col] = filled.where(on_cadence | delivered, pd.NA)
+
     return df
 
 
@@ -1404,8 +1787,6 @@ def apply_thresholds_to_df(
         "max_removed"}. Columns that lost no values are omitted.
     """
 
-    thresholds_dict = load_thresholds_as_dict()
-
     stats = {}
     for col in df.columns:
         if col in thresholds_dict:
@@ -1461,13 +1842,11 @@ def apply_threshold_to_col(
     max_removed are taken from the out-of-bounds values *before* they are
     nulled, so they record how far past the bounds the data reached.
     """
-    notna = df[col].notna()
-    below = (df[col] < lower_bound) & notna
-    above = (df[col] > upper_bound) & notna
-    mask = below | above
+    flags = bound_flags(df[col], lower_bound, upper_bound)
+    mask = flags != MappingFlag.NONE.value
 
-    n_below = int(below.sum())
-    n_above = int(above.sum())
+    n_below = int((flags & MappingFlag.OUT_OF_BOUNDS_LOW.value != 0).sum())
+    n_above = int((flags & MappingFlag.OUT_OF_BOUNDS_HIGH.value != 0).sum())
 
     if n_below or n_above:
         removed = df.loc[mask, col]
@@ -1476,6 +1855,10 @@ def apply_threshold_to_col(
             "n_above": n_above,
             "min_removed": float(removed.min()),
             "max_removed": float(removed.max()),
+            # The bounds actually checked. pd.NA means that side was not set,
+            # so its count is "not checked", not "nothing found".
+            "lower_bound": lower_bound,
+            "upper_bound": upper_bound,
         }
     else:
         col_stats = None
@@ -1497,6 +1880,8 @@ _THRESHOLD_REMOVAL_DTYPES = {
     "n_above": "Int64",
     "min_removed": "Float64",
     "max_removed": "Float64",
+    "lower_bound": "Float64",
+    "upper_bound": "Float64",
 }
 
 
@@ -1509,9 +1894,9 @@ def threshold_stats_to_rows(household_id, threshold_stats):
     household_id : int
         The household's HuisIdBSV.
     threshold_stats : dict
-        {column: {"n_below", "n_above", "min_removed", "max_removed"}} as
-        produced by apply_thresholds_to_df(return_stats=True). May be empty
-        or None.
+        {column: {"n_below", "n_above", "min_removed", "max_removed",
+        "lower_bound", "upper_bound"}} as produced by
+        apply_thresholds_to_df(return_stats=True). May be empty or None.
 
     Returns
     -------
@@ -1528,6 +1913,8 @@ def threshold_stats_to_rows(household_id, threshold_stats):
                 "n_above": s["n_above"],
                 "min_removed": s["min_removed"],
                 "max_removed": s["max_removed"],
+                "lower_bound": s["lower_bound"],
+                "upper_bound": s["upper_bound"],
             }
         )
     return rows
@@ -1552,6 +1939,56 @@ def write_threshold_removals(
     df.to_parquet(path, engine="pyarrow")
     logging.info(
         f"[mapping_helpers] Wrote {len(df)} threshold-removal row(s) to {path}"
+    )
+    return path
+
+
+CADENCE_FILENAME = "mapping_column_cadence.parquet"
+
+
+def cadence_to_rows(household_id, cadence_df):
+    """
+    Flatten one household's cadence table into sidecar rows.
+
+    Parameters
+    ----------
+    household_id : int
+        The household's HuisIdBSV.
+    cadence_df : pd.DataFrame or None
+        The output of detect_column_cadence. May be empty or None.
+
+    Returns
+    -------
+    list of dict
+        One row per column measured; empty when nothing was measured.
+    """
+    if cadence_df is None or cadence_df.empty:
+        return []
+    rows = []
+    for record in cadence_df.to_dict(orient="records"):
+        rows.append({"HuisIdBSV": household_id, **record})
+    return rows
+
+
+def write_column_cadence(rows, mapped_folder_path, filename=CADENCE_FILENAME):
+    """
+    Write accumulated per-column cadence rows to a sidecar parquet.
+
+    One row per (HuisIdBSV, column). Cadence is measured per household because
+    it varies between them -- a sensor swap or a partial year can change how
+    often one household's column reports without affecting any other.
+
+    An empty but correctly-typed frame is written when nothing was measured, so
+    downstream readers get a stable schema either way.
+
+    Returns the path written.
+    """
+    dtypes = {"HuisIdBSV": "Int64", **_CADENCE_TABLE_DTYPES}
+    df = pd.DataFrame(rows, columns=list(dtypes)).astype(dtypes)
+    path = os.path.join(mapped_folder_path, filename)
+    df.to_parquet(path, engine="pyarrow")
+    logging.info(
+        f"[mapping_helpers] Wrote {len(df)} column-cadence row(s) to {path}"
     )
     return path
 

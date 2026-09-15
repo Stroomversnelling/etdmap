@@ -7,7 +7,7 @@ from etdmap.data_model import (
     cumulative_columns,
     data_analysis_columns,
     load_thresholds,
-    load_thresholds_as_dict,
+    thresholds_dict,
 )
 
 """
@@ -371,7 +371,6 @@ def create_validate_func_outliers_neg_cum(
 
 year_allowed_jitter = 18  # approx 5% of the year can be missing
 thresholds_df = load_thresholds()
-thresholds_dict = load_thresholds_as_dict()
 
 cumulative_columns_thresholds = thresholds_df[
     thresholds_df['ThresholdType']=='cumulatief']

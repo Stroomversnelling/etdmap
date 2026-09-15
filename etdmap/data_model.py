@@ -85,12 +85,20 @@ def load_thresholds() -> pd.DataFrame:
 
 def load_thresholds_as_dict() -> dict:
     """
-    Load thresholds and return as {variable_name: {"Min": ..., "Max": ...}}.
+    Load thresholds as {variable_name: {"Min", "Max", "ThresholdType"}}.
+
+    A bound is declared against a unit of time -- "momentaan", "5-minute" or
+    "cumulatief" -- and ThresholdType names it. Min or Max may be pd.NA,
+    meaning no bound is declared on that side.
     """
     thresholds_dict = {}
     for _, row in load_thresholds().iterrows():
         col = row["Variabele"]
-        thresholds_dict[col] = {"Min": row["Min"], "Max": row["Max"]}
+        thresholds_dict[col] = {
+            "Min": row["Min"],
+            "Max": row["Max"],
+            "ThresholdType": row["ThresholdType"],
+        }
     return thresholds_dict
 
 
@@ -257,10 +265,11 @@ def _build_derived_structures():
         (df["Diff"] == "ja") & (df["Type variabele"] != "date")
     ]["Variabele"].tolist()
 
-    # Raw provider performance columns in Volgorde order — used to validate column
-    # presence and to reorder output parquet files for INCOMING mapped data.
-    # Scope: Entiteit == "Prestatiedata" ONLY.
-    # Do NOT use this as the derivation target universe — use all_perf_cols below.
+    # Performance columns that carry a declared Volgorde, in that order.
+    # Scope: Entiteit == "Prestatiedata" ONLY. This is an ordering convenience,
+    # NOT a statement about which columns a supplier may deliver — any data
+    # model column is valid raw data. Do NOT use this as a membership test
+    # (use all_col_types) or as the derivation target universe (use all_perf_cols).
     # See etdmap/DECISIONS.md ADR-001 for the rationale.
     col_order = perf["Variabele"].tolist()
 
@@ -276,12 +285,25 @@ def _build_derived_structures():
         (df["Wie vult?"] == "Dataleverancier") & (df["Entiteit"] == "Metadata")
     ]["Variabele"].tolist()
 
-    # All performance columns expected after the full pipeline has run:
-    # both raw provider columns (Prestatiedata) and ETD-derived columns
-    # (PrestatiedataBerekend). Used as the derivation target universe in
-    # add_calculated_columns_adaptive(). See etdmap/DECISIONS.md ADR-001.
+    # Every performance column in the model (Prestatiedata and
+    # PrestatiedataBerekend alike). The Berekend suffix names a variable's role
+    # in the derivation rules; it does not mean the column cannot be delivered.
+    # Used as the derivation target universe in add_calculated_columns_adaptive().
+    # See etdmap/DECISIONS.md ADR-001.
     perf_all = df[df["Entiteit"].str.startswith("Prestatiedata", na=False)].copy()
     all_perf_cols = perf_all["Variabele"].tolist()
+
+    # Every performance column in the data model, mapped to its dtype.
+    # Insertion order IS the column order: col_order first (declared Volgorde),
+    # then the remaining performance columns in model order.
+    all_col_types = dict(col_types)
+    for _, row in perf_all.iterrows():
+        variable = row["Variabele"]
+        if pd.isna(variable) or str(variable) in all_col_types:
+            continue
+        all_col_types[str(variable)] = _DTYPE_MAP.get(
+            str(row["Type variabele"]), "Float64"
+        )
 
     # Required subset: columns that must be present at end of pipeline.
     # Missing any of these after derivation is a data quality error (logging.error).
@@ -290,7 +312,7 @@ def _build_derived_structures():
     return (
         cumulative, momentaan, diff_cols,
         col_order, col_types, supplier_meta,
-        all_perf_cols, required_perf_cols,
+        all_perf_cols, required_perf_cols, all_col_types,
     )
 
 
@@ -303,6 +325,7 @@ def _build_derived_structures():
     allowed_supplier_metadata_columns,
     all_performance_data_columns,
     required_performance_data_columns,
+    performance_column_dtypes,
 ) = _build_derived_structures()
 
 # data_analysis_columns: columns validated by dataset_validators.
@@ -310,6 +333,12 @@ def _build_derived_structures():
 # TODO: narrow to Vereist=="ja" once that column is fully populated in etdmodel.csv.
 # A regression test in tests/test_data_model.py guards the current alias.
 data_analysis_columns = model_column_order
+
+# The thresholds as declared in the model, each against its own unit of time.
+# Static: this is the model, so it is loaded once. Anything cadence-aware or
+# per-household is derived from it and kept separate -- it does not replace
+# these values or write back into this dict.
+thresholds_dict = load_thresholds_as_dict()
 
 
 # ---------------------------------------------------------------------------

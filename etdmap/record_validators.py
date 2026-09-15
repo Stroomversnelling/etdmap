@@ -7,8 +7,9 @@ from pandas import DataFrame, Series
 from etdmap.data_model import (
     cumulative_columns,
     load_thresholds,
-    load_thresholds_as_dict,
+    thresholds_dict,
 )
+from etdmap.flags import MappingFlag, bound_flags
 
 """
 It contains functions & script that generates a dictionary
@@ -41,24 +42,17 @@ def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
     """
     columns = [col for col in df.columns if col in thresholds_dict]
 
-    ge_masks = pd.DataFrame(
+    # A missing value is not a violation, so it leaves the row valid here.
+    valid_masks = pd.DataFrame(
         {
-            col: (df[col] >= thresholds_dict[col]['Min'])
-            if pd.notna(thresholds_dict[col]['Min'])
-            else pd.Series(True, index=df.index)
+            col: bound_flags(
+                df[col],
+                thresholds_dict[col]['Min'],
+                thresholds_dict[col]['Max'],
+            ) == MappingFlag.NONE.value
             for col in columns
         }
     )
-    le_masks = pd.DataFrame(
-        {
-            col: df[col] <= thresholds_dict[col]['Max']
-            if pd.notna(thresholds_dict[col]['Max'])
-            else pd.Series(True, index=df.index)
-            for col in columns
-        }
-    )
-
-    valid_masks = (ge_masks & le_masks).fillna(True)
     valid_combined = valid_masks.all(axis=1)
 
     # All relevant columns have NA values (set to pd.NA)
@@ -104,11 +98,13 @@ def condition_func_threshold(col: str) -> Callable[[pd.DataFrame], bool]:
     """
     if (col in thresholds_dict):
         def condition_func(df: pd.DataFrame) -> bool:
-            return (
-                    (df[col] >= thresholds_dict[col]['Min']) | pd.isna(thresholds_dict[col]['Min'])
-                ) & (
-                    (df[col] <= thresholds_dict[col]['Max']) | pd.isna(thresholds_dict[col]['Max'])
-                )
+            flags = bound_flags(
+                df[col],
+                thresholds_dict[col]['Min'],
+                thresholds_dict[col]['Max'],
+            )
+            # A missing value gets a missing result: nothing was checked.
+            return (flags == MappingFlag.NONE.value).where(df[col].notna(), pd.NA)
         return condition_func
     else:
         logging.error(
@@ -352,7 +348,6 @@ def create_validate_cumulative(
         record_flag_conditions['validate_' + col + 'Diff_outliers'] = validate_cumulative_outliers
 
 thresholds_df = load_thresholds()
-thresholds_dict = load_thresholds_as_dict()
 
 # Category 1: hand-written record quality checks
 record_quality_flag_conditions = {

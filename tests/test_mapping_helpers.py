@@ -1141,10 +1141,12 @@ class TestThresholdStatsToRows:
             "ElektriciteitVermogen": {
                 "n_below": 2, "n_above": 1,
                 "min_removed": -5.0, "max_removed": 25000.0,
+                "lower_bound": 0.0, "upper_bound": 20000.0,
             },
             "TemperatuurWoonkamer": {
                 "n_below": 0, "n_above": 3,
                 "min_removed": 40.0, "max_removed": 99.0,
+                "lower_bound": pd.NA, "upper_bound": 35.0,
             },
         }
         rows = threshold_stats_to_rows(42, stats)
@@ -1155,6 +1157,8 @@ class TestThresholdStatsToRows:
         assert by_col["ElektriciteitVermogen"]["n_above"] == 1
         assert by_col["ElektriciteitVermogen"]["min_removed"] == -5.0
         assert by_col["TemperatuurWoonkamer"]["max_removed"] == 99.0
+        # n_below of 0 on a one-sided threshold means "not checked".
+        assert pd.isna(by_col["TemperatuurWoonkamer"]["lower_bound"])
 
 
 class TestWriteThresholdRemovals:
@@ -1162,14 +1166,17 @@ class TestWriteThresholdRemovals:
 
     EXPECTED_COLS = [
         "HuisIdBSV", "column", "n_below", "n_above", "min_removed", "max_removed",
+        "lower_bound", "upper_bound",
     ]
 
     def test_writes_rows_with_nullable_dtypes(self, tmp_path):
         rows = [
             {"HuisIdBSV": 1, "column": "A", "n_below": 2, "n_above": 0,
-             "min_removed": -1.0, "max_removed": -0.5},
+             "min_removed": -1.0, "max_removed": -0.5,
+             "lower_bound": 0.0, "upper_bound": pd.NA},
             {"HuisIdBSV": 1, "column": "B", "n_below": 0, "n_above": 4,
-             "min_removed": 100.0, "max_removed": 200.0},
+             "min_removed": 100.0, "max_removed": 200.0,
+             "lower_bound": 0.0, "upper_bound": 50.0},
         ]
         path = write_threshold_removals(rows, str(tmp_path))
         out = pd.read_parquet(path, dtype_backend="numpy_nullable")
@@ -1179,6 +1186,10 @@ class TestWriteThresholdRemovals:
         assert str(out["n_below"].dtype) == "Int64"
         assert str(out["min_removed"].dtype) == "Float64"
         assert str(out["column"].dtype) == "string"
+        # An unset bound survives the round trip as pd.NA, so a reader can tell
+        # "nothing above the bound" from "no bound to check against".
+        assert pd.isna(out.loc[0, "upper_bound"])
+        assert out.loc[1, "upper_bound"] == 50.0
 
     def test_empty_rows_writes_typed_empty_frame(self, tmp_path):
         path = write_threshold_removals([], str(tmp_path))
@@ -1228,7 +1239,10 @@ class TestApplyThresholds:
         out, stats = apply_threshold_to_col(df.copy(), "X", lower_bound=0.0, upper_bound=1.0)
         assert out["X"].isna().tolist() == [True, False, True, False, False]
         assert out["X"].dropna().astype(float).tolist() == [0.5, 0.0, 1.0]
-        assert stats == {"n_below": 1, "n_above": 1, "min_removed": -1.0, "max_removed": 2.0}
+        assert stats == {
+            "n_below": 1, "n_above": 1, "min_removed": -1.0, "max_removed": 2.0,
+            "lower_bound": 0.0, "upper_bound": 1.0,
+        }
 
     def test_apply_threshold_to_col_all_in_bounds_returns_none_stats(self):
         df = pd.DataFrame({"X": pd.array([0.0, 0.5, 1.0], dtype="Float64")})
@@ -1237,11 +1251,11 @@ class TestApplyThresholds:
         assert int(out["X"].isna().sum()) == 0
 
     def test_apply_thresholds_to_df_masks_using_live_threshold_dict(self, monkeypatch):
-        # A wrong/too-tight threshold IS catchable: data crossing the bound is nulled
-        # and reported. apply_thresholds_to_df reads load_thresholds_as_dict() live.
+        # A wrong/too-tight threshold IS catchable: data crossing the bound is
+        # nulled and reported.
         monkeypatch.setattr(
-            "etdmap.mapping_helpers.load_thresholds_as_dict",
-            lambda: {"X": {"Min": 0.0, "Max": 1.0}},
+            "etdmap.mapping_helpers.thresholds_dict",
+            {"X": {"Min": 0.0, "Max": 1.0}},
         )
         df = pd.DataFrame({"X": pd.array([0.5, 5.0, 0.2], dtype="Float64")})
         out, stats = apply_thresholds_to_df(df.copy(), return_stats=True)
