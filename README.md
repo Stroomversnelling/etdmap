@@ -80,15 +80,202 @@ The first time raw files are mapped, a new index is generated (or an existing on
 
 # Developing and contributing
 
-If you would like to contribute to the package code, you can create an environment and install it in editable mode:
+If you would like to contribute to the package code, create an environment and
+install the package into it:
 
 ```bash	
 git clone https://github.com/Stroomversnelling/etdmap.git
 cd etdmap
 python -m venv .venv
 source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
-pip install -e .
+pip install .
 ```
+
+Install normally -- never `pip install -e`. Editable installs are not used
+anywhere in this project. Each environment holds its own private copy of the
+package, which is what allows different folders to run different development
+versions at the same time. That is the intended arrangement, not a workaround:
+after changing the source, reinstall into whichever environment should pick the
+change up, and leave the others on the version they were on.
+
+## Running the tests
+
+Run everything from the repo root, using this repo's own virtual environment.
+On Linux/macOS use `.venv/bin/python` in place of `.venv/Scripts/python`.
+
+```bash
+# The whole suite
+.venv/Scripts/python -m pytest
+
+# A single file
+.venv/Scripts/python -m pytest tests/test_mapping_helpers.py
+
+# A single class, or a single test
+.venv/Scripts/python -m pytest tests/test_mapping_helpers.py::TestRunStandardPipeline
+.venv/Scripts/python -m pytest tests/test_mapping_helpers.py::TestRunStandardPipeline::test_output_has_model_columns
+
+# Everything whose name matches an expression, across all files
+.venv/Scripts/python -m pytest -k "interval and not register"
+```
+
+The suite reads `config_test.yaml` from the repo root. Copy
+`config_test_template.yaml` and fill in the local fixture paths before the
+first run. If it is missing, `tests/conftest.py` raises
+`FileNotFoundError: no file named 'config_test.yaml'` while pytest is
+collecting, so the run stops immediately instead of quietly skipping the tests
+that needed it (ADR-003).
+
+### Narrowing a run is fine; skipping is not
+
+Selecting a subset of tests -- by path, by node ID, by `-k`, or by marker
+deselection (`-m "not slow"`) -- is normal and encouraged while developing.
+Those tests are simply not selected for this run.
+
+Skipping is a different mechanism and is not allowed. A skipped test was
+selected, then declined to run, and pytest reports it in a way that reads as
+green. `tests/conftest.py` contains a `pytest_runtest_makereport` hook that
+turns **any** skip -- `pytest.skip()`, `skip`/`skipif` markers,
+`importorskip` -- into a hard failure:
+
+```
+SKIP NOT ALLOWED (ADR-007).
+  reason given: ...
+  skip class  : ...
+  allowed     : (none -- the allowlist is empty)
+```
+
+`ALLOWED_SKIP_CLASSES` in that file is an allowlist of skip classes, keyed on a
+`"<TOKEN>: "` prefix in the skip reason. **It is empty on purpose** -- every
+skip examined in this code base turned out to be a missing prerequisite that
+should have failed loudly. If a skip is ever genuinely warranted, its class is
+added to the allowlist in review, never in the moment.
+
+So: if a test exists, make the prerequisite available, or let it fail so the
+gap is visible. Do not reach for `pytest.skip`.
+
+### Working quickly
+
+Most of the wall time is a session-scoped fixture in `tests/conftest.py` that
+generates the synthetic dataset and runs the mapping pipeline once. That cost
+is paid the first time any test needing it runs, so narrowing to one such file
+saves less than you would expect - while narrowing to a file that does not use
+the fixture is near-instant. `--durations` tells you which case you are in.
+
+| Flag | What it does |
+|---|---|
+| `-x` | Stop at the first failure |
+| `--lf` | Re-run only what failed last time |
+| `--ff` | Run last-failed first, then everything else |
+| `-q` | One character per test instead of one line |
+| `-k EXPR` | Select by name; supports `and`, `or`, `not` |
+| `--durations=10` | Report the 10 slowest tests |
+| `-p no:cacheprovider` | Do not write a `.pytest_cache` directory |
+
+A good loop is `--lf -x` until green, then the whole file, then the suite.
+
+### When to run what
+
+Per ADR-006 and ADR-007 in `DECISIONS.md`:
+
+- **Record a baseline before you start.** Run the suite before your first edit
+  so you know what was already green. Anything that fails afterwards is a
+  regression from your change until proven otherwise.
+- **Run the whole suite before any commit that leaves your machine** - a push,
+  a pull request, a release, or any change to the data model.
+- **During a development iteration**, small local commits may run only the
+  focused tests for the area you are touching. Run everything again before you
+  put the change down.
+- **Never leave an unexpected failure uninvestigated.** Every red test is
+  either a bug in the code, a stale fixture, or a wrong test -- and you do not
+  know which until you look. "Pre-existing" is not an explanation; it is a
+  thing to check.
+- **A red test may be legitimate, but only when it is known and understood.**
+  A test written ahead of the feature it describes starts red by design. That
+  is acceptable when the reason is understood and stated. What is never
+  acceptable is a failure nobody has looked at, or making a suite look green by
+  removing, skipping, or deselecting the test that exposed the gap.
+
+Do not sit watching a long run. Start it, keep writing code, and come back to
+it - block only when the next thing you want to do depends on the result, or
+when something is genuinely broken.
+
+Prefer accuracy over speed. Where the two conflict, slow down.
+
+This package sits at the bottom of the dependency chain (ADR-004), so a green
+suite here does not clear the packages built on it. They test against their own
+installed copy of this package, so they need their own runs after it has been
+reinstalled for them - at the usual points, not continuously.
+
+The module-level structures in `data_model.py` (`cumulative_columns`,
+`model_column_order`, and the rest) are built at import time from
+`etdmodel.csv`. That file is generated by the data model sync tooling from the
+upstream source of truth -- which is the sanctioned way the model changes.
+Editing the model there and syncing it in *is* how these variables change;
+there is no separate category of "metadata change" that leaves them untouched.
+
+Because downstream code reads those structures directly, a change to them
+carries additional risk, and per ADR-004 needs a regression test in
+`tests/test_data_model.py` plus a check that dependent packages still behave.
+That is one extra check at the points already defined above -- not a reason to
+run everything all the time.
+
+## Writing a new test
+
+Tests live in `tests/`, one file per module under test, named
+`tests/test_<module>.py`. pytest collects any function named `test_*`; group
+related cases in a `class Test<Thing>` when a file covers several behaviours.
+
+```python
+import pandas as pd
+import pytest
+
+from etdmap.mapping_helpers import add_diff_columns
+
+
+def test_diff_is_the_change_since_the_previous_reading():
+    """A cumulative meter column gains a Diff column holding per-interval change."""
+    df = pd.DataFrame(
+        {
+            "ReadingDate": pd.date_range("2026-01-01", periods=4, freq="5min", tz="UTC"),
+            "ElektriciteitNetgebruikHoog": pd.array([0.0, 1.5, 3.0, 4.5], dtype="Float64"),
+        }
+    )
+
+    out = add_diff_columns(df, context="example")
+
+    assert out["ElektriciteitNetgebruikHoogDiff"].dtype == "Float64"
+    assert out["ElektriciteitNetgebruikHoogDiff"].tolist()[1:] == [1.5, 1.5, 1.5]
+```
+
+What the suite expects, per ADR-005 and ADR-015 in `DECISIONS.md`:
+
+- Build fixture arrays with `pd.array([...], dtype="Float64")` (or `"Int64"`,
+  `"boolean"`). Never `np.array(...)`, and never a bare Python list that pandas
+  will infer into a numpy dtype.
+- The missing-value sentinel is `pd.NA` - not `np.nan`, not `None`.
+- Compare nullable Series with `pd.testing.assert_series_equal`, or cast with
+  `.astype(float)` first. `pytest.approx` does not work against a `Float64`
+  Series via `==`.
+- Datetime columns are UTC tz-aware: `pd.date_range(..., tz="UTC")`.
+- Write files only under `tmp_path` (a pytest built-in fixture). Never write
+  into the repo, and never point a test at production data.
+
+Write the docstring as the behaviour being locked in, not as a description of
+the code. When a test fails a year from now, that sentence is what tells the
+next person whether the test or the code is wrong.
+
+Prefer parametrising over copy-pasting near-identical cases:
+
+```python
+@pytest.mark.parametrize("supplied,expected", [(0.0, True), (-1.0, False)])
+def test_threshold(supplied, expected):
+    ...
+```
+
+When a test needs the full synthetic dataset rather than a handmade frame,
+request the existing session fixtures from `tests/conftest.py` instead of
+building your own - they are seeded and deterministic, and the rest of the
+suite has already paid for them.
 
 ## Test fixtures
 

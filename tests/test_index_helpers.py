@@ -127,17 +127,14 @@ def _check_metadatafiles_are_equal(load_metadata, stored_path, generated_path):
 
 def _read_sample_parquet(path):
     """
-    Reads a parquet sample under the nullable backend, keeping the row index a
-    plain integer index.
+    Reads a parquet sample, keeping the row index a plain integer index.
 
-    ADR-005 requires ``dtype_backend="numpy_nullable"`` on every parquet read,
-    but that backend is applied to every stored column -- including a
-    materialised row index. A row index is a label, not data: it can never
-    legitimately hold pd.NA, so a nullable ``Int64`` index is a wrong dtype, not
-    a stylistic choice. It only arises here because the sample fixtures are the
-    only parquet files in the project written from a non-range index (a
-    ``.sample()`` result); every pipeline file carries a RangeIndex. Cast it
-    back so the index dtype matches what the rest of the codebase produces.
+    The nullable backend applies to every stored column, including a
+    materialised row index, which comes back as ``Int64``. An index is a label
+    and never holds ``pd.NA``. The sample fixtures are the only parquet files
+    here written from a non-range index (a ``.sample()`` result); every pipeline
+    file carries a RangeIndex, so without the cast the two sides of a
+    comparison differ on index dtype alone.
     """
     df = pd.read_parquet(path, dtype_backend="numpy_nullable")
     if str(df.index.dtype) == "Int64":
