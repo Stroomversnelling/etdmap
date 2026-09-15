@@ -1929,7 +1929,19 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
 
     Returns the path written.
     """
-    df = pd.DataFrame(rows, columns=list(dtypes)).astype(dtypes)
+    df = pd.DataFrame(rows, columns=list(dtypes))
+
+    # Some suppliers deliver ReadingDate tz-aware and some do not, so a timestamp
+    # copied into a sidecar may carry a timezone the data model does not declare.
+    # Convert to UTC before dropping it: the instant is preserved, and the result
+    # matches the datetime64[ns] the model declares for ReadingDate.
+    for col, dtype in dtypes.items():
+        if dtype == "datetime64[ns]" and isinstance(
+            df[col].dtype, pd.DatetimeTZDtype
+        ):
+            df[col] = df[col].dt.tz_convert("UTC").dt.tz_localize(None)
+
+    df = df.astype(dtypes)
     path = os.path.join(mapped_folder_path, filename)
     df.to_parquet(path, engine="pyarrow")
     logging.info(f"[mapping_helpers] Wrote {len(df)} {label} row(s) to {path}")
