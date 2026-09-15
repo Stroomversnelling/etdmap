@@ -60,9 +60,69 @@ class MappingFlag(IntFlag):
     # interval's consumption, and paired with the span it belongs to.
     CATCHUP = auto()
 
+    # The value was carried forward from an earlier reading because the device
+    # reports infrequently. Nothing was measured here.
+    FILLED_DOWN = auto()
+
+    # The value was invented as zero because the device is absent for this
+    # household. Nothing was measured here either, and a zero that was invented
+    # is not the same as a zero that was reported.
+    FILLED_ZERO = auto()
+
     # Faults whose bad readings span from the decrease to the recovery, rather
     # than sitting on a single reading.
     CUMULATIVE_DECREASE_RANGE = CUMULATIVE_JUMP_BACK | CUMULATIVE_REPEAT_NEGATIVE
+
+    # Everything that was put there rather than measured. A reconstruction that
+    # wants only real readings filters on this; anything added later that
+    # invents a value belongs in it.
+    INVENTED = FILLED_DOWN | FILLED_ZERO | FROZEN_SPAN
+
+
+def flag_column(column: str) -> str:
+    """The name of the column carrying findings about *column*."""
+    return f"{column}_flags"
+
+
+def set_flags(df, column, mask, flag) -> None:
+    """
+    Record a finding about *column* on the rows *mask* selects.
+
+    Findings accumulate: a cell can be both filled down and out of bounds, so
+    the bit is OR-ed in rather than assigned. The flag column is created on first
+    use, which keeps callers from having to initialise it.
+
+    Modifies *df* in place.
+    """
+    name = flag_column(column)
+    if name not in df.columns:
+        df[name] = pd.Series(
+            MappingFlag.NONE.value, index=df.index, dtype="Int64"
+        )
+
+    mask = mask.fillna(False) if hasattr(mask, "fillna") else mask
+    if not bool(mask.any()):
+        return
+    df.loc[mask, name] = df.loc[mask, name] | flag.value
+
+
+def _as_limit(bound, unbounded, index):
+    """
+    Turn a bound into something a comparison can use, scalar or per row.
+
+    A bound may be one number for the whole column, or one number per row --
+    a cadence-scaled bound varies by household, and a constraint-derived bound
+    varies by row because it is a formula in that row's other cells.
+
+    Either way, **not set means no limit**, so an absent bound becomes infinity
+    and flags nothing. That holds per row too: a Series bound with pd.NA in it
+    is unbounded exactly on those rows, not unknown on them.
+    """
+    if isinstance(bound, pd.Series):
+        return bound.reindex(index).fillna(unbounded)
+    if bound is None or pd.isna(bound):
+        return unbounded
+    return bound
 
 
 def bound_flags(
@@ -82,10 +142,13 @@ def bound_flags(
     ----------
     series : pd.Series
         The values to check.
-    lower_bound : float or pd.NA, optional
-        Min from the thresholds table. pd.NA means no lower bound is set.
-    upper_bound : float or pd.NA, optional
-        Max from the thresholds table. pd.NA means no upper bound is set.
+    lower_bound : float, pd.Series or pd.NA, optional
+        Min from the thresholds table. pd.NA means no lower bound is set. A
+        Series gives a bound per row, for a bound that is not one number for the
+        whole column -- scaled to a household's cadence, or derived from the
+        other cells in the row.
+    upper_bound : float, pd.Series or pd.NA, optional
+        Max, same forms as lower_bound.
 
     Returns
     -------
@@ -94,8 +157,8 @@ def bound_flags(
         is within every bound that was set.
     """
     present = series.notna()
-    low = (series < (-inf if pd.isna(lower_bound) else lower_bound)) & present
-    high = (series > (inf if pd.isna(upper_bound) else upper_bound)) & present
+    low = (series < _as_limit(lower_bound, -inf, series.index)) & present
+    high = (series > _as_limit(upper_bound, inf, series.index)) & present
 
     # .value throughout: a Flag member is iterable on Python 3.11+, so pandas
     # would read the enum itself as array-like.

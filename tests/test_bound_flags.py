@@ -61,3 +61,26 @@ class TestApplyThresholdToColOneSided:
         out, stats = apply_threshold_to_col(self._frame(), "x", pd.NA, pd.NA)
         assert out["x"].tolist()[:4] == [-5.0, 0.0, 7.0, 20.0]
         assert stats is None
+
+
+class TestPerRowBounds:
+    """A bound is not always one number for the whole column: cadence scaling
+    makes it vary by household, and a constraint-derived bound varies by row
+    because it is a formula in that row's other cells."""
+
+    def test_a_series_bound_applies_per_row(self):
+        s = pd.Series(pd.array([5.0, 50.0, 500.0], dtype="Float64"))
+        per_row = pd.Series(pd.array([10.0, 10.0, 1000.0], dtype="Float64"))
+        flags = bound_flags(s, 0.0, per_row)
+        assert (flags & HIGH != 0).tolist() == [False, True, False]
+
+    def test_na_in_a_series_bound_is_unbounded_on_that_row(self):
+        # Not "unknown on that row" -- not set means no limit, per row too.
+        s = pd.Series(pd.array([500.0, 500.0], dtype="Float64"))
+        per_row = pd.Series(pd.array([10.0, pd.NA], dtype="Float64"))
+        flags = bound_flags(s, 0.0, per_row)
+        assert (flags & HIGH != 0).tolist() == [True, False]
+
+    def test_a_scalar_bound_still_works(self):
+        s = pd.Series(pd.array([5.0, 500.0], dtype="Float64"))
+        assert (bound_flags(s, 0.0, 100.0) & HIGH != 0).tolist() == [False, True]

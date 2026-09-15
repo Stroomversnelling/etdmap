@@ -23,7 +23,9 @@ from etdmap.flags import (
     MappingFlag,
     bound_flags,
     frozen_spans,
+    flag_column,
     scale_bound_to_cadence,
+    set_flags,
 )
 from etdmap.record_validators import (
     record_flag_conditions,
@@ -155,9 +157,19 @@ def rearrange_model_columns(
                     dtype=performance_column_dtypes.get(col, "Float64"),
                 )
 
-    household_df = household_df[
-        [col for col in performance_column_dtypes if col in household_df.columns]
-    ]
+    # A findings column belongs to the column it describes, so it survives on the
+    # same terms. Without this the fills that run in the mapper -- before this
+    # function -- have their flags dropped here and the record of which values
+    # were invented is lost before anything can read it.
+    keep = []
+    for col in performance_column_dtypes:
+        if col in household_df.columns:
+            keep.append(col)
+        findings = flag_column(col)
+        if findings in household_df.columns:
+            keep.append(findings)
+
+    household_df = household_df[keep]
 
     return household_df
 
@@ -1160,6 +1172,9 @@ def fill_down_infrequent_devices(
 
         delivered = df[col].notna()
         filled = df[col].ffill().bfill().fillna(0.0)
+        # Every cell this writes was not measured. Record it before the values
+        # go in, while the two are still distinguishable.
+        set_flags(df, col, ~delivered & filled.notna(), MappingFlag.FILLED_DOWN)
 
         minutes = minutes_by_column.get(col, pd.NA)
         if pd.isna(minutes):
@@ -1239,6 +1254,13 @@ def fill_zeros_for_device_not_installed(
     for col in columns:
         if col not in df.columns or df[col].isna().all():
             df[col] = pd.array([0] * len(df), dtype="Float64")
+            # A zero that was invented is not the same as a zero that was
+            # reported, and after this assignment they look identical.
+            set_flags(
+                df, col,
+                pd.Series(True, index=df.index),
+                MappingFlag.FILLED_ZERO,
+            )
     return df
 
 
@@ -2279,6 +2301,26 @@ def prune_stale_household_shards(sharded_folder_path, keep_pairs):
     return removed
 
 
+def _accumulates(col: str) -> bool:
+    """
+    Whether a column holds a running total rather than an instantaneous reading.
+
+    The distinction decides what may be done to a flat stretch. A **cumulative**
+    register that stops advancing is holding consumption back, and the total it
+    reports when it resumes is real energy that can be redistributed across the
+    stretch, because the register itself says how much.
+
+    A **momentaan** reading is a sample at an instant. A flat run of voltage is
+    the voltage being steady; a jump after it is the voltage changing. Nothing
+    was held back, there is no total to conserve, and spreading a sample across
+    the interval would invent readings that were never taken.
+
+    An interval column accumulates if its register does.
+    """
+    source = col[: -len("Diff")] if col.endswith("Diff") else col
+    return source in cumulative_columns
+
+
 def _detect_frozen_spans_for_household(df, household_id, cadence=None, context=""):
     """
     Find frozen spans in every interval column that has an upper bound.
@@ -2300,6 +2342,14 @@ def _detect_frozen_spans_for_household(df, household_id, cadence=None, context="
     for col in df.columns:
         entry = thresholds_dict.get(col)
         if entry is None or pd.isna(entry["Max"]):
+            continue
+
+        # Only an accumulating register can freeze and catch up. A momentaan
+        # reading is a sample at an instant: a flat run of voltage followed by a
+        # jump is the voltage changing, not a register delivering what it held
+        # back. There is nothing accumulated to redistribute, and treating it
+        # would blank real samples and invent values between them.
+        if not _accumulates(col):
             continue
 
         # An interval column is derived here, so it inherits the cadence of the
@@ -2325,6 +2375,61 @@ def _detect_frozen_spans_for_household(df, household_id, cadence=None, context="
 
 
 _INSTALL_PROVENANCE_REPORTED = False
+
+
+def _treat_frozen_spans(df, rows, context=""):
+    """
+    Blank a detected span so imputation can spread the energy it holds.
+
+    A frozen span holds real consumption in the wrong place: the readings across
+    it understate and the catch-up overstates. Blanking the **register** across
+    the span turns it into an ordinary gap whose end-to-start jump is exactly
+    that consumption, and the existing redistribution machinery spreads it --
+    no new spreading code, and the volume is conserved by construction.
+
+    The reading **before** the span is deliberately left alone. It is the last
+    genuine register value and it anchors the gap; blanking it too leaves the
+    redistribution without a starting value and the volume no longer adds up.
+
+    The interval column is blanked across the span *and* the catch-up, since
+    every one of those values is wrong -- zeros that understate, then one lump
+    that overstates. Imputation rebuilds them from the register.
+
+    Modifies *df* in place.
+    """
+    if not rows:
+        return df
+
+    ctx = (context + ": ") if context else ""
+    for row in rows:
+        diff_col = row["column"]
+        cum_col = diff_col[: -len("Diff")] if diff_col.endswith("Diff") else None
+        start, catchup = int(row["start"]), int(row["catchup_position"])
+
+        # Record before blanking. After treatment every row in the block looks
+        # alike, and which one carried the delivered reading is exactly what a
+        # reconstruction needs to know.
+        positions = pd.Series(range(len(df)), index=df.index)
+        for target in filter(None, (cum_col, diff_col)):
+            if target not in df.columns:
+                continue
+            set_flags(
+                df, target,
+                (positions >= start) & (positions < catchup),
+                MappingFlag.FROZEN_SPAN,
+            )
+            set_flags(df, target, positions == catchup, MappingFlag.CATCHUP)
+
+        if cum_col and cum_col in df.columns:
+            df.iloc[start:catchup, df.columns.get_loc(cum_col)] = pd.NA
+        if diff_col in df.columns:
+            df.iloc[start : catchup + 1, df.columns.get_loc(diff_col)] = pd.NA
+
+    logging.info(
+        f"{ctx}Treated {len(rows)} frozen span(s): the register reads missing "
+        f"across each, so imputation spreads the volume it was holding."
+    )
+    return df
 
 
 def _report_etdmap_provenance():
@@ -2370,6 +2475,7 @@ def run_standard_pipeline(
     mapped_folder_path,
     context: str = "",
     cadence: pd.DataFrame | None = None,
+    treat_frozen_spans: bool = True,
 ) -> dict:
     """
     Standard per-household processing pipeline shared by all ETD supplier mappers.
@@ -2386,7 +2492,7 @@ def run_standard_pipeline(
       5. Log model column type mismatches at DEBUG
       6. rearrange_model_columns(add_columns=True)
       7. add_diff_columns
-     7b. Detect frozen spans in the interval columns (detection only)
+     7b. Detect frozen spans, and blank them so imputation can spread them
       8. Apply record_flag_conditions (try/except per flag; pd.NA on error)
       9. apply_thresholds_to_df
      10. Save to {mapped_folder_path}/household_{household_id}_table.parquet
@@ -2495,6 +2601,8 @@ def run_standard_pipeline(
     frozen_span_rows = _detect_frozen_spans_for_household(
         df, household_id, cadence=cadence, context=context
     )
+    if treat_frozen_spans:
+        _treat_frozen_spans(df, frozen_span_rows, context=context)
 
     # ------------------------------------------------------------------
     # 8. Apply record-level validation flags

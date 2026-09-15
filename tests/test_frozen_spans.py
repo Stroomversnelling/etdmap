@@ -211,3 +211,162 @@ class TestIntervalColumnsInheritTheirRegistersCadence:
 
     def test_an_hourly_register_makes_the_same_jump_plausible(self):
         assert self._spans(60) == []
+
+
+class TestTreatment:
+    """Blanking a span turns it into an ordinary gap whose end-to-start jump is
+    the consumption it was holding, which the existing redistribution machinery
+    then spreads. No new spreading code."""
+
+    def _frame(self, catchup=600.0, n=40, freeze=(10, 29), normal=3.0):
+        first, last = freeze
+        values, current = [], 1000.0 - first * normal
+        for i in range(n):
+            if i < first:
+                current += normal
+            elif i <= last:
+                pass
+            elif i == last + 1:
+                current += catchup
+            else:
+                current += normal
+            values.append(current)
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
+            "WatergebruikWarmTapwater": pd.array(values, dtype="Float64"),
+        })
+        df["WatergebruikWarmTapwaterDiff"] = df["WatergebruikWarmTapwater"].diff().round(10)
+        df.loc[0, "WatergebruikWarmTapwaterDiff"] = 0
+        return df
+
+    def _treated(self, df):
+        from etdmap.mapping_helpers import (
+            _detect_frozen_spans_for_household,
+            _treat_frozen_spans,
+        )
+        rows = _detect_frozen_spans_for_household(df, 1)
+        _treat_frozen_spans(df, rows)
+        return rows
+
+    def test_the_register_reads_missing_across_the_span(self):
+        df = self._frame()
+        rows = self._treated(df)
+        assert len(rows) == 1
+        assert int(df["WatergebruikWarmTapwater"].isna().sum()) == 20
+
+    def test_the_reading_before_the_span_is_kept_as_the_anchor(self):
+        # Blanking it too leaves the gap without a starting register value and
+        # the redistributed volume no longer equals what was consumed.
+        df = self._frame()
+        self._treated(df)
+        assert pd.notna(df["WatergebruikWarmTapwater"].iloc[9])
+
+    def test_the_catch_up_is_blanked_with_the_span(self):
+        # Every interval across the span is wrong: zeros that understate, then
+        # one lump that overstates. Imputation rebuilds them from the register.
+        df = self._frame()
+        self._treated(df)
+        diff = df["WatergebruikWarmTapwaterDiff"]
+        assert diff.iloc[10:31].isna().all()
+        assert pd.notna(diff.iloc[9]) and pd.notna(diff.iloc[31])
+
+    def test_nothing_is_treated_when_nothing_is_detected(self):
+        # A flat run with no catch-up after it is an idle device, not a fault.
+        df = self._frame(catchup=3.0)
+        rows = self._treated(df)
+        assert rows == []
+        assert int(df["WatergebruikWarmTapwater"].isna().sum()) == 0
+
+
+class TestOnlyAccumulatingRegisters:
+    """A frozen span is a register holding consumption back. A momentaan reading
+    is a sample at an instant: a flat run of voltage is the voltage being steady,
+    and the jump after it is the voltage changing. There is nothing accumulated
+    to redistribute, and treating it would blank real samples and invent values
+    between them.
+
+    32 of the 67 columns carrying a Max are momentaan, so this is not a corner.
+    """
+
+    def _frame(self, column):
+        # The shape that fires for a register: flat, then an impossible jump.
+        n = 30
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
+        })
+        df[column] = pd.array(
+            [230.0] * 8 + [230.0] * 10 + [9999.0] + [230.0] * (n - 19),
+            dtype="Float64",
+        )
+        df[column + "Diff"] = df[column].diff().round(10)
+        df.loc[0, column + "Diff"] = 0
+        return df
+
+    def test_a_momentaan_column_is_never_treated_as_a_frozen_register(self):
+        from etdmap.mapping_helpers import _detect_frozen_spans_for_household
+        df = self._frame("SlimmemeterVoltageL1")
+        assert _detect_frozen_spans_for_household(df, 1) == []
+
+    def test_a_cumulative_column_with_the_same_shape_is(self):
+        from etdmap.mapping_helpers import _detect_frozen_spans_for_household
+        df = self._frame("WatergebruikWarmTapwater")
+        assert len(_detect_frozen_spans_for_household(df, 1)) == 1
+
+    def test_an_interval_column_follows_its_register(self):
+        from etdmap.mapping_helpers import _accumulates
+        assert _accumulates("WatergebruikWarmTapwaterDiff")
+        assert not _accumulates("ElektriciteitVermogen")
+
+
+class TestFlagsSurviveTheColumnFilter:
+    """`rearrange_model_columns` keeps only data model columns, and a findings
+    column is not one. It was therefore dropping every flag set in the mapper --
+    the fills run before the pipeline, so their record of which values were
+    invented was destroyed before anything could read it.
+
+    Measured before the fix: 36 FILLED_DOWN rows in, 0 out. The column then
+    reappeared, recreated by span treatment with only its own bits, which is why
+    its mere presence was not evidence.
+    """
+
+    def _filled_frame(self, n=40):
+        from etdmap.mapping_helpers import fill_down_infrequent_devices
+        col = "ElektriciteitsgebruikBoilervat"
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
+            col: pd.array(
+                [float(i) if i % 12 == 0 else pd.NA for i in range(n)],
+                dtype="Float64",
+            ),
+        })
+        return col, fill_down_infrequent_devices(df, columns=[col])
+
+    def test_a_findings_column_survives_with_the_column_it_describes(self):
+        from etdmap.flags import flag_column
+        from etdmap.mapping_helpers import rearrange_model_columns
+        col, df = self._filled_frame()
+        before = int((df[flag_column(col)] != MappingFlag.NONE.value).sum())
+        assert before > 0
+
+        out = rearrange_model_columns(df, add_columns=False)
+        assert flag_column(col) in out.columns
+        assert int((out[flag_column(col)] != MappingFlag.NONE.value).sum()) == before
+
+    def test_the_bits_survive_not_just_the_column(self):
+        from etdmap.flags import flag_column
+        from etdmap.mapping_helpers import rearrange_model_columns
+        col, df = self._filled_frame()
+        out = rearrange_model_columns(df, add_columns=False)
+        filled_down = (out[flag_column(col)] & MappingFlag.FILLED_DOWN.value) != 0
+        assert int(filled_down.sum()) == 36
+
+    def test_a_findings_column_for_an_unmapped_column_is_still_dropped(self):
+        from etdmap.mapping_helpers import rearrange_model_columns
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range("2026-01-01", periods=3, freq="5min"),
+            "nan [nan]": pd.array([1.0, 2.0, 3.0], dtype="Float64"),
+            "nan [nan]_flags": pd.array([1, 1, 1], dtype="Int64"),
+        })
+        out = rearrange_model_columns(df, add_columns=False)
+        assert "nan [nan]" not in out.columns
+        assert "nan [nan]_flags" not in out.columns
