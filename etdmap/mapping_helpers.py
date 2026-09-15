@@ -1514,7 +1514,7 @@ def snap_readings_to_grid(
     if multi_row_slots > 0:
         logging.debug(
             f"{ctx}snap_readings_to_grid: {multi_row_slots} grid slot(s) have "
-            f"multiple rows (max {int(slot_counts.max())} per slot) — merging."
+            f"multiple rows (max {int(slot_counts.max())} per slot) -- merging."
         )
 
     # ------------------------------------------------------------------
@@ -1541,7 +1541,7 @@ def snap_readings_to_grid(
         result = result.merge(group_result, on=date_column, how='left')
 
     logging.info(
-        f"{ctx}snap_readings_to_grid: {len(df)} rows → {len(result)} grid slots "
+        f"{ctx}snap_readings_to_grid: {len(df)} rows -> {len(result)} grid slots "
         f"({len(cols_by_modal)} offset group(s), {multi_row_slots} slot(s) with "
         f"multiple rows merged)"
     )
