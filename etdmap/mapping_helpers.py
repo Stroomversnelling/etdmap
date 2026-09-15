@@ -1071,7 +1071,7 @@ def fill_down_infrequent_devices(
     df: pd.DataFrame,
     columns: tuple[str, ...] | list[str],
     cadence: pd.DataFrame | None = None,
-    date_column: str = 'ReadingDate',
+    grid_minutes: int = 5,
 ) -> pd.DataFrame:
     """
     Fill down (forward fill) and then up (backward fill) values for specified columns.
@@ -1094,16 +1094,24 @@ def fill_down_infrequent_devices(
     Delivered readings are never touched. Only the *filled* values are placed on
     cadence slots; a real reading that arrives off-slot is kept where it is.
 
-    Without *cadence*, or for a column whose cadence could not be measured, the
-    fallback is the **dataset's own cadence** -- every row, which is the behaviour
-    this function has always had. Not a fixed five minutes: the grid may be
-    coarser, in which case five-minute slots do not exist, and a column cannot
-    report more often than the dataset records anyway.
+    Without *cadence*, or for a column whose cadence could not be measured, every
+    row is filled -- the behaviour this function has always had.
+
+    *grid_minutes* is the grid the pipeline imposes, not something measured. The
+    grid is chosen: ``snap_readings_to_grid`` puts readings on it and
+    ``ensure_intervals`` pads it. A column reporting faster than the grid cannot
+    have a sparser fill than the grid, so it fills every row.
 
     Slots are stepped in **rows**, not in wall-clock time, so a grid of any
     cadence works and a column's cadence need not divide the hour. The step is
     anchored on the device's first real reading, which puts the slots where its
-    data actually is.
+    data actually is. A cadence that does not land on a whole number of grid rows
+    has no slots to place fills on, so that column is filled every row.
+
+    A cadence is a measurement or a declaration, and either can be wrong. The
+    fill does not depend on it being right: a delivered reading is always kept,
+    so only restatements are ever removed. Forward-fill the result back onto the
+    grid and it reproduces the every-row fill exactly, whatever cadence was used.
 
     Parameters
     ----------
@@ -1114,9 +1122,9 @@ def fill_down_infrequent_devices(
         default. Only columns that exist in df are processed; others are silently skipped.
     cadence : pd.DataFrame, optional
         The output of ``detect_column_cadence``, measured on this data before any
-        fill. Columns absent from it fall back to the dataset's cadence.
-    date_column : str
-        Name of the timestamp column. Default 'ReadingDate'.
+        fill. Columns absent from it are filled every row.
+    grid_minutes : int
+        The grid the pipeline imposes, in minutes. Default 5.
 
     Returns
     -------
@@ -1137,7 +1145,6 @@ def fill_down_infrequent_devices(
             zip(cadence['column'], cadence['cadence_minutes'])
         )
 
-    grid_minutes = minutes_by_column.get(date_column, pd.NA)
     position = pd.Series(range(len(df)), index=df.index)
 
     for col in columns:
@@ -1148,14 +1155,26 @@ def fill_down_infrequent_devices(
         filled = df[col].ffill().bfill().fillna(0.0)
 
         minutes = minutes_by_column.get(col, pd.NA)
-        if pd.isna(minutes) or pd.isna(grid_minutes):
+        if pd.isna(minutes):
             df[col] = filled
             continue
 
         # Step in rows, not in wall-clock time: the grid may be any cadence, and
         # a column's cadence need not divide the hour. Anchoring on the device's
         # first real reading puts the slots where its data actually is.
-        step = int(round(int(minutes) / int(grid_minutes)))
+        step, remainder = divmod(int(minutes), int(grid_minutes))
+        if remainder:
+            # The cadence does not land on the grid, so there are no slots to
+            # place fills on. Rounding to the nearest whole step would fill at a
+            # spacing that is not the cadence and not say so.
+            logging.info(
+                f"[mapping_helpers] '{col}' reports every "
+                f"{cadence_label(minutes)}, which does not land on the "
+                f"{cadence_label(grid_minutes)} grid. Filling every row."
+            )
+            df[col] = filled
+            continue
+
         if step <= 1 or not delivered.any():
             df[col] = filled
             continue
@@ -1595,19 +1614,27 @@ def ensure_intervals(
     )
 
     def merge_left(df):
+        """Keep only readings that land on the grid, and refuse to do it quietly.
+
+        A reading that does not land on a grid slot is dropped by this merge. That
+        is data loss, so it is counted and raised rather than logged and forgotten:
+        an off-grid reading means the data reached here without being snapped, and
+        ``snap_readings_to_grid`` is what places readings on slots.
+        """
+        on_grid = df[date_column].isin(all_dates_df[date_column])
+        n_dropped = int((~on_grid).sum())
+        if n_dropped:
+            pct = 100.0 * n_dropped / len(df.index)
+            raise ValueError(
+                f"{n_dropped} of {len(df.index)} readings ({pct:.1f}%) do not "
+                f"land on the {freq} grid and would be discarded. Call "
+                f"snap_readings_to_grid before ensure_intervals to place them "
+                f"on slots, or correct the source data."
+            )
         return pd.merge(all_dates_df, df, on=date_column, how='left')
 
     if expected_num_records > len(df.index):
         logging.info(f"Adding {freq} intervals.")
-        all_dates_df = pd.DataFrame(
-            {
-                date_column: pd.date_range(
-                    start=earliest,
-                    end=latest,
-                    freq=freq,
-                ),
-            },
-        )
         merged_df = pd.merge(all_dates_df, df, on=date_column, how='outer')
         if len(merged_df.index) > expected_num_records:
             logging.error(
@@ -1620,7 +1647,8 @@ def ensure_intervals(
     else:  # (expected_num_records<len(df.index)):
         logging.error(
             f"There are more records than possible if {freq} interval would "
-            f"be respected. Merging left to reduce records. Check data source",
+            f"be respected ({len(df.index)} rows, {expected_num_records} slots). "
+            f"Merging left to reduce records. Check data source",
         )
         merged_df = merge_left(df)
         return merged_df

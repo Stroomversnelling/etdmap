@@ -283,7 +283,9 @@ class TestFillAtDeviceCadence:
         assert by_col['x'] == 60
         cadence = detect_column_cadence(df)
 
-        out = fill_down_infrequent_devices(df.copy(), columns=['x'], cadence=cadence)
+        out = fill_down_infrequent_devices(
+            df.copy(), columns=['x'], cadence=cadence, grid_minutes=15
+        )
         # One value an hour on a 15-minute grid: every 4th row, not every row.
         assert int(out['x'].notna().sum()) == 24
 
@@ -300,7 +302,9 @@ class TestFillAtDeviceCadence:
         assert by_col['x'] == 21
         cadence = detect_column_cadence(df)
 
-        out = fill_down_infrequent_devices(df.copy(), columns=['x'], cadence=cadence)
+        out = fill_down_infrequent_devices(
+            df.copy(), columns=['x'], cadence=cadence, grid_minutes=7
+        )
         assert int(out['x'].notna().sum()) == 20
 
     def test_a_five_minute_device_is_unchanged_by_cadence(self):
@@ -326,6 +330,83 @@ class TestFillAtDeviceCadence:
         )
         assert out['fast'].notna().all()
         assert int(out['slow'].notna().sum()) == len(df) // 12
+
+
+class TestFillIsLosslessWhateverTheCadence:
+    """A detected cadence is a measurement, not a fact, and a declared one can be
+    stale. The fill must not depend on either being right.
+
+    The invariant: filling at a cadence only removes *restatements*. Forward-fill
+    the result back onto the dense grid and it must reproduce the every-row fill
+    exactly -- for any cadence, however wrong.
+    """
+
+    def _check(self, values, declared=None, periods=48):
+        grid = pd.date_range(START, periods=periods, freq='5min')
+        df = pd.DataFrame({'ReadingDate': grid})
+        df['x'] = pd.array(values, dtype='Float64')
+
+        dense = fill_down_infrequent_devices(df.copy(), columns=['x'])['x']
+        cadence = detect_column_cadence(df, declared=declared)
+        sparse = fill_down_infrequent_devices(
+            df.copy(), columns=['x'], cadence=cadence
+        )['x']
+
+        delivered = df['x'].notna()
+        assert sparse[delivered].equals(df['x'][delivered]), 'a delivered reading was lost'
+        assert sparse.ffill().bfill().equals(dense), 'sparsening changed the data'
+        return cadence.set_index('column').loc['x']
+
+    def test_an_off_cadence_reading_in_between_survives(self):
+        values = [float(i) if i % 12 == 0 else pd.NA for i in range(48)]
+        values[7] = 99.0
+        self._check(values)
+
+    def test_scattered_in_between_readings_lower_confidence_to_the_grid(self):
+        # Irregular readings make the modal gap a weak claim, so resolution
+        # falls back to the dataset cadence and nothing is sparsened at all.
+        values = [float(i) if i % 12 == 0 else pd.NA for i in range(48)]
+        for i in (5, 19, 33):
+            values[i] = 500.0 + i
+        row = self._check(values)
+        assert row['confidence'] < 0.8
+        assert row['cadence_source'] == 'dataset'
+
+    def test_a_wrong_declaration_is_still_lossless(self):
+        # Declared four-hourly on a device that reports every fifteen minutes.
+        values = [float(i) if i % 3 == 0 else pd.NA for i in range(48)]
+        row = self._check(values, declared={'x': 240})
+        assert row['cadence_minutes'] == 240
+        assert row['cadence_detected'] == 15
+
+    def test_leading_and_trailing_gaps(self):
+        values = [pd.NA] * 6 + [float(i) if i % 12 == 0 else pd.NA for i in range(42)]
+        values[-4:] = [pd.NA] * 4
+        self._check(values)
+
+    def test_a_single_reading(self):
+        values = [pd.NA] * 48
+        values[20] = 7.0
+        self._check(values)
+
+    def test_a_never_present_device(self):
+        self._check([pd.NA] * 48)
+
+    def test_a_cadence_off_the_grid_fills_every_row(self, caplog):
+        # 8 minutes on a 5-minute grid has no slots. Rounding to the nearest
+        # whole step would fill every 10 minutes and call it 8.
+        grid = pd.date_range(START, periods=48, freq='5min')
+        df = pd.DataFrame({'ReadingDate': grid})
+        df['x'] = pd.array(
+            [float(i) if i % 4 == 0 else pd.NA for i in range(48)], dtype='Float64'
+        )
+        cadence = detect_column_cadence(df, declared={'x': 8})
+        with caplog.at_level('INFO'):
+            out = fill_down_infrequent_devices(
+                df.copy(), columns=['x'], cadence=cadence
+            )
+        assert out['x'].notna().all()
+        assert 'does not land on the 5min grid' in caplog.text
 
 
 class TestCadenceLabel:
