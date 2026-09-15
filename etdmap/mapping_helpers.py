@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 import os
 import re
 import shutil
@@ -17,7 +18,13 @@ from etdmap.data_model import (
     thresholds_dict,
 )
 from etdmap.index_helpers import get_mapped_data, read_index
-from etdmap.flags import MappingFlag, bound_flags
+from etdmap.flags import (
+    _SPAN_DTYPES,
+    MappingFlag,
+    bound_flags,
+    frozen_spans,
+    scale_bound_to_cadence,
+)
 from etdmap.record_validators import (
     record_flag_conditions,
     record_quality_flag_conditions,
@@ -1913,6 +1920,22 @@ _THRESHOLD_REMOVAL_DTYPES = {
 }
 
 
+def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
+    """
+    Write accumulated sidecar rows to a typed parquet beside the mapped data.
+
+    An empty but correctly-typed frame is written when there are no rows, so
+    downstream readers get a stable schema either way.
+
+    Returns the path written.
+    """
+    df = pd.DataFrame(rows, columns=list(dtypes)).astype(dtypes)
+    path = os.path.join(mapped_folder_path, filename)
+    df.to_parquet(path, engine="pyarrow")
+    logging.info(f"[mapping_helpers] Wrote {len(df)} {label} row(s) to {path}")
+    return path
+
+
 def threshold_stats_to_rows(household_id, threshold_stats):
     """
     Flatten one household's threshold_stats dict into sidecar rows.
@@ -1960,15 +1983,10 @@ def write_threshold_removals(
 
     Returns the path written.
     """
-    df = pd.DataFrame(rows, columns=list(_THRESHOLD_REMOVAL_DTYPES)).astype(
-        _THRESHOLD_REMOVAL_DTYPES
+    return _write_sidecar(
+        rows, mapped_folder_path, filename,
+        _THRESHOLD_REMOVAL_DTYPES, "threshold-removal",
     )
-    path = os.path.join(mapped_folder_path, filename)
-    df.to_parquet(path, engine="pyarrow")
-    logging.info(
-        f"[mapping_helpers] Wrote {len(df)} threshold-removal row(s) to {path}"
-    )
-    return path
 
 
 CADENCE_FILENAME = "mapping_column_cadence.parquet"
@@ -2011,14 +2029,53 @@ def write_column_cadence(rows, mapped_folder_path, filename=CADENCE_FILENAME):
 
     Returns the path written.
     """
-    dtypes = {"HuisIdBSV": "Int64", **_CADENCE_TABLE_DTYPES}
-    df = pd.DataFrame(rows, columns=list(dtypes)).astype(dtypes)
-    path = os.path.join(mapped_folder_path, filename)
-    df.to_parquet(path, engine="pyarrow")
-    logging.info(
-        f"[mapping_helpers] Wrote {len(df)} column-cadence row(s) to {path}"
+    return _write_sidecar(
+        rows, mapped_folder_path, filename,
+        {"HuisIdBSV": "Int64", **_CADENCE_TABLE_DTYPES}, "column-cadence",
     )
-    return path
+
+
+FROZEN_SPANS_FILENAME = "mapping_frozen_spans.parquet"
+
+
+def frozen_spans_to_rows(household_id, column, spans, reading_dates=None):
+    """
+    Flatten one column's frozen spans into sidecar rows.
+
+    *reading_dates* is the household's ReadingDate series; when given, each span
+    also carries the timestamps it starts and ends at, which is what makes the
+    artifact readable without going back to the data.
+    """
+    if spans is None or spans.empty:
+        return []
+
+    rows = []
+    for span in spans.to_dict(orient="records"):
+        row = {"HuisIdBSV": household_id, "column": column, **span}
+        if reading_dates is not None:
+            row["start_date"] = reading_dates.iloc[int(span["start"])]
+            row["catchup_date"] = reading_dates.iloc[int(span["catchup_position"])]
+        rows.append(row)
+    return rows
+
+
+def write_frozen_spans(rows, mapped_folder_path, filename=FROZEN_SPANS_FILENAME):
+    """
+    Write accumulated frozen-span rows to a sidecar parquet.
+
+    One row per (HuisIdBSV, column, span): a stretch where the register stood
+    still and the reading its accumulation arrived in.
+    """
+    dtypes = {
+        "HuisIdBSV": "Int64",
+        "column": "string",
+        **_SPAN_DTYPES,
+        "start_date": "datetime64[ns]",
+        "catchup_date": "datetime64[ns]",
+    }
+    return _write_sidecar(
+        rows, mapped_folder_path, filename, dtypes, "frozen-span",
+    )
 
 
 def save_household_shard(df, household_id, household_batch_id, sharded_folder_path):
@@ -2210,12 +2267,97 @@ def prune_stale_household_shards(sharded_folder_path, keep_pairs):
     return removed
 
 
+def _detect_frozen_spans_for_household(df, household_id, cadence=None, context=""):
+    """
+    Find frozen spans in every interval column that has an upper bound.
+
+    A span is a stretch where the register did not advance, ending in a reading
+    too large to be one interval's consumption. The bound is scaled to the
+    cadence the column actually reports in, because a register that reports
+    hourly delivers twelve five-minute intervals' worth in one reading.
+
+    Returns sidecar rows; nothing in *df* is changed. Detection only.
+    """
+    ctx = (context + ": ") if context else ""
+    cadence_minutes = {}
+    if cadence is not None and not cadence.empty:
+        cadence_minutes = dict(zip(cadence["column"], cadence["cadence_minutes"]))
+
+    reading_dates = df.get("ReadingDate")
+    rows = []
+    for col in df.columns:
+        entry = thresholds_dict.get(col)
+        if entry is None or pd.isna(entry["Max"]):
+            continue
+
+        # An interval column is derived here, so it inherits the cadence of the
+        # register it came from -- it is not in the cadence table, which was
+        # measured on the columns as delivered.
+        source = col[: -len("Diff")] if col.endswith("Diff") else col
+        bound = scale_bound_to_cadence(
+            entry["Max"],
+            entry["ThresholdType"],
+            cadence_minutes.get(col, cadence_minutes.get(source, pd.NA)),
+        )
+        spans = frozen_spans(df[col], upper_bound=bound)
+        rows.extend(
+            frozen_spans_to_rows(household_id, col, spans, reading_dates)
+        )
+
+    if rows:
+        logging.info(
+            f"{ctx}{len(rows)} frozen span(s) detected across "
+            f"{len({r['column'] for r in rows})} column(s)."
+        )
+    return rows
+
+
+_INSTALL_PROVENANCE_REPORTED = False
+
+
+def _report_etdmap_provenance():
+    """
+    Say once per run which etdmap is actually being used, and when it was installed.
+
+    etdmap is never installed editable into the other repos -- they carry their own
+    non-editable copy so etdmap can be developed independently without breaking
+    them mid-change. The cost is that a change to an etdmap checkout does NOT reach
+    a mapper until it is reinstalled, and a stale copy fails in confusing ways: an
+    ImportError for something that plainly exists, or worse, an older function
+    quietly doing the old thing.
+
+    Naming the path and the install time makes that visible in the log rather than
+    leaving it to be diagnosed from a traceback.
+    """
+    global _INSTALL_PROVENANCE_REPORTED
+    if _INSTALL_PROVENANCE_REPORTED:
+        return
+    _INSTALL_PROVENANCE_REPORTED = True
+
+    module_path = os.path.dirname(os.path.abspath(__file__))
+    installed = "site-packages" in module_path.replace("\\", "/")
+    stamp = datetime.fromtimestamp(os.path.getmtime(__file__)).strftime(
+        "%Y-%m-%d %H:%M"
+    )
+
+    if installed:
+        logging.warning(
+            f"[etdmap] Using the INSTALLED etdmap at {module_path} "
+            f"(last written {stamp}). Changes made in an etdmap checkout since "
+            f"then are NOT in effect here. Reinstall to pick them up: "
+            f"pip install --no-deps --force-reinstall <path-to-etdmap>"
+        )
+    else:
+        logging.info(f"[etdmap] Using etdmap from {module_path} (last written {stamp}).")
+
+
 def run_standard_pipeline(
     df: pd.DataFrame,
     household_id: int,
     household_id_supplier: str,
     mapped_folder_path,
     context: str = "",
+    cadence: pd.DataFrame | None = None,
 ) -> dict:
     """
     Standard per-household processing pipeline shared by all ETD supplier mappers.
@@ -2232,6 +2374,7 @@ def run_standard_pipeline(
       5. Log model column type mismatches at DEBUG
       6. rearrange_model_columns(add_columns=True)
       7. add_diff_columns
+     7b. Detect frozen spans in the interval columns (detection only)
       8. Apply record_flag_conditions (try/except per flag; pd.NA on error)
       9. apply_thresholds_to_df
      10. Save to {mapped_folder_path}/household_{household_id}_table.parquet
@@ -2260,6 +2403,8 @@ def run_standard_pipeline(
     dict
         {'HuisIdLeverancier': household_id_supplier, 'HuisIdBSV': household_id}
     """
+    _report_etdmap_provenance()
+
     ctx = f"{context}: " if context else ""
     new_file_path = os.path.join(
         mapped_folder_path, f"household_{household_id}_table.parquet"
@@ -2333,6 +2478,13 @@ def run_standard_pipeline(
     df = add_diff_columns(df, context=context)
 
     # ------------------------------------------------------------------
+    # 7b. Detect frozen spans in the interval columns just computed
+    # ------------------------------------------------------------------
+    frozen_span_rows = _detect_frozen_spans_for_household(
+        df, household_id, cadence=cadence, context=context
+    )
+
+    # ------------------------------------------------------------------
     # 8. Apply record-level validation flags
     # ------------------------------------------------------------------
     for flag, condition in record_flag_conditions.items():
@@ -2389,5 +2541,6 @@ def run_standard_pipeline(
             "flags": flag_counts,
             "thresholds": threshold_counts,
             "threshold_stats": threshold_stats,
+            "frozen_spans": frozen_span_rows,
         },
     }
