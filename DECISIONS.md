@@ -4,25 +4,37 @@ Each module-level variable in `data_model.py` is filtered to a specific set of `
 values. These boundaries are intentional and must not be widened without updating this
 document and adding regression tests.
 
+**The data model is a theoretical model.** It declares which variables exist, what they
+mean, and what type they have. It does **not** declare what any supplier actually
+delivers. Every `Prestatiedata*` variable is fair game as raw supplied data, whether or
+not it is marked as calculated. What a given supplier delivers is recorded in that
+supplier's own metadata, not here. `Entiteit` and the `Berekend` suffix are naming
+conventions that make derivation rules readable; they are not a statement about the
+origin of a value in any particular dataset.
+
 1. `cumulative_columns` covers all rows with `Cumulatief == "ja"` and
-   `Type variabele != "date"`, with no `Entiteit` filter. This is safe because only
-   `Prestatiedata` rows (raw meter readings from providers) carry `Cumulatief == "ja"`
-   by data model design. `PrestatiedataBerekend` columns are derived totals and are
-   never cumulative meter readings.
+   `Type variabele != "date"`, with no `Entiteit` filter. The filter is on the
+   `Cumulatief` flag alone, which is the property that matters; no `Entiteit`
+   assumption is made or needed.
 2. `model_column_order` and `model_column_type` cover `Entiteit == "Prestatiedata"` only.
-   These variables represent what data providers supply in raw files. `PrestatiedataBerekend`
-   columns do not exist at the point where these lists are used (ordering and typing of
-   incoming mapped parquet files).
+   This is an **ordering and typing convenience** for the subset that carries a declared
+   `Volgorde`, not a statement about which columns a supplier may deliver. Do not use
+   membership in these to decide whether a delivered column is legitimate — use
+   `performance_column_dtypes`, which spans the whole model.
 3. `data_analysis_columns` is currently an alias for `model_column_order`. When the
    `Vereist` column in `etdmodel.csv` is fully populated, this should be narrowed to
    `Vereist == "ja"` rows. A comment in `data_model.py` marks the transition point.
 4. `all_performance_data_columns` covers all rows where `Entiteit` starts with
    `"Prestatiedata"` (i.e. both `"Prestatiedata"` and `"PrestatiedataBerekend"`). This is
-   the correct universe when asking "what columns should be present after the full pipeline
-   has run?" Use this — not `model_column_order` — when defining derivation targets.
-5. `required_performance_data_columns` is the subset of `all_performance_data_columns`
-   where `Vereist == "ja"`. These must be present at the end of the pipeline, either
-   supplied by the provider or derived by the transform step.
+   the correct universe when asking "what columns may be present at any point in the
+   pipeline?" Use this — not `model_column_order` — when defining derivation targets.
+5. `performance_column_dtypes` maps every `Prestatiedata*` variable to its dtype, in
+   column order (declared `Volgorde` first, then the rest in model order). This is the
+   membership test and the ordering key for mapped output: any data model column is
+   allowed through regardless of `Entiteit`.
+6. `required_performance_data_columns` is the subset of `all_performance_data_columns`
+   where `Vereist == "ja"`. These must be present at the end of the pipeline, however
+   they got there — delivered, mapped, or derived.
 
 ---
 
