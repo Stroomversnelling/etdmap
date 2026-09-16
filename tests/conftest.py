@@ -51,8 +51,8 @@ SYNTHETIC_DIFF_RANGES: dict[str, tuple[float, float]] = {
     "WatergebruikRuimteverwarming": (0.0, 1.0),
     "WatergebruikWarmTapwater": (0.0, 100.0),
     "WatergebruikWarmtepomp": (0.0, 1.0),
-    "Zon-opwekTotaal": (0.0, 0.96),
-    "Zon-opwekVerbruik": (0.0, 1.0),
+    "ZonopwekTotaal": (0.0, 0.96),
+    "ZonopwekVerbruik": (0.0, 1.0),
 }
 
 

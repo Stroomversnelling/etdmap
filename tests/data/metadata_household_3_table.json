@@ -1,6 +1,6 @@
 {
     "num_rows": 105120,
-    "num_columns": 186,
+    "num_columns": 192,
     "column_details": {
         "TemperatuurWaterOmgeving": {
             "statistics": {
@@ -142,17 +142,17 @@
                 "null_count": 0
             }
         },
-        "Zon-opwekMomentaan": {
+        "ZonopwekMomentaan": {
             "statistics": {
                 "min": null,
                 "max": null,
                 "null_count": 105120
             }
         },
-        "Zon-opwekTotaal": {
+        "ZonopwekTotaal": {
             "statistics": {
                 "min": "-0.0",
-                "max": "50472.57950004375",
+                "max": "50478.33907640099",
                 "null_count": 0
             }
         },
@@ -352,10 +352,10 @@
                 "null_count": 105120
             }
         },
-        "Zon-opwekVerbruik": {
+        "ZonopwekVerbruik": {
             "statistics": {
                 "min": "-0.0",
-                "max": "52569.447635875535",
+                "max": "52600.31590243318",
                 "null_count": 0
             }
         },
@@ -464,6 +464,34 @@
                 "null_count": 105120
             }
         },
+        "ElektriciteitsgebruikCollectiefPomp": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 105120
+            }
+        },
+        "ElektriciteitsgebruikBoilervat_flags": {
+            "statistics": {
+                "min": "0",
+                "max": "0",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitsgebruikRadiator_flags": {
+            "statistics": {
+                "min": "0",
+                "max": "0",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitsgebruikBooster_flags": {
+            "statistics": {
+                "min": "0",
+                "max": "0",
+                "null_count": 0
+            }
+        },
         "ElektriciteitNetgebruikHoogDiff": {
             "statistics": {
                 "min": "-0.0",
@@ -527,6 +555,13 @@
                 "null_count": 1061
             }
         },
+        "ElektriciteitsgebruikBoosterDiff_flags": {
+            "statistics": {
+                "min": "0",
+                "max": "0",
+                "null_count": 0
+            }
+        },
         "ElektriciteitsgebruikBoilervatDiff": {
             "statistics": {
                 "min": "-0.0",
@@ -534,10 +569,24 @@
                 "null_count": 0
             }
         },
+        "ElektriciteitsgebruikBoilervatDiff_flags": {
+            "statistics": {
+                "min": "0",
+                "max": "0",
+                "null_count": 0
+            }
+        },
         "ElektriciteitsgebruikRadiatorDiff": {
             "statistics": {
                 "min": "-0.0",
                 "max": "0.3199969398",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitsgebruikRadiatorDiff_flags": {
+            "statistics": {
+                "min": "0",
+                "max": "0",
                 "null_count": 0
             }
         },
@@ -583,10 +632,10 @@
                 "null_count": 0
             }
         },
-        "Zon-opwekTotaalDiff": {
+        "ZonopwekBruto": {
             "statistics": {
                 "min": "-0.0",
-                "max": "0.9599892911",
+                "max": "0.9599938633",
                 "null_count": 0
             }
         },
@@ -604,10 +653,10 @@
                 "null_count": 0
             }
         },
-        "Zon-opwekVerbruikDiff": {
+        "ZonopwekVerbruikDiff": {
             "statistics": {
                 "min": "-0.0",
-                "max": "0.9999982309",
+                "max": "0.9999927243",
                 "null_count": 0
             }
         },
@@ -779,7 +828,7 @@
                 "null_count": 105120
             }
         },
-        "validate_Zon-opwekMomentaan": {
+        "validate_ZonopwekMomentaan": {
             "statistics": {
                 "min": null,
                 "max": null,
@@ -884,13 +933,6 @@
                 "null_count": 0
             }
         },
-        "validate_Zon-opwekTotaalDiff": {
-            "statistics": {
-                "min": "True",
-                "max": "True",
-                "null_count": 0
-            }
-        },
         "validate_TerugleveringTotaalNetto": {
             "statistics": {
                 "min": null,
@@ -928,9 +970,9 @@
         },
         "validate_ZonopwekBruto": {
             "statistics": {
-                "min": null,
-                "max": null,
-                "null_count": 105120
+                "min": "True",
+                "max": "True",
+                "null_count": 0
             }
         },
         "validate_ElektriciteitsgebruikTotaalHuishoudelijk": {
@@ -1108,7 +1150,7 @@
                 "null_count": 0
             }
         },
-        "validate_Zon-opwekVerbruikDiff": {
+        "validate_ZonopwekVerbruikDiff": {
             "statistics": {
                 "min": "True",
                 "max": "True",
@@ -1269,7 +1311,7 @@
                 "null_count": 1
             }
         },
-        "validate_Zon-opwekTotaalDiff_outliers": {
+        "validate_ZonopwekBruto_outliers": {
             "statistics": {
                 "min": "True",
                 "max": "True",
@@ -1290,7 +1332,7 @@
                 "null_count": 1
             }
         },
-        "validate_Zon-opwekVerbruikDiff_outliers": {
+        "validate_ZonopwekVerbruikDiff_outliers": {
             "statistics": {
                 "min": "True",
                 "max": "True",

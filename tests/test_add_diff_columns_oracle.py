@@ -239,7 +239,7 @@ class TestDetector:
             assert count > 0, f"corpus never produced case '{name}': {totals}"
 
     def test_zero_total_flags_zeros_from_the_first_decrease_onward(self):
-        # Leading zeros are a register that has not started counting, not a
+        # Leading zeros are a meter that has not started counting, not a
         # fault. Only the zero after the decrease is flagged.
         df = _frame([0.0, 10.0, 11.0, 0.0, 12.0, 13.0])
         cases = _detect_negative_diff_cases(df, COL)

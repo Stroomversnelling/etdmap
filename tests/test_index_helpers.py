@@ -14,7 +14,7 @@ import etdmap
 import etdmap.index_helpers as index_helpers
 import etdmap.mapping_helpers
 import etdmap.mapping_helpers as mapping
-from etdmap.data_model import cumulative_columns
+from etdmap.data_model import cumulative_columns, interval_column
 from etdmap.index_helpers import (
     bsv_metadata_columns,
     get_bsv_metadata,
@@ -74,8 +74,16 @@ def test_creation_validation_columns_index_data_files(mapped_fixtures, request):
     # check for 1 file if it contains all the right columns
     df_hh = pd.read_parquet(os.path.join(folder_path, files[0]), dtype_backend="numpy_nullable")
     # columns that should be added by record_validators
-    assert all("validate_" + col + "Diff" in df_hh.columns for col in cumulative_columns)
-    assert all('validate_' + col + 'Diff_outliers' in df_hh.columns for col in cumulative_columns)
+    # The interval column is the one the data model links to the cumulative
+    # variable, not its name plus "Diff".
+    assert all(
+        "validate_" + interval_column(col) in df_hh.columns
+        for col in cumulative_columns
+    )
+    assert all(
+        "validate_" + interval_column(col) + "_outliers" in df_hh.columns
+        for col in cumulative_columns
+    )
     assert all('validate_' + col in df_hh.columns for col in columns_5min_momentaan)
 
     # Check the index.parquet file
@@ -97,7 +105,10 @@ def test_creation_validation_columns_index_data_files(mapped_fixtures, request):
     assert all(check in df_index.columns for check in standard_columns)
     assert all(check in df_index.columns for check in special_checks)
     assert all('validate_' + col in df_index.columns for col in cumulative_columns)
-    assert all('validate_' + col + 'Diff' in df_index.columns for col in cumulative_columns)
+    assert all(
+        "validate_" + interval_column(col) in df_index.columns
+        for col in cumulative_columns
+    )
     # check for columns with 'validate' if it contains bool or NA datatypes
     validate_cols = df_index.filter(like='validate')
 

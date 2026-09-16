@@ -398,6 +398,97 @@ def _build_tariff_register_pairs() -> tuple[dict[str, str], dict[str, tuple[str,
 
 tariff_partner_columns, tariff_root_to_splits = _build_tariff_register_pairs()
 
+
+# ---------------------------------------------------------------------------
+# Cumulative / interval column pairs.
+#
+# The model states two independent facts -- Cumulatief="ja" and Diff="ja" -- and
+# ComplementVariabele names the link between them. The link is stated in the
+# model and nowhere else: a variable name is a label, not a relationship, and
+# deriving the pair from a shared stem would silently mispair any variable whose
+# two forms are named differently.
+#
+# The relation is one to one, and declaring it on either row states it in both
+# directions.
+#
+# This is committed data and is read as given. sync_data_model checks the link
+# against Grist before writing it, and the etdmap suite checks the committed
+# file; neither check belongs here.
+# ---------------------------------------------------------------------------
+
+COMPLEMENT_COLUMN = "ComplementVariabele"
+
+
+def _build_cumulative_interval_pairs() -> tuple[dict[str, str], dict[str, str]]:
+    """
+    Read the cumulative <-> interval link from ``ComplementVariabele``.
+
+    Returns
+    -------
+    (interval_by_cumulative, cumulative_by_interval)
+        Each maps one side of a pair to the other. A variable with no declared
+        complement appears in neither, and resolves to None.
+
+    Raises
+    ------
+    ValueError
+        If a declared pair is not one Cumulatief=ja variable and one Diff=ja
+        variable. The link is then unreadable rather than merely wrong.
+    """
+    df = load_etdmodel()
+    if COMPLEMENT_COLUMN not in df.columns:
+        return {}, {}
+
+    cumulative = set(cumulative_columns)
+    intervals = set(diff_columns)
+
+    forward, backward = {}, {}
+    for _, row in df.iterrows():
+        variable, complement = row.get("Variabele"), row.get(COMPLEMENT_COLUMN)
+        if pd.isna(variable) or pd.isna(complement):
+            continue
+        variable, complement = str(variable), str(complement).strip()
+        if not complement:
+            continue
+
+        if variable in cumulative and complement in intervals:
+            forward[variable] = complement
+            backward[complement] = variable
+        elif variable in intervals and complement in cumulative:
+            forward[complement] = variable
+            backward[variable] = complement
+        else:
+            raise ValueError(
+                f"etdmodel.csv: {COMPLEMENT_COLUMN} links '{variable}' to "
+                f"'{complement}', which is not one Cumulatief=ja variable and "
+                f"one Diff=ja variable."
+            )
+
+    return forward, backward
+
+
+interval_by_cumulative, cumulative_by_interval = _build_cumulative_interval_pairs()
+
+
+def interval_column(column: str) -> str | None:
+    """
+    The interval column derived from cumulative variable *column*.
+
+    Returns None when *column* is not a cumulative variable.
+    """
+    return interval_by_cumulative.get(column)
+
+
+def cumulative_column(column: str) -> str | None:
+    """
+    The cumulative variable that interval column *column* is derived from.
+
+    Returns None when no link is known: either the variable is a calculated
+    interval quantity with no cumulative form, or its pair is not expressible in
+    the names and ``ComplementVariabele`` does not declare it yet.
+    """
+    return cumulative_by_interval.get(column)
+
 # TEST-ONLY: hand-curated subset of aggregation variables that test fixtures
 # carry meaningful synthetic values for. Tests filter both the stored fixture
 # and the freshly-generated pipeline output to this subset before comparing,

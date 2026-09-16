@@ -5,6 +5,7 @@ import pandas as pd
 from pandas import DataFrame, Series
 
 from etdmap.data_model import (
+    interval_column,
     cumulative_columns,
     load_thresholds,
     thresholds_dict,
@@ -189,7 +190,7 @@ def validate_300sec(df: DataFrame) -> Series:
 
 def validate_elektriciteitgebruik(df: DataFrame) -> Series:
     """
-    Validate that ElektriciteitsgebruikTotaalHuishoudelijk is less than or equal to the sum of Zon-opwekTotaal,
+    Validate that ElektriciteitsgebruikTotaalHuishoudelijk is less than or equal to the sum of ZonopwekTotaal,
     ElektriciteitNetgebruikHoog, and ElektriciteitNetgebruikLaag.
 
     Parameters
@@ -204,7 +205,7 @@ def validate_elektriciteitgebruik(df: DataFrame) -> Series:
     """
     columns = [
         'ElektriciteitsgebruikTotaalHuishoudelijk',
-        'Zon-opwekTotaal',
+        'ZonopwekTotaal',
         'ElektriciteitNetgebruikHoog',
         'ElektriciteitNetgebruikLaag',
     ]
@@ -212,7 +213,7 @@ def validate_elektriciteitgebruik(df: DataFrame) -> Series:
     def condition_func(df: pd.DataFrame) -> bool:
         return (
             df['ElektriciteitsgebruikTotaalHuishoudelijk']
-            <= df['Zon-opwekTotaal']
+            <= df['ZonopwekTotaal']
             + df['ElektriciteitNetgebruikHoog']
             + df['ElektriciteitNetgebruikLaag']
         )
@@ -333,19 +334,32 @@ def create_validate_cumulative(
     -------
     None
     """
-    # loop to produce cumulative outlier validators per cumulative column
+    # loop to produce cumulative outlier validators per cumulative column.
+    # The column checked is the interval column the data model links to the
+    # cumulative variable, which is not always its name plus "Diff".
     for col in cumulative_columns:
-        logging.info(f"Creating {col} outliers check")
-        def validate_cumulative_outliers(df: DataFrame, cum_col=col) -> Series:
-            logging.debug(f"[record_validators] Checking {cum_col} outliers")
+        interval_col = interval_column(col)
+        if interval_col is None:
+            raise ValueError(
+                f"etdmodel.csv: '{col}' is a cumulative variable with no "
+                f"ComplementVariabele, so its interval column is unknown and no "
+                f"outlier check can be built for it. Declare the link in the "
+                f"data model."
+            )
+
+        logging.info(f"Creating {interval_col} outliers check")
+        def validate_cumulative_outliers(df: DataFrame, diff_col=interval_col) -> Series:
+            logging.debug(f"[record_validators] Checking {diff_col} outliers")
             try:
-                result = validate_columns(df, [cum_col + 'Diff'], validate_not_outliers)
+                result = validate_columns(df, [diff_col], validate_not_outliers)
                 return result
             except Exception as e:
-                logging.error(f"Error in {cum_col} outliers check")
-                raise Exception(f"Error in {cum_col} outliers check: {e!s}")  # noqa: B904
+                logging.error(f"Error in {diff_col} outliers check")
+                raise Exception(f"Error in {diff_col} outliers check: {e!s}")  # noqa: B904
 
-        record_flag_conditions['validate_' + col + 'Diff_outliers'] = validate_cumulative_outliers
+        record_flag_conditions['validate_' + interval_col + '_outliers'] = (
+            validate_cumulative_outliers
+        )
 
 thresholds_df = load_thresholds()
 

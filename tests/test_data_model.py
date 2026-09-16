@@ -4,8 +4,15 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from unittest import mock
+
+from etdmap import data_model
 from etdmap.data_model import (
+    cumulative_column,
     cumulative_columns,
+    diff_columns,
+    interval_by_cumulative,
+    interval_column,
     data_analysis_columns,
     get_aggregation_config,
     model_column_order,
@@ -59,8 +66,8 @@ required_model_columns = [
     "TemperatuurWoonkamerSetpoint",
     "WarmteproductieWarmtepomp",
     "WatergebruikWarmTapwater",
-    "Zon-opwekMomentaan",
-    "Zon-opwekTotaal",
+    "ZonopwekMomentaan",
+    "ZonopwekTotaal",
     "CO2",
     "Luchtvochtigheid",
     "DebietVentilatieAanvoer",
@@ -312,6 +319,332 @@ def test_required_cols_match_vereist_ja_in_model():
     perf_all = etdmodel_csv[etdmodel_csv["Entiteit"].str.startswith("Prestatiedata", na=False)]
     expected = set(perf_all[perf_all["Vereist"] == "ja"]["Variabele"].tolist())
     assert set(required_performance_data_columns) == expected
+
+
+class TestCumulativeIntervalPairs:
+    """The link between a cumulative variable and its interval column.
+
+    ``ComplementVariabele`` states it. Until that column is synced the link is
+    read off the names, which cannot express every pair, so these pin what each
+    source is allowed to mean.
+    """
+
+    def test_every_cumulative_variable_has_an_interval_column(self):
+        for column in cumulative_columns:
+            assert interval_column(column) == column + "Diff"
+
+    def test_the_link_goes_both_ways(self):
+        for column in cumulative_columns:
+            assert cumulative_column(interval_column(column)) == column
+
+    def test_a_non_column_is_not_paired(self):
+        assert interval_column("ReadingDate") is None
+        assert cumulative_column("ReadingDate") is None
+
+    def test_a_name_is_not_a_relationship(self):
+        """Nothing is paired by its name. A column named <x>Diff is the interval
+        column of <x> only because the model says so."""
+        for column in diff_columns:
+            if not column.endswith("Diff"):
+                continue
+            stem = column[: -len("Diff")]
+            if cumulative_column(column) is None:
+                continue
+            # Where they do match, it is the declared link that says so.
+            assert interval_column(cumulative_column(column)) == column
+            assert stem in cumulative_columns or cumulative_column(column) != stem
+
+
+class TestTheShippedModelIsConsistent:
+    """The bundled etdmodel.csv, checked as data.
+
+    ComplementVariabele is maintained in Grist and synced here, so an error in
+    it arrives as a file change. etdmap reads the committed model as given, so
+    this is where a broken one is caught -- alongside the same checks run
+    against Grist by sync_data_model before it writes.
+    """
+
+    @pytest.fixture(scope="class")
+    def model(self):
+        return pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
+
+    @staticmethod
+    def _declared(model):
+        if "ComplementVariabele" not in model.columns:
+            return {}
+        return {
+            str(row["Variabele"]): str(row["ComplementVariabele"]).strip()
+            for _, row in model.iterrows()
+            if pd.notna(row.get("Variabele"))
+            and pd.notna(row.get("ComplementVariabele"))
+            and str(row["ComplementVariabele"]).strip() != ""
+        }
+
+    def test_every_complement_names_a_variable_that_exists(self, model):
+        variables = set(model["Variabele"].dropna().astype(str))
+        unknown = {
+            variable: complement
+            for variable, complement in self._declared(model).items()
+            if complement not in variables
+        }
+        assert not unknown, f"ComplementVariabele names unknown variables: {unknown}"
+
+    def test_no_variable_is_its_own_complement(self, model):
+        declared = self._declared(model)
+        assert not [v for v, c in declared.items() if v == c]
+
+    def test_each_pair_is_one_cumulative_and_one_interval_variable(self, model):
+        cumulative = set(cumulative_columns)
+        intervals = set(diff_columns)
+        wrong = [
+            f"{variable} <-> {complement}"
+            for variable, complement in self._declared(model).items()
+            if not (
+                (variable in cumulative and complement in intervals)
+                or (variable in intervals and complement in cumulative)
+            )
+        ]
+        assert not wrong, (
+            f"a complement pair must be one Cumulatief=ja variable and one "
+            f"Diff=ja variable: {wrong}"
+        )
+
+    def test_the_complement_link_is_one_to_one(self, model):
+        """An interval column belongs to exactly one cumulative variable, and a
+        cumulative variable has exactly one interval column.
+
+        One to one is what makes "the interval column of this variable" a
+        well-defined thing to write and "the cumulative variable behind this
+        column" a well-defined thing to read.
+        """
+        cumulative = set(cumulative_columns)
+        intervals_of, cumulative_of = {}, {}
+        for variable, complement in self._declared(model).items():
+            if variable in cumulative:
+                pair = (variable, complement)
+            elif complement in cumulative:
+                pair = (complement, variable)
+            else:
+                continue
+            intervals_of.setdefault(pair[0], set()).add(pair[1])
+            cumulative_of.setdefault(pair[1], set()).add(pair[0])
+
+        several_intervals = {
+            c: sorted(i) for c, i in intervals_of.items() if len(i) > 1
+        }
+        several_owners = {
+            i: sorted(c) for i, c in cumulative_of.items() if len(c) > 1
+        }
+        assert not several_intervals, (
+            f"cumulative variables with more than one interval column: "
+            f"{several_intervals}"
+        )
+        assert not several_owners, (
+            f"interval columns claimed by several cumulative variables: "
+            f"{several_owners}"
+        )
+
+    def test_both_sides_agree_where_both_are_filled(self, model):
+        declared = self._declared(model)
+        disagreeing = {
+            variable: (complement, declared[complement])
+            for variable, complement in declared.items()
+            if complement in declared and declared[complement] != variable
+        }
+        assert not disagreeing, f"ComplementVariabele sides disagree: {disagreeing}"
+
+    def test_every_cumulative_variable_declares_its_interval_column(self, model):
+        """There is no fallback to a name convention. A cumulative variable with
+        no declared complement has no interval column at all, and mapping would
+        derive no interval values for it.
+
+        Declaring it on either row is enough; the relation is symmetric.
+        """
+        declared = self._declared(model)
+        stated = set(declared) | set(declared.values())
+        missing = sorted(set(cumulative_columns) - stated)
+        assert not missing, (
+            f"cumulative variables with no ComplementVariabele on either row: "
+            f"{missing}"
+        )
+
+    def test_interval_columns_of_one_variable_share_a_threshold(self, model):
+        """Two interval columns linked to the same cumulative variable are the
+        same quantity under two names. Whichever one the pipeline writes is
+        judged the same way, so renaming a variable cannot quietly change what
+        counts as plausible."""
+        thresholds = {
+            str(row["Variabele"]): (row.get("Min"), row.get("Max"),
+                                    str(row.get("ThresholdType", "")).strip())
+            for _, row in model.iterrows()
+            if pd.notna(row.get("Variabele"))
+        }
+        cumulative = set(cumulative_columns)
+
+        owned = {}
+        for variable, complement in self._declared(model).items():
+            if variable in cumulative:
+                owned.setdefault(variable, set()).add(complement)
+            elif complement in cumulative:
+                owned.setdefault(complement, set()).add(variable)
+
+        def same(a, b):
+            return all(
+                (pd.isna(x) and pd.isna(y)) or x == y for x, y in zip(a, b)
+            )
+
+        disagreeing = {}
+        for owner, intervals in owned.items():
+            declared = {i: thresholds.get(i) for i in sorted(intervals)}
+            first = next(iter(declared.values()), None)
+            if first and not all(same(first, other) for other in declared.values()):
+                disagreeing[owner] = declared
+
+        assert not disagreeing, (
+            f"interval columns of one cumulative variable declare different "
+            f"thresholds: {disagreeing}"
+        )
+
+    def test_an_interval_column_is_not_signed_when_its_variable_cannot_be(
+        self, model
+    ):
+        """A cumulative variable that never decreases produces interval values
+        that are never negative, so a negative Min on its interval column admits
+        readings the quantity cannot produce.
+
+        Only pairs the model links are checked. A net quantity with no
+        cumulative complement is legitimately signed.
+        """
+        cumulative = set(cumulative_columns)
+        minimum = {
+            str(row["Variabele"]): pd.to_numeric(row.get("Min"), errors="coerce")
+            for _, row in model.iterrows()
+            if pd.notna(row.get("Variabele"))
+        }
+
+        pairs = set()
+        for variable, complement in self._declared(model).items():
+            if variable in cumulative:
+                pairs.add((variable, complement))
+            elif complement in cumulative:
+                pairs.add((complement, variable))
+
+        signed = {
+            interval: (minimum.get(interval), owner, minimum.get(owner))
+            for owner, interval in sorted(pairs)
+            if pd.notna(minimum.get(owner)) and minimum[owner] >= 0
+            and pd.notna(minimum.get(interval)) and minimum[interval] < 0
+        }
+        assert not signed, (
+            f"interval columns allow a negative value their cumulative variable "
+            f"cannot produce: {signed}"
+        )
+
+    def test_the_pairs_actually_build(self, model):
+        """Whatever the model carries, the link resolves for every cumulative
+        variable -- from the metadata, or from the names where it is silent."""
+        for column in cumulative_columns:
+            interval = interval_column(column)
+            assert interval is not None, f"{column} has no interval column"
+            assert cumulative_column(interval) == column
+
+
+class TestCumulativeIntervalPairs:
+    """The link between a cumulative variable and its interval column."""
+
+    def test_every_cumulative_variable_has_an_interval_column(self):
+        for column in cumulative_columns:
+            assert interval_column(column) is not None
+
+    def test_the_link_goes_both_ways(self):
+        for column in cumulative_columns:
+            assert cumulative_column(interval_column(column)) == column
+
+    def test_a_non_column_is_not_paired(self):
+        assert interval_column("ReadingDate") is None
+        assert cumulative_column("ReadingDate") is None
+
+
+class TestComplementVariabele:
+    """Reading the link.
+
+    The model is committed data and is read as given; what makes it trustworthy
+    is the sync check and the tests against the shipped file above.
+    """
+
+    @staticmethod
+    def _pairs(rows, cumulative, intervals):
+        model = pd.DataFrame(rows)
+        with mock.patch.object(data_model, "load_etdmodel", lambda: model),              mock.patch.object(data_model, "cumulative_columns", cumulative),              mock.patch.object(data_model, "diff_columns", intervals):
+            return data_model._build_cumulative_interval_pairs()
+
+    def test_it_pairs_names_that_share_no_stem(self):
+        """What the metadata is for: no rule over the names can pair
+        ZonopwekBruto with ZonopwekTotaal."""
+        forward, backward = self._pairs(
+            [
+                {"Variabele": "ZonopwekTotaal", "ComplementVariabele": "ZonopwekBruto"},
+                {"Variabele": "ZonopwekBruto", "ComplementVariabele": "ZonopwekTotaal"},
+            ],
+            ["ZonopwekTotaal"], ["ZonopwekBruto"],
+        )
+        assert forward == {"ZonopwekTotaal": "ZonopwekBruto"}
+        assert backward == {"ZonopwekBruto": "ZonopwekTotaal"}
+
+    @pytest.mark.parametrize(
+        "declared_on", ["the cumulative row", "the interval row", "both rows"]
+    )
+    def test_the_side_it_is_written_on_does_not_matter(self, declared_on):
+        """The relation is one to one, so either row states it in both
+        directions. Reading only one side would leave a variable whose
+        complement is declared on the other row with no interval column, and
+        mapping would then derive no interval values for it.
+        """
+        rows = [
+            {"Variabele": "ZonopwekTotaal", "ComplementVariabele": None},
+            {"Variabele": "ZonopwekBruto", "ComplementVariabele": None},
+        ]
+        if declared_on in ("the cumulative row", "both rows"):
+            rows[0]["ComplementVariabele"] = "ZonopwekBruto"
+        if declared_on in ("the interval row", "both rows"):
+            rows[1]["ComplementVariabele"] = "ZonopwekTotaal"
+
+        forward, backward = self._pairs(
+            rows, ["ZonopwekTotaal"], ["ZonopwekBruto"]
+        )
+        assert forward == {"ZonopwekTotaal": "ZonopwekBruto"}
+        assert backward == {"ZonopwekBruto": "ZonopwekTotaal"}
+
+    def test_nothing_is_paired_without_the_column(self):
+        """There is no fallback. A model that does not state the link states no
+        pairs, rather than pairs guessed from the names."""
+        assert self._pairs(
+            [{"Variabele": "ZonopwekTotaal"}, {"Variabele": "ZonopwekTotaalDiff"}],
+            ["ZonopwekTotaal"], ["ZonopwekTotaalDiff"],
+        ) == ({}, {})
+
+    def test_a_name_that_looks_like_a_pair_is_not_one(self):
+        """<x> and <x>Diff are paired because the model says so, not because
+        they share a stem."""
+        forward, _ = self._pairs(
+            [
+                {"Variabele": "Gasgebruik", "ComplementVariabele": None},
+                {"Variabele": "GasgebruikDiff", "ComplementVariabele": None},
+            ],
+            ["Gasgebruik"], ["GasgebruikDiff"],
+        )
+        assert forward == {}
+
+    def test_a_pair_that_is_not_one_of_each_kind_raises(self):
+        """The link is then unreadable, not merely wrong."""
+        with pytest.raises(ValueError, match="not one Cumulatief"):
+            self._pairs(
+                [
+                    {"Variabele": "A", "ComplementVariabele": "B"},
+                    {"Variabele": "B", "ComplementVariabele": "A"},
+                ],
+                ["A"], ["C"],
+            )
 
 
 if __name__ == "__main__":

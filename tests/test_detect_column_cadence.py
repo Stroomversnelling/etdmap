@@ -49,8 +49,8 @@ class TestDetectColumnCadence:
         }
 
     def test_a_partial_opening_day_does_not_mislead(self):
-        # 24 readings on a 5-minute register: the same count a complete hourly
-        # register produces. Counting readings would confuse the two; gaps do not.
+        # 24 readings on a 5-minute column: the same count a complete day at
+        # hourly cadence produces. Counting readings confuses the two; gaps do not.
         five = _frame({'five': 5}, periods=24)
         sixty = _frame({'sixty': 60}, periods=24 * 12)
         assert len(five) == 24

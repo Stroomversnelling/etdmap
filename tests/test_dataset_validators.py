@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from etdmap.data_model import cumulative_columns
+from etdmap.data_model import cumulative_columns, interval_column
 from etdmap.dataset_validators import (
     dataset_flag_conditions,
     validate_columns,
@@ -33,7 +33,12 @@ def test_dataset_flag_conditions():
     3. Wheter all values are functions.
     """
     assert all("validate_" + col in dataset_flag_conditions for col in cumulative_columns)
-    assert all("validate_" + col + "Diff" in dataset_flag_conditions for col in cumulative_columns)
+    # The interval column is the one the data model links to the cumulative
+    # variable, not its name plus "Diff".
+    assert all(
+        "validate_" + interval_column(col) in dataset_flag_conditions
+        for col in cumulative_columns
+    )
 
     special_checks = (
         "validate_monitoring_data_counts",

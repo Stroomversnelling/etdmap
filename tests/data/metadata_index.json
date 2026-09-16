@@ -74,8 +74,8 @@
         },
         "validate_columns_exist": {
             "statistics": {
-                "min": "True",
-                "max": "True",
+                "min": "False",
+                "max": "False",
                 "null_count": 0
             }
         },
@@ -324,14 +324,14 @@
                 "null_count": 0
             }
         },
-        "validate_Zon-opwekTotaal": {
+        "validate_ZonopwekTotaal": {
             "statistics": {
                 "min": null,
                 "max": null,
                 "null_count": 10
             }
         },
-        "validate_Zon-opwekTotaalDiff": {
+        "validate_ZonopwekBruto": {
             "statistics": {
                 "min": "True",
                 "max": "True",
@@ -366,18 +366,18 @@
                 "null_count": 0
             }
         },
-        "validate_Zon-opwekVerbruik": {
+        "validate_ZonopwekVerbruik": {
             "statistics": {
                 "min": null,
                 "max": null,
                 "null_count": 10
             }
         },
-        "validate_Zon-opwekVerbruikDiff": {
+        "validate_ZonopwekVerbruikDiff": {
             "statistics": {
-                "min": "True",
-                "max": "True",
-                "null_count": 0
+                "min": null,
+                "max": null,
+                "null_count": 10
             }
         },
         "validate_ElektriciteitsgebruikOverigGG": {

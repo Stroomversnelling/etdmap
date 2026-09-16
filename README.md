@@ -115,7 +115,7 @@ On Linux/macOS use `.venv/bin/python` in place of `.venv/Scripts/python`.
 .venv/Scripts/python -m pytest tests/test_mapping_helpers.py::TestRunStandardPipeline::test_output_has_model_columns
 
 # Everything whose name matches an expression, across all files
-.venv/Scripts/python -m pytest -k "interval and not register"
+.venv/Scripts/python -m pytest -k "interval and not cumulative"
 ```
 
 The suite reads `config_test.yaml` from the repo root. Copy

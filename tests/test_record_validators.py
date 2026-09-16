@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 import etdmap.record_validators as record_validators
-from etdmap.data_model import cumulative_columns
+from etdmap.data_model import cumulative_columns, interval_column
 from etdmap.index_helpers import read_metadata
 from etdmap.record_validators import (
     columns_5min_momentaan,
@@ -26,7 +26,12 @@ def test_record_flag_conditions():
     4. Wheter all values of dict are functions.
     """
     # check all cumulative column-checks are in keys
-    assert all('validate_' + col + 'Diff_outliers' in record_flag_conditions for col in cumulative_columns)
+    # The interval column is the one the data model links to the cumulative
+    # variable, not its name plus 'Diff'.
+    assert all(
+        'validate_' + interval_column(col) + '_outliers' in record_flag_conditions
+        for col in cumulative_columns
+    )
 
     # check all momentaal column-checks are in record-validator keys
     assert all('validate_' + col in record_flag_conditions for col in columns_5min_momentaan)

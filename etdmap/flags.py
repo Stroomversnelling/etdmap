@@ -1,10 +1,10 @@
-"""Bitwise flags recorded during mapping, and the checks that set them.
+"""Findings recorded against individual values during mapping.
 
-A flag says what was found about a value, one bit per finding, so a value can
-carry several at once. Zero means nothing was found: the value is validated.
+Each finding is one bit of a :class:`MappingFlag`, so a value may carry several
+at once. Zero means no finding applies.
 
-Flags are set once, where the finding is made. Later passes filter on a bit
-rather than repeating the test that produced it.
+Flags are set where the finding is made and read downstream, so a later stage
+filters on a bit rather than repeating the test that produced it.
 """
 
 from enum import IntFlag, auto
@@ -14,68 +14,62 @@ import pandas as pd
 
 
 class MappingFlag(IntFlag):
-    """
-    What is wrong with a single value, one bit per kind of fault.
+    """Findings that may apply to a single value.
 
-    Each bit names a class of error, independent of which pass happens to
-    detect it or what any pass decides to do about it.
+    Each bit names a class of fault independently of which stage detects it or
+    what any stage does in response.
     """
 
     NONE = 0
 
-    # The value is outside the range its variable is allowed to take. Too
-    # small or too large to be a real measurement of this quantity.
+    # Outside the range declared for the variable.
     OUT_OF_BOUNDS_LOW = auto()
     OUT_OF_BOUNDS_HIGH = auto()
 
-    # A meter total that went backwards, and then returned to at least where it
-    # had been. The meter never lost count, so the readings across the dip are
-    # the faulty ones.
+    # A cumulative variable decreased and then returned to at least its previous
+    # value. The device did not lose count, so the readings across the decrease
+    # are the faulty ones.
     CUMULATIVE_JUMP_BACK = auto()
 
-    # A meter total that went backwards more than once in succession. The meter
-    # is unreliable across that stretch rather than glitching on one reading.
+    # A cumulative variable decreased more than once in succession, indicating an
+    # unreliable stretch rather than a single faulty reading.
     CUMULATIVE_REPEAT_NEGATIVE = auto()
 
-    # A meter total that went backwards and then counted up again from the
-    # lower value. The register restarted -- a replacement, a rollover or a
-    # reset -- so consumption cannot be derived across the restart.
+    # A cumulative variable decreased and then counted up from the lower value: a
+    # replacement, rollover or reset. Consumption cannot be derived across it.
     CUMULATIVE_METER_RESET = auto()
 
-    # A meter total that went backwards and never rose again. The meter stopped
-    # producing usable totals, so nothing from that point on can be trusted.
+    # A cumulative variable decreased and never increased again. No usable total
+    # is produced from that point onward.
     CUMULATIVE_NO_RECOVERY = auto()
 
-    # A meter total reading exactly zero after it had already been counting.
-    # A register that has accumulated cannot return to zero, so the device is
-    # reporting an absent reading as the number zero.
+    # A cumulative variable read zero after it had accumulated. A total cannot
+    # return to zero, so the device is reporting an absent reading as zero.
     CUMULATIVE_ZERO_TOTAL = auto()
 
-    # A register that stopped advancing while the device kept consuming. The
-    # consumption is not lost, it is late: it arrives in one lump when the
-    # register reports again, so these readings understate and one overstates.
+    # A cumulative variable did not advance while consumption continued. The
+    # consumption is recorded later, in the reading flagged CATCHUP.
     FROZEN_SPAN = auto()
 
-    # The reading a frozen span's accumulation arrives in. Too large to be one
-    # interval's consumption, and paired with the span it belongs to.
+    # The reading in which a frozen span's accumulated consumption arrives.
+    # Larger than one interval may hold, and paired with that span.
     CATCHUP = auto()
 
-    # The value was carried forward from an earlier reading because the device
-    # reports infrequently. Nothing was measured here.
+    # Carried forward from an earlier reading because the device reports
+    # infrequently. No measurement was taken at this timestamp.
     FILLED_DOWN = auto()
 
-    # The value was invented as zero because the device is absent for this
-    # household. Nothing was measured here either, and a zero that was invented
-    # is not the same as a zero that was reported.
+    # Set to zero because the device is absent for this household. No
+    # measurement was taken; a zero set here is not a reported zero.
     FILLED_ZERO = auto()
 
-    # Faults whose bad readings span from the decrease to the recovery, rather
-    # than sitting on a single reading.
+    # Faults whose affected readings run from the decrease to the recovery
+    # rather than occupying a single reading.
     CUMULATIVE_DECREASE_RANGE = CUMULATIVE_JUMP_BACK | CUMULATIVE_REPEAT_NEGATIVE
 
-    # Everything that was put there rather than measured. A reconstruction that
-    # wants only real readings filters on this; anything added later that
-    # invents a value belongs in it.
+    # Values written by the pipeline rather than measured. Filter on this to
+    # select only delivered readings. Any future finding that writes a value
+    # belongs in this composite.
     INVENTED = FILLED_DOWN | FILLED_ZERO | FROZEN_SPAN
 
 
@@ -108,15 +102,15 @@ def set_flags(df, column, mask, flag) -> None:
 
 def _as_limit(bound, unbounded, index):
     """
-    Turn a bound into something a comparison can use, scalar or per row.
+    Return a bound in a form a comparison can use, as a scalar or one per row.
 
-    A bound may be one number for the whole column, or one number per row --
-    a cadence-scaled bound varies by household, and a constraint-derived bound
-    varies by row because it is a formula in that row's other cells.
+    A bound may be one number for the whole column, or one number per row: a
+    cadence-scaled bound varies by household, and a constraint-derived bound
+    varies by row, being a formula in that row's other cells.
 
-    Either way, **not set means no limit**, so an absent bound becomes infinity
-    and flags nothing. That holds per row too: a Series bound with pd.NA in it
-    is unbounded exactly on those rows, not unknown on them.
+    A bound that is not set is no limit, so it is replaced by *unbounded* and
+    flags nothing. The same applies per row: pd.NA within a Series bound leaves
+    those rows unbounded.
     """
     if isinstance(bound, pd.Series):
         return bound.reindex(index).fillna(unbounded)
@@ -176,18 +170,17 @@ def scale_bound_to_cadence(bound, threshold_type, cadence_minutes):
     """
     Scale a per-interval bound to the interval the column actually reports in.
 
-    A bound is written against a unit of time. ``5-minute`` bounds say what one
-    five-minute interval may hold, so a register that reports hourly delivers
-    twelve intervals' worth in one reading and must be judged against twelve
-    times the bound. Judging it against the five-minute figure would call every
-    normal hourly reading impossible.
+    A bound is declared against a unit of time. A ``5-minute`` bound states what
+    one five-minute interval may hold, so a column reporting hourly delivers
+    twelve intervals of consumption in one reading and is judged against twelve
+    times the declared bound. Judging it against the five-minute figure would
+    reject every normal hourly reading.
 
-    **Only ``5-minute`` bounds scale.** A ``momentaan`` bound is an instantaneous
-    reading -- power does not accumulate over a longer window, so a slower
-    reporting rate does not make a larger value plausible. A ``cumulatief`` bound
-    is a yearly total, a different grain entirely. Both are returned unchanged.
-
-    Returns pd.NA unchanged: a bound that is not set stays not set.
+    Only ``5-minute`` bounds scale. A ``momentaan`` bound applies to an
+    instantaneous reading, which does not accumulate over a longer interval, so
+    a slower reporting rate does not make a larger value plausible. A
+    ``cumulatief`` bound applies to a yearly total. Both are returned unchanged,
+    as is a bound that is not set.
     """
     if pd.isna(bound) or pd.isna(cadence_minutes):
         return bound
@@ -200,11 +193,11 @@ def contiguous_runs(mask: pd.Series) -> list[tuple[int, int]]:
     """
     The (start, stop) positions of each maximal run of True in *mask*.
 
-    Positions are half-open, so ``stop`` is the first position after the run --
-    which is also the position of whatever ended it.
+    Positions are half-open: ``stop`` is the first position after the run, which
+    is also the position of the value that ended it.
 
-    pd.NA is not True. A mask carrying it would otherwise read as a run, and an
-    unknown is not a finding.
+    pd.NA is treated as False. An unknown is not a finding, and a mask carrying
+    pd.NA would otherwise read as part of a run.
     """
     flat = mask.fillna(False).reset_index(drop=True).astype("int8")
     if not flat.any():
@@ -227,26 +220,25 @@ def frozen_span_flags(
     upper_bound=pd.NA,
 ) -> pd.Series:
     """
-    Flag registers that stopped advancing and then caught up in one lump.
+    Flag a cumulative variable that stopped advancing and then caught up.
 
-    A flat stretch is not a fault by itself -- a device that is not running does
-    not consume, and a summer of no space heating looks exactly like a broken
-    sensor until you see what follows. What makes it a fault is the **catch-up**:
-    a reading too large to be one interval's consumption, sitting where the
-    register started reporting again. That reading is the accumulation arriving
-    late.
+    A flat stretch is not a fault by itself: a device that is not running does
+    not consume, and a summer without space heating is indistinguishable from a
+    stalled sensor. What identifies the fault is the catch-up -- a reading too
+    large to be one interval of consumption, at the point where the cumulative
+    variable resumed. That reading holds the accumulation that arrived late.
 
-    So detection is anchored on the catch-up and walks backwards. A flat stretch
-    with nothing impossible after it is left alone.
+    Detection is therefore anchored on the catch-up and walks backwards. A flat
+    stretch not followed by a catch-up is left alone.
 
-    *intervals* is a per-interval series -- a Diff column, not a register.
-    A missing interval counts as "did not advance": a gap in transmission still
-    means no consumption was recorded, and a span must not be split in two by
-    one absent reading.
+    *intervals* is a per-interval series, that is, a Diff column rather than a
+    cumulative variable. A missing interval counts as not advancing: no
+    consumption was recorded, and a span must not be split in two by a single
+    absent reading.
 
-    A **negative** interval is not part of a span. A register that goes backwards
-    is a reset, which ``CUMULATIVE_METER_RESET`` already names, and swallowing it
-    here would give one fault two names and extend a span across the reset.
+    A negative interval is not part of a span. A cumulative variable going
+    backwards is a reset, named by ``CUMULATIVE_METER_RESET``; including it here
+    would give one fault two names and extend a span across the reset.
 
     Parameters
     ----------
@@ -295,21 +287,23 @@ def frozen_spans(
     """
     One row per frozen span, with the catch-up its accumulation arrived in.
 
-    The detection ``frozen_span_flags`` renders. See that function for what makes
-    a flat stretch a fault rather than an idle device.
+    This is the same detection that :func:`frozen_span_flags` renders as flags,
+    reported span by span. See that function for what distinguishes a frozen
+    span from an idle device.
 
     Returns
     -------
     pd.DataFrame
-        ``start`` and ``catchup_position`` are positions into *intervals*;
-        the span covers ``start`` up to but not including ``catchup_position``.
-        ``n_intervals`` is how long the register stood still, ``catchup_value``
-        is what arrived, and ``upper_bound`` is what made it impossible.
+        ``start`` and ``catchup_position`` are positions into *intervals*; the
+        span covers ``start`` up to but not including ``catchup_position``.
+        ``n_intervals`` is how many intervals the cumulative variable stood
+        still, ``catchup_value`` is the reading its accumulation arrived in, and
+        ``upper_bound`` is the threshold that reading exceeded.
     """
     rows = []
     if not (pd.isna(upper_bound) or intervals.empty):
-        # A missing interval counts as "did not advance". A negative one does
-        # not: testing for zero exactly excludes it, which a decrease never is.
+        # A missing interval counts as not advancing. A negative one does not:
+        # testing for exactly zero excludes decreases.
         did_not_advance = intervals.fillna(0) == 0
         catch_up = (intervals > upper_bound).fillna(False)
 
@@ -319,15 +313,14 @@ def frozen_spans(
             stop: start for start, stop in contiguous_runs(did_not_advance)
         }
 
-        # Walk backwards from the impossible readings only. There are few of
-        # them; starting from the flat runs would visit every quiet stretch in
-        # the series to discover almost none of them end in one.
+        # Iterating the catch-ups rather than the flat runs: catch-ups are few,
+        # while most quiet stretches are not followed by one.
         by_position = catch_up.reset_index(drop=True)
         for position in by_position[by_position].index:
             start = span_ending_at.get(int(position))
             if start is None:
-                # An impossible reading with no flat run before it is a lone
-                # spike, which the bound check already reports. Not a span.
+                # An over-bound reading with no flat run before it is a single
+                # outlier, already reported by the bound check, and not a span.
                 continue
             rows.append(
                 {

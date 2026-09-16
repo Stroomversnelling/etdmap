@@ -34,8 +34,8 @@ WarmteproductieWarmTapwater,cumulatief,GJ,0.0,200.0,
 WatergebruikWarmtepomp,cumulatief,liter,0.0,,
 WatergebruikWarmTapwater,cumulatief,liter,0.0,999999.0,
 WatergebruikRuimteverwarming,cumulatief,liter,0.0,,
-Zon-opwekMomentaan,momentaan,kW,-2.0,11.5,"bij aansluiting op 3 fase, 16A zekering"
-Zon-opwekTotaal,cumulatief,kWh,0.0,,
+ZonopwekMomentaan,momentaan,kW,-2.0,11.5,"bij aansluiting op 3 fase, 16A zekering"
+ZonopwekTotaal,cumulatief,kWh,0.0,,
 CO2,momentaan,ppm,200.0,30000.0,
 Luchtvochtigheid,momentaan,procenten,10.0,100.0,
 DebietVentilatieAanvoer,momentaan,m3 / uur,0.0,1000.0,voor woningen
@@ -50,14 +50,13 @@ ElektriciteitsgebruikBoosterDiff,5-minute,kWh,0.0,0.32,"bij aansluiting op 1 fas
 ElektriciteitsgebruikBoilervatDiff,5-minute,kWh,0.0,0.32,"bij aansluiting op 1 fase, 16A zekering"
 WarmteproductieWarmtepompDiff,5-minute,GJ,0.0,0.0576,"bij COP = 10, wp+boiler+booster"
 WatergebruikWarmTapwaterDiff,5-minute,liter,0.0,100.0,regendouche = 20 liter per minuut (van 40 graden)
-Zon-opwekTotaalDiff,5-minute,kWh,0.0,0.96,"bij aansluiting op 3 fase, 16A zekering"
 TerugleveringTotaalNetto,5-minute,kWh,0.0,,
 ElektriciteitsgebruikTotaalNetto,5-minute,kWh,0.0,,
-Netuitwisseling,5-minute,kWh,-2012.5,2012.5,Max power during 5 minutes using 3x35A connection
+Netuitwisseling,5-minute,kWh,-2.01,2.01,Max power during 5 minutes using 3x35A connection
 ElektriciteitsgebruikTotaalWarmtepomp,5-minute,kWh,0.0,,
-ElektriciteitsgebruikTotaalGebouwgebonden,5-minute,kWh,-2012.5,2012.5,Max power during 5 minutes using 3x35A connection
-ZonopwekBruto,5-minute,kWh,-200.0,2012.5,Max power during 5 minutes using 3x35A connection
-ElektriciteitsgebruikTotaalHuishoudelijk,5-minute,kWh,-2012.5,2012.5,Max power during 5 minutes using 3x35A connection
+ElektriciteitsgebruikTotaalGebouwgebonden,5-minute,kWh,-2.01,2.01,Max power during 5 minutes using 3x35A connection
+ZonopwekBruto,5-minute,kWh,0.0,0.96,"bij aansluiting op 3 fase, 16A zekering"
+ElektriciteitsgebruikTotaalHuishoudelijk,5-minute,kWh,-2.01,2.01,Max power during 5 minutes using 3x35A connection
 Zelfgebruik,5-minute,kWh,0.0,,
 ElektriciteitsgebruikTotaalBruto,5-minute,kWh,0.0,,
 ElektriciteitsgebruikRadiatorDiff,5-minute,kWh,0.0,0.32,"bij aansluiting op 1 fase, 16A zekering"
@@ -68,7 +67,7 @@ ElektriciteitTerugleveringDiff,5-minute,kWh,0.0,1.5,bij 3x25A
 DebietVentilatieExtractie,momentaan,m3 / uur,0.0,1000.0,voor woningen
 VOC,momentaan,ppm,0.0,,
 TemperatuurLuchtRetour,momentaan,graden C,0.0,,
-Zon-opwekVerbruik,cumulatief,kWh,0.0,,
+ZonopwekVerbruik,cumulatief,kWh,0.0,,
 ElektriciteitVermogenWTW,momentaan,W,0.0,,
 ElektriciteitVermogenBooster,momentaan,W,0.0,,
 ElektriciteitVermogenBoilervat,momentaan,W,0.0,,
@@ -86,9 +85,10 @@ ElektriciteitsgebruikOverigGGDiff,5-minute,kWh,0.0,,
 WarmteproductieRuimteverwarmingDiff,5-minute,GJ,0.0,0.0576,"bij COP = 10, wp+boiler+booster"
 WatergebruikRuimteverwarmingDiff,5-minute,liter / uur,0.0,,
 WatergebruikWarmtepompDiff,5-minute,liter / uur,0.0,,
-Zon-opwekVerbruikDiff,5-minute,kWh,0.0,,
+ZonopwekVerbruikDiff,5-minute,kWh,0.0,,
 TemperatuurWaterOmgeving,momentaan,graden C,0.0,99.0,
 Ventilatievoud,momentaan,1 / uur,0.0,99.0,
 WarmteproductieWarmTapwaterDiff,5-minute,GJ,0.0,0.0576,"bij COP = 10, wp+boiler+booster"
 ZelfgebruikPercentage,5-minute,procenten,0.0,100.0,
 ElektriciteitsgebruikWarmtepompInternDiff,5-minute,kWh,0.0,,
+ElektriciteitsgebruikCollectiefPomp,,kWh,0.0,,Bovengrens is afhankelijk van aantal woningen en topologie van netwerk. Een max van 1 kWh per woning per uur lijkt een solide bovengrens. Daar zou het nooit bovenuit mogen komen. 

@@ -1,4 +1,4 @@
-"""Frozen-span detection: a register that stops advancing and then delivers its
+"""Frozen-span detection: a cumulative variable that stops advancing and then delivers its
 accumulation in one impossible jump.
 
 A flat stretch on its own is not a fault -- a device that is not running does not
@@ -19,7 +19,7 @@ from etdmap.flags import (
     frozen_span_flags,
 )
 
-# A plausible 5-minute bound for a tap water register, in litres.
+# A plausible 5-minute bound for a tap water variable, in litres.
 MAX_PER_INTERVAL = 100.0
 
 
@@ -113,7 +113,7 @@ class TestDoesNotFireWithoutACatchUp:
 
 class TestMissingReadings:
     def test_a_missing_reading_inside_a_flat_run_does_not_split_it(self):
-        # A gap in transmission is still "the register did not advance".
+        # A gap in transmission still counts as not advancing.
         values = [1.0] + [0.0] * 4 + [pd.NA] + [0.0] * 4 + [500.0]
         frozen = _flagged(values)["frozen"][0]
         assert sum(frozen) == 9, "one span of nine, not two of four"
@@ -144,8 +144,8 @@ class TestBounds:
 
 
 class TestNegativeIntervalsAreNotFrozen:
-    def test_a_negative_interval_is_a_meter_reset_not_a_frozen_register(self):
-        """group D classifies a decreasing register as CUMULATIVE_METER_RESET.
+    def test_a_negative_interval_is_a_meter_reset_not_a_frozen_span(self):
+        """group D classifies a decreasing cumulative variable as CUMULATIVE_METER_RESET.
 
         Treating it as 'quiet' as well would have one fault wearing two names and
         would silently extend a span across a reset.
@@ -182,7 +182,7 @@ class TestScaleBoundToCadence:
         assert scale_bound_to_cadence(100.0, "5-minute", pd.NA) == 100.0
 
 
-class TestIntervalColumnsInheritTheirRegistersCadence:
+class TestIntervalColumnsInheritTheirCumulativeCadence:
     """A Diff column is derived in the pipeline, so it is not in the cadence
     table -- that was measured on the columns as delivered. Without inheritance
     every interval bound would go unscaled."""
@@ -203,13 +203,13 @@ class TestIntervalColumnsInheritTheirRegistersCadence:
         })
         return _detect_frozen_spans_for_household(self._frame(), 1, cadence=cadence)
 
-    def test_a_five_minute_register_makes_the_jump_impossible(self):
+    def test_a_five_minute_cadence_makes_the_jump_implausible(self):
         rows = self._spans(5)
         assert len(rows) == 1
         assert rows[0]["upper_bound"] == 100.0
         assert rows[0]["n_intervals"] == 60
 
-    def test_an_hourly_register_makes_the_same_jump_plausible(self):
+    def test_an_hourly_cadence_makes_the_same_jump_plausible(self):
         assert self._spans(60) == []
 
 
@@ -248,14 +248,14 @@ class TestTreatment:
         _treat_frozen_spans(df, rows)
         return rows
 
-    def test_the_register_reads_missing_across_the_span(self):
+    def test_the_cumulative_variable_reads_missing_across_the_span(self):
         df = self._frame()
         rows = self._treated(df)
         assert len(rows) == 1
         assert int(df["WatergebruikWarmTapwater"].isna().sum()) == 20
 
     def test_the_reading_before_the_span_is_kept_as_the_anchor(self):
-        # Blanking it too leaves the gap without a starting register value and
+        # Blanking it too leaves the gap without a starting cumulative value and
         # the redistributed volume no longer equals what was consumed.
         df = self._frame()
         self._treated(df)
@@ -263,7 +263,7 @@ class TestTreatment:
 
     def test_the_catch_up_is_blanked_with_the_span(self):
         # Every interval across the span is wrong: zeros that understate, then
-        # one lump that overstates. Imputation rebuilds them from the register.
+        # one reading that overstates. Imputation rebuilds them from the cumulative variable.
         df = self._frame()
         self._treated(df)
         diff = df["WatergebruikWarmTapwaterDiff"]
@@ -278,8 +278,8 @@ class TestTreatment:
         assert int(df["WatergebruikWarmTapwater"].isna().sum()) == 0
 
 
-class TestOnlyAccumulatingRegisters:
-    """A frozen span is a register holding consumption back. A momentaan reading
+class TestOnlyAccumulatingVariables:
+    """A frozen span is a cumulative variable holding consumption back. A momentaan reading
     is a sample at an instant: a flat run of voltage is the voltage being steady,
     and the jump after it is the voltage changing. There is nothing accumulated
     to redistribute, and treating it would blank real samples and invent values
@@ -289,7 +289,7 @@ class TestOnlyAccumulatingRegisters:
     """
 
     def _frame(self, column):
-        # The shape that fires for a register: flat, then an impossible jump.
+        # The shape that fires for a cumulative variable: flat, then an implausible jump.
         n = 30
         df = pd.DataFrame({
             "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
@@ -302,7 +302,7 @@ class TestOnlyAccumulatingRegisters:
         df.loc[0, column + "Diff"] = 0
         return df
 
-    def test_a_momentaan_column_is_never_treated_as_a_frozen_register(self):
+    def test_a_momentaan_column_is_never_treated_as_a_frozen_span(self):
         from etdmap.mapping_helpers import _detect_frozen_spans_for_household
         df = self._frame("SlimmemeterVoltageL1")
         assert _detect_frozen_spans_for_household(df, 1) == []
@@ -312,7 +312,7 @@ class TestOnlyAccumulatingRegisters:
         df = self._frame("WatergebruikWarmTapwater")
         assert len(_detect_frozen_spans_for_household(df, 1)) == 1
 
-    def test_an_interval_column_follows_its_register(self):
+    def test_an_interval_column_follows_its_cumulative_variable(self):
         from etdmap.mapping_helpers import _accumulates
         assert _accumulates("WatergebruikWarmTapwaterDiff")
         assert not _accumulates("ElektriciteitVermogen")

@@ -9,6 +9,7 @@ import etdmap
 from etdmap.data_model import (
     allowed_supplier_metadata_columns,
     cumulative_columns,
+    interval_column,
 )
 from etdmap.dataset_validators import dataset_flag_conditions
 from etdmap.storage import read_mapped_households
@@ -107,6 +108,95 @@ batch_field_dtypes = {
     "Gegevensfrequentie": pd.StringDtype(),
     "Leverancierfrequentie": pd.StringDtype(),
 }
+
+#: The grid used when a household batch does not declare one. Datasets mapped
+#: before Gegevensfrequentie existed are all on this grid.
+DEFAULT_GRID_MINUTES = 5
+
+
+def frequency_to_minutes(frequency):
+    """
+    Parse a declared frequency into minutes.
+
+    Frequencies are written as durations -- ``5min``, ``15min``, ``1h``,
+    ``30s`` -- and parsed as such, so the same value may be written in whichever
+    unit suits it. Comparing the text instead would make ``1h`` and ``60min``
+    unequal.
+
+    Returns pd.NA for an absent or unparseable value, so a caller can decide
+    what an undeclared frequency means for it.
+    """
+    if frequency is None or pd.isna(frequency):
+        return pd.NA
+    try:
+        delta = pd.Timedelta(str(frequency).strip())
+    except ValueError:
+        logging.warning(
+            f"[index_helpers] '{frequency}' is not a duration and cannot be "
+            f"read as a frequency."
+        )
+        return pd.NA
+    minutes = delta.total_seconds() / 60
+    return minutes if minutes > 0 else pd.NA
+
+
+def _household_batch_table():
+    """
+    The synced HuisBatch table, or None when it is not configured or present.
+
+    Read on demand rather than at import: the path is an option the caller sets,
+    and mapping runs that do not need the batch fields should not require it.
+    """
+    try:
+        path = etdmap.options.household_batch_csv_path
+    except Exception:
+        return None
+    if not path or not os.path.exists(str(path)):
+        return None
+    return pd.read_csv(str(path), dtype_backend="numpy_nullable")
+
+
+def grid_minutes_for_household(household_id, default=DEFAULT_GRID_MINUTES):
+    """
+    The grid a household's batch is recorded on, in minutes.
+
+    The grid is declared per household batch as ``Gegevensfrequentie``: it is
+    the interval the mapped data sits on, not the interval any one column
+    reports at. It is what ``ensure_intervals`` pads to and what a filled value
+    is judged against.
+
+    Falls back to *default* when the batch table is absent, does not hold this
+    household, or declares no frequency -- a household mapped before its batch
+    row exists still has to be processed.
+
+    Parameters
+    ----------
+    household_id : int
+        HuisIdBSV.
+    default : int
+        Grid to assume when nothing is declared.
+
+    Returns
+    -------
+    float
+        Grid interval in minutes.
+    """
+    table = _household_batch_table()
+    if table is None or "Gegevensfrequentie" not in table.columns:
+        return float(default)
+
+    rows = table[table["HuisIdBSV"] == household_id]
+    if rows.empty:
+        return float(default)
+
+    minutes = frequency_to_minutes(rows["Gegevensfrequentie"].iloc[0])
+    if pd.isna(minutes):
+        logging.info(
+            f"[index_helpers] Household {household_id} declares no usable "
+            f"Gegevensfrequentie; assuming a {default}-minute grid."
+        )
+        return float(default)
+    return float(minutes)
 
 
 def _parse_synced_datetime(series: pd.Series) -> pd.Series:
@@ -515,7 +605,11 @@ def update_meta_validators(index_df):
       if all corresponding row-wise values in the cumulative difference columns are True (indicating validity).
     - If any of the expected columns are missing, it fills the 'validate_cumulative_diff_ok' column with pd.NA.
     """
-    cols = ["validate_" + col + "Diff" for col in cumulative_columns]
+    cols = [
+        "validate_" + interval_column(col)
+        for col in cumulative_columns
+        if interval_column(col) is not None
+    ]
 
     if all(col in index_df.columns for col in cols):
         index_df["validate_cumulative_diff_ok"] = index_df[cols].all(axis=1)

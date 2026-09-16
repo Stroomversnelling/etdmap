@@ -4,6 +4,7 @@ import pandas as pd
 from pandas import DataFrame
 
 from etdmap.data_model import (
+    interval_column,
     cumulative_columns,
     data_analysis_columns,
     load_thresholds,
@@ -359,13 +360,20 @@ def create_validate_func_outliers_neg_cum(
     This function creates a validation function that checks if all non-null values in the 'validate_<col>Diff' column are True.
     """
 
+    interval_col = interval_column(col)
+    if interval_col is None:
+        raise ValueError(
+            f"etdmodel.csv: '{col}' is a cumulative variable with no "
+            f"ComplementVariabele, so its interval column is unknown and no "
+            f"validator can be built for it. Declare the link in the data model."
+        )
+
     def validate_no_outliers_negative_cumulative_diff(
         df: DataFrame,
-        cum_col=col,
+        flag_col="validate_" + interval_col,
     ) -> bool:
         return all(
-            df["validate_" + cum_col + "Diff"].isna()
-            | df["validate_" + cum_col + "Diff"],
+            df[flag_col].isna() | df[flag_col],
         )
     return validate_no_outliers_negative_cumulative_diff
 
@@ -412,10 +420,10 @@ for col in cumulative_columns:
     dataset_flag_conditions["validate_" + col] = \
         create_validate_func_col(col, thresholds_dict)
 
-    # note that the household.parquet files also contain a column
-    # "validate_" + col + "Diff", but these are from the
-    # record_validators (from validate + col in record_validators)
-    # plus the col_Diff from the theshold file.
-    dataset_flag_conditions["validate_" + col + "Diff"] = (
+    # The household parquet files also carry a "validate_<interval column>"
+    # flag, written by the record validators from that column and its threshold
+    # row. The interval column is the one the data model links to this
+    # cumulative variable, which is not always its name plus "Diff".
+    dataset_flag_conditions["validate_" + interval_column(col)] = (
         create_validate_func_outliers_neg_cum(col)
     )

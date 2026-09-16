@@ -10,14 +10,21 @@ import pandas as pd
 import etdmap
 
 from etdmap.data_model import (
+    cumulative_column,
     cumulative_columns,
+    interval_column,
     model_column_order,
     model_column_type,
     performance_column_dtypes,
     required_performance_data_columns,
     thresholds_dict,
 )
-from etdmap.index_helpers import get_mapped_data, read_index
+from etdmap.index_helpers import (
+    DEFAULT_GRID_MINUTES,
+    get_mapped_data,
+    grid_minutes_for_household,
+    read_index,
+)
 from etdmap.flags import (
     _SPAN_DTYPES,
     MappingFlag,
@@ -145,10 +152,10 @@ def rearrange_model_columns(
                     logging.error(f"{context}Failed to coerce column '{col}' type: {e}")
                     raise ValueError(f"{context}Failed to coerce column '{col}' type: {e!s}")  # noqa: B904
 
-    # A column in the data model may exist; anything else is dropped.
-    # Membership decides, nothing else — any model column is valid delivered
-    # data regardless of Entiteit. add_columns materialises the empty placeholders
-    # a mapped file must carry; the rest are kept when delivered, not invented here.
+    # Membership of the data model is the only test: any model column is valid
+    # delivered data whatever its Entiteit. add_columns materialises the empty
+    # placeholders a mapped file must carry; other model columns are kept when
+    # delivered and not created here.
     if add_columns:
         for col in model_column_order:
             if col not in household_df.columns:
@@ -157,10 +164,10 @@ def rearrange_model_columns(
                     dtype=performance_column_dtypes.get(col, "Float64"),
                 )
 
-    # A findings column belongs to the column it describes, so it survives on the
-    # same terms. Without this the fills that run in the mapper -- before this
-    # function -- have their flags dropped here and the record of which values
-    # were invented is lost before anything can read it.
+    # A findings column belongs to the column it describes and is kept on the
+    # same terms. Mappers fill values before calling this function, so dropping
+    # the findings columns here would discard the record of which values were
+    # written by the pipeline rather than delivered.
     keep = []
     for col in performance_column_dtypes:
         if col in household_df.columns:
@@ -271,7 +278,7 @@ def validate_cumulative_variables(
                 )
                 result['no_negative_diff'] = False
 
-                # A register that has recorded a total cannot return to zero.
+                # A cumulative variable that has recorded a total cannot return to zero.
                 # Leading zeros are a meter that has not started counting and
                 # are not a fault.
                 has_accumulated = (
@@ -369,7 +376,7 @@ def _detect_negative_diff_cases(group, col):
     meter_reset = is_negative & has_next & ~(jump_back | repeat_negative)
     no_recovery = is_negative & ~has_next
 
-    # A register that has recorded a total cannot return to zero. Leading zeros
+    # A cumulative variable that has recorded a total cannot return to zero. Leading zeros
     # are a meter that has not started counting, which is not a fault -- what
     # follows them may be (a large first reading is accumulated catch-up), but
     # that is a different fault on a different reading. Not exclusive with the
@@ -419,7 +426,7 @@ def _apply_negative_diff_corrections(group, col, cases, context_string):
     ----------
     group : pd.DataFrame
         Per-household DataFrame, sorted by ReadingDate. Must already contain
-        ``col`` and ``col + 'Diff'``.
+        ``col`` and the interval column linked to it.
     col : str
         Name of the cumulative column being corrected.
     cases : _NegativeDiffCases
@@ -484,7 +491,7 @@ def _apply_negative_diff_corrections(group, col, cases, context_string):
     if meter_reset.any():
         reset_dates_ns = cases.dates_ns.loc[meter_reset]
         si_reset = group_dates_ns.searchsorted(reset_dates_ns.values)
-        diff_vals = group.iloc[si_reset][col + 'Diff']
+        diff_vals = group.iloc[si_reset][interval_column(col)]
         is_neg_diff = (diff_vals < 0).fillna(False)
         is_na_diff = diff_vals.isna()
         is_error = ~is_neg_diff & ~is_na_diff
@@ -505,6 +512,35 @@ def _apply_negative_diff_corrections(group, col, cases, context_string):
             )
 
     group.loc[group.index[na_mask.values], col] = pd.NA
+
+
+def _carry_findings_to_intervals(group, col) -> None:
+    """
+    Carry a cumulative column's findings onto the interval column derived from it.
+
+    An interval is the difference between two readings, so it inherits the
+    findings of both: an interval is no more measured than the readings it comes
+    from. Only the findings naming a value the pipeline wrote are carried;
+    findings about a delivered reading, such as a decrease, describe that reading
+    rather than the intervals around it.
+
+    Downstream stages filter interval columns, so a finding recorded only on the
+    cumulative column would not reach them.
+
+    Modifies *group* in place.
+    """
+    source = flag_column(col)
+    if source not in group.columns:
+        return
+
+    diff_col = interval_column(col)
+    if diff_col is None:
+        return
+
+    flags = group[source].fillna(MappingFlag.NONE.value)
+    for flag in MappingFlag.INVENTED:
+        on = (flags & flag.value) != 0
+        set_flags(group, diff_col, on | on.shift(1, fill_value=False), flag)
 
 
 def add_diff_columns(
@@ -570,12 +606,23 @@ def add_diff_columns(
                 )
                 continue
 
+            # The interval column to write is the one the data model links to
+            # this cumulative variable, which is not always its name plus
+            # "Diff": ZonopwekBruto is the interval form of Zon-opwekTotaal.
+            diff_col = interval_column(col)
+            if diff_col is None:
+                raise ValueError(
+                    f"{context_string}'{col}' is a cumulative variable with no "
+                    f"ComplementVariabele, so the interval column to write is "
+                    f"unknown. Declare the link in the data model rather than "
+                    f"deriving no interval values for it."
+                )
+
             # A supplier may deliver the interval column itself. Derive only when
             # the cumulative column carries data (it stays authoritative), or when
             # there is no delivered interval column to preserve. An all-NA
             # cumulative beside a delivered interval column is the one case where
             # deriving would destroy a real measurement.
-            diff_col = col + 'Diff'
             _delivered_interval = (
                 diff_col in group.columns and group[diff_col].notna().any()
             )
@@ -598,14 +645,16 @@ def add_diff_columns(
                 logging.debug(
                     f"{context_string}Re-calculating diff for {col} after corrections."
                 )
-                group[col + 'Diff'] = group[col].diff().round(10)
-                group.loc[group.index[0], col + 'Diff'] = 0
+                group[diff_col] = group[col].diff().round(10)
+                group.loc[group.index[0], diff_col] = 0
 
-                if (group[col + 'Diff'] < 0).any(skipna=True):
+                if (group[diff_col] < 0).any(skipna=True):
                     logging.warning(
                         f"{context_string}Removed zeros but diff still has negative "
                         f"values in '{col}'! Check data and consider removing.",
                     )
+
+            _carry_findings_to_intervals(group, col)
 
         return group
 
@@ -637,7 +686,7 @@ def add_diff_columns_legacy(
     """
     Original loop-based implementation of add_diff_columns (kept for validation).
 
-    Uses a ``for rd in reading_dates:`` loop with per-date DataFrame filters — O(N²)
+    Uses a ``for rd in reading_dates:`` loop with per-date DataFrame filters -- O(N2)
     for columns with many negative diffs (e.g. solar with daily resets).
     Retained until ``add_diff_columns`` (vectorized) has been fully validated in production.
 
@@ -863,8 +912,8 @@ def add_diff_columns_legacy(
         )
 
 
-# Nullable dtypes (ADR-005) for the per-column cadence table. cadence_minutes
-# and cadence_source are added by the resolution step at the end.
+# Nullable dtypes for the per-column cadence table. cadence_minutes and
+# cadence_source are added by the resolution step at the end.
 _CADENCE_DTYPES = {
     'column': 'string',
     'cadence_detected': 'Int64',
@@ -886,15 +935,14 @@ def cadence_label(minutes) -> str:
     """
     Render a cadence the way the metadata writes it, in its natural unit.
 
-    A cadence is a duration, so it is written the way durations are written:
-    ``30s``, ``5min``, ``1h``, ``24h``. Whole hours read as hours rather than as
-    ``1440min``, which is the same duration but not how anyone says it. Hours are
-    the coarsest unit written, so a daily reading is ``24h`` rather than ``1d``.
+    A cadence is a duration and is written as one: ``30s``, ``5min``, ``1h``,
+    ``24h``. Whole hours are written in hours rather than minutes. Hours are the
+    coarsest unit used, so a daily reading is ``24h`` rather than ``1d``.
 
-    This is for display. **Do not compare cadences as text.** The metadata writes
-    a cadence in whichever unit suits the variable, so ``24h`` and ``1440min``
-    are the same cadence written two ways and would compare unequal. Read a
-    declared cadence with ``pd.Timedelta`` and compare the numbers.
+    This is for display only. Cadences must not be compared as text: the
+    metadata writes each one in whichever unit suits the variable, so ``24h``
+    and ``1440min`` are the same cadence written two ways and compare unequal.
+    Parse a declared cadence with ``pd.Timedelta`` and compare the durations.
 
     Returns pd.NA unchanged, so an unknown cadence stays unknown.
     """
@@ -945,33 +993,35 @@ def detect_column_cadence(
     Infer how often each column actually reports, from its own timestamps.
 
     A column's cadence is the most common gap between the readings it carries.
-    Only rows where the column has a value count, so a 15-minute register sitting
-    on a 5-minute grid reports 15 minutes rather than the grid's 5.
+    Only rows where the column has a value are counted, so a column reporting
+    every 15 minutes on a 5-minute grid is measured at 15 minutes, not 5.
 
-    ``date_column`` is measured too and comes back as its own row. That is the
-    dataset's cadence -- the grid the data sits on, and the floor on any column's
-    cadence, since nothing can report more often than the dataset records.
+    ``date_column`` is measured as well and returned as its own row. That is the
+    dataset's cadence: the grid the data sits on, and the floor on any column's
+    cadence, since no column can report more often than the dataset records.
 
-    Cadence is settled here, once. Three sources, in order of authority:
+    Cadence is settled here, once, from three sources in order of authority:
 
-    1. **Declared.** The metadata wins. Corrections are made there, because the
-       delivered data is static and cannot be changed.
-    2. **Detected**, where the readings were regular enough to trust.
-    3. **The dataset's own cadence**, as the floor and last resort.
+    1. Declared. The metadata takes precedence, since corrections are made there
+       and the delivered data is static.
+    2. Detected, where the readings were regular enough to trust.
+    3. The dataset's own cadence, as the floor and the last resort.
 
-    A declaration that disagrees with a confident detection is logged and kept in
-    ``cadence_detected`` so a report can surface it. The declaration still wins.
+    A declaration that disagrees with a confident detection is logged and the
+    detected value is kept in ``cadence_detected`` so a report can surface the
+    disagreement. The declaration still takes precedence.
 
     Everything downstream reads ``cadence_minutes`` rather than measuring again.
 
     Must run on data as delivered, before any fill. ``fill_down_infrequent_devices``
-    makes every row non-missing, which erases the evidence this reads.
+    leaves no row missing, which removes the evidence this reads.
 
-    Taking the most common *gap* rather than counting readings per day is what
-    makes a partial opening day harmless. The ingestion window is cut on Dutch
+    Taking the most common gap rather than counting readings per day is what
+    makes a partial first day harmless. The ingestion window is cut on Dutch
     midnight while data is bucketed in UTC, so a record's first day can carry
-    only a couple of hours -- 24 readings on a 5-minute register, exactly what a
-    complete hourly register produces. The counts collide; the gaps do not.
+    only a few hours -- 24 readings on a 5-minute column, which is also what a
+    complete day at hourly cadence produces. The counts coincide; the gaps do
+    not.
 
     Parameters
     ----------
@@ -1046,8 +1096,8 @@ def detect_column_cadence(
         [(declared or {}).get(col, pd.NA) for col in out['column']], dtype='Int64'
     )
     declared_minutes = pd.Series(declared_minutes, index=out.index)
-    # An unmeasured column has no confidence, which is not a low confidence --
-    # but a mask must not carry pd.NA, or it reads as True where it is unknown.
+    # An unmeasured column has no confidence rather than a low one. The mask
+    # must still be free of pd.NA, which .loc would read as False silently.
     trusted = (out['confidence'] >= min_confidence).fillna(False)
     grid = dict(zip(out['column'], out['cadence_detected'])).get(date_column, pd.NA)
 
@@ -1090,7 +1140,7 @@ def fill_down_infrequent_devices(
     df: pd.DataFrame,
     columns: tuple[str, ...] | list[str],
     cadence: pd.DataFrame | None = None,
-    grid_minutes: int = 5,
+    grid_minutes: float = DEFAULT_GRID_MINUTES,
 ) -> pd.DataFrame:
     """
     Fill down (forward fill) and then up (backward fill) values for specified columns.
@@ -1121,7 +1171,7 @@ def fill_down_infrequent_devices(
     ``ensure_intervals`` pads it. A column reporting faster than the grid cannot
     have a sparser fill than the grid, so it fills every row.
 
-    Slots are stepped in **rows**, not in wall-clock time, so a grid of any
+    Slots are stepped in rows rather than in wall-clock time, so a grid of any
     cadence works and a column's cadence need not divide the hour. The step is
     anchored on the device's first real reading, which puts the slots where its
     data actually is. A cadence that does not land on a whole number of grid rows
@@ -1158,8 +1208,7 @@ def fill_down_infrequent_devices(
     """
     minutes_by_column = {}
     if cadence is not None and not cadence.empty:
-        # detect_column_cadence has already settled this. Nothing is measured or
-        # decided here -- the value is read.
+        # Cadence is settled by detect_column_cadence and only read here.
         minutes_by_column = dict(
             zip(cadence['column'], cadence['cadence_minutes'])
         )
@@ -1184,7 +1233,12 @@ def fill_down_infrequent_devices(
         # Step in rows, not in wall-clock time: the grid may be any cadence, and
         # a column's cadence need not divide the hour. Anchoring on the device's
         # first real reading puts the slots where its data actually is.
-        step, remainder = divmod(int(minutes), int(grid_minutes))
+        #
+        # Compared in whole seconds, so a sub-minute grid is neither truncated
+        # to zero nor decided by a float equality.
+        step, remainder = divmod(
+            round(float(minutes) * 60), round(float(grid_minutes) * 60)
+        )
         if remainder:
             # The cadence does not land on the grid, so there are no slots to
             # place fills on. Rounding to the nearest whole step would fill at a
@@ -1248,8 +1302,8 @@ def fill_zeros_for_device_not_installed(
 
     Notes
     -----
-    Only meaningful for cumulative variables.
-    Requires Float64 dtype (pandas nullable) per ADR-005.
+    Only meaningful for cumulative variables. The columns are written as
+    Float64 so that a missing value is pd.NA rather than a numeric sentinel.
     """
     for col in columns:
         if col not in df.columns or df[col].isna().all():
@@ -1381,7 +1435,7 @@ def combine_source_columns(
 def snap_readings_to_grid(
     df: pd.DataFrame,
     date_column: str = 'ReadingDate',
-    freq_minutes: int = 5,
+    freq_minutes: float = DEFAULT_GRID_MINUTES,
     max_deviation_seconds: float = None,
     context: str = '',
 ) -> pd.DataFrame:
@@ -1413,7 +1467,7 @@ def snap_readings_to_grid(
     at +22 s and we snapped it using a +0 s reference, adjacent slots would
     alternately draw from the +22 s stream and the +0 s stream.  The resulting
     diffs would alternate between ~4 min 38 s and ~5 min 22 s of physical
-    consumption — a ±7.3% error per slot that self-cancels over longer windows
+    consumption -- a +/-7.3% error per slot that self-cancels over longer windows
     but pollutes 5-minute diff analysis.  Using the per-column characteristic
     offset ensures each cumulative column always draws from its own stream
     across all slots, so diffs always span a consistent physical interval.
@@ -1501,7 +1555,7 @@ def snap_readings_to_grid(
     # 3b. Per-column offset diagnostics (DEBUG)
     #     Group summary: which columns share each characteristic offset.
     #     Column detail: modal offset + fraction of non-null values that
-    #     actually fall on that offset — a low percentage (< ~80 %) signals
+    #     actually fall on that offset -- a low percentage (< ~80 %) signals
     #     an irregular/staggered column that may sit near a group boundary.
     # ------------------------------------------------------------------
     if logging.getLogger().isEnabledFor(logging.DEBUG):
@@ -1548,7 +1602,7 @@ def snap_readings_to_grid(
 
     # ------------------------------------------------------------------
     # 5. K-pass vectorized merge
-    #    One pass per distinct characteristic offset group (K ≈ 2-3).
+    #    One pass per distinct characteristic offset group (K ~= 2-3).
     #    Within each pass, sort by distance from the group's characteristic
     #    offset so that groupby.first() picks the most precisely-timed
     #    non-NA value per column (evaluated independently per column).
@@ -1597,7 +1651,9 @@ def ensure_intervals(
     date_column : str, optional
         The name of the column containing the datetime information, by default 'ReadingDate'.
     freq : str, optional
-        The expected frequency of the time series, by default '5min'.
+        The grid to pad to, written as a duration, by default '5min'. This is
+        the household batch's ``Gegevensfrequentie``; callers that process a
+        household resolve it with ``grid_minutes_for_household``.
 
     Returns
     -------
@@ -1624,9 +1680,12 @@ def ensure_intervals(
     earliest = df[date_column].min()
     latest = df[date_column].max()
 
+    # Counted in the grid being padded to, not in a fixed five minutes: at any
+    # other grid the count would be wrong and the padding would be skipped or
+    # attempted against the wrong slots.
     expected_num_records = (
         int(
-            (latest - earliest) / pd.Timedelta(minutes=5),
+            (latest - earliest) / pd.Timedelta(freq),
         )
         + 1
     )
@@ -1643,12 +1702,12 @@ def ensure_intervals(
     )
 
     def merge_left(df):
-        """Keep only readings that land on the grid, and refuse to do it quietly.
+        """Keep only the readings that land on the grid.
 
-        A reading that does not land on a grid slot is dropped by this merge. That
-        is data loss, so it is counted and raised rather than logged and forgotten:
-        an off-grid reading means the data reached here without being snapped, and
-        ``snap_readings_to_grid`` is what places readings on slots.
+        A reading that does not land on a grid slot is dropped by this merge,
+        which is data loss, so the count is raised rather than logged. An
+        off-grid reading means the data reached this point without being
+        snapped; ``snap_readings_to_grid`` is what places readings on slots.
         """
         on_grid = df[date_column].isin(all_dates_df[date_column])
         n_dropped = int((~on_grid).sum())
@@ -1929,7 +1988,7 @@ def apply_threshold_to_col(
 # HuisIdBSV + column that lost values in the threshold pass).
 THRESHOLD_REMOVALS_FILENAME = "mapping_threshold_removals.parquet"
 
-# Nullable dtypes (ADR-005) for the sidecar columns.
+# Nullable dtypes for the sidecar columns.
 _THRESHOLD_REMOVAL_DTYPES = {
     "HuisIdBSV": "Int64",
     "column": "string",
@@ -2097,7 +2156,7 @@ def write_frozen_spans(rows, mapped_folder_path, filename=FROZEN_SPANS_FILENAME)
     """
     Write accumulated frozen-span rows to a sidecar parquet.
 
-    One row per (HuisIdBSV, column, span): a stretch where the register stood
+    One row per (HuisIdBSV, column, span): a stretch where the cumulative variable stood
     still and the reading its accumulation arrived in.
     """
     dtypes = {
@@ -2305,32 +2364,32 @@ def _accumulates(col: str) -> bool:
     """
     Whether a column holds a running total rather than an instantaneous reading.
 
-    The distinction decides what may be done to a flat stretch. A **cumulative**
-    register that stops advancing is holding consumption back, and the total it
-    reports when it resumes is real energy that can be redistributed across the
-    stretch, because the register itself says how much.
+    The distinction decides what may be done to a flat stretch. A cumulative
+    variable that stops advancing is holding consumption back, and the total it
+    reports when it resumes states how much, so that consumption can be
+    redistributed across the stretch.
 
-    A **momentaan** reading is a sample at an instant. A flat run of voltage is
-    the voltage being steady; a jump after it is the voltage changing. Nothing
-    was held back, there is no total to conserve, and spreading a sample across
-    the interval would invent readings that were never taken.
+    A momentaan variable is sampled at an instant. A flat run of voltage is the
+    voltage being steady and a jump after it is the voltage changing; nothing was
+    held back, there is no total to conserve, and spreading a sample across the
+    stretch would invent readings that were never taken.
 
-    An interval column accumulates if its register does.
+    An interval column accumulates if the cumulative variable it derives from
+    does.
     """
-    source = col[: -len("Diff")] if col.endswith("Diff") else col
-    return source in cumulative_columns
+    return col in cumulative_columns or cumulative_column(col) is not None
 
 
 def _detect_frozen_spans_for_household(df, household_id, cadence=None, context=""):
     """
     Find frozen spans in every interval column that has an upper bound.
 
-    A span is a stretch where the register did not advance, ending in a reading
-    too large to be one interval's consumption. The bound is scaled to the
-    cadence the column actually reports in, because a register that reports
-    hourly delivers twelve five-minute intervals' worth in one reading.
+    A span is a stretch where the cumulative variable did not advance, ending in
+    a reading too large to be one interval of consumption. The bound is scaled to
+    the cadence the column reports in, since a column reporting hourly delivers
+    twelve five-minute intervals of consumption in one reading.
 
-    Returns sidecar rows; nothing in *df* is changed. Detection only.
+    Returns sidecar rows. Nothing in *df* is changed; this is detection only.
     """
     ctx = (context + ": ") if context else ""
     cadence_minutes = {}
@@ -2344,18 +2403,16 @@ def _detect_frozen_spans_for_household(df, household_id, cadence=None, context="
         if entry is None or pd.isna(entry["Max"]):
             continue
 
-        # Only an accumulating register can freeze and catch up. A momentaan
-        # reading is a sample at an instant: a flat run of voltage followed by a
-        # jump is the voltage changing, not a register delivering what it held
-        # back. There is nothing accumulated to redistribute, and treating it
-        # would blank real samples and invent values between them.
+        # Only an accumulating variable can freeze and catch up. There is nothing
+        # accumulated behind a momentaan reading, so treating a flat run of
+        # samples would blank measured values and invent others between them.
         if not _accumulates(col):
             continue
 
-        # An interval column is derived here, so it inherits the cadence of the
-        # register it came from -- it is not in the cadence table, which was
-        # measured on the columns as delivered.
-        source = col[: -len("Diff")] if col.endswith("Diff") else col
+        # Interval columns are derived during the pipeline, so they do not appear
+        # in the cadence table, which was measured on the columns as delivered.
+        # An interval column inherits the cadence of its cumulative variable.
+        source = cumulative_column(col) or col
         bound = scale_bound_to_cadence(
             entry["Max"],
             entry["ThresholdType"],
@@ -2381,19 +2438,19 @@ def _treat_frozen_spans(df, rows, context=""):
     """
     Blank a detected span so imputation can spread the energy it holds.
 
-    A frozen span holds real consumption in the wrong place: the readings across
-    it understate and the catch-up overstates. Blanking the **register** across
-    the span turns it into an ordinary gap whose end-to-start jump is exactly
-    that consumption, and the existing redistribution machinery spreads it --
-    no new spreading code, and the volume is conserved by construction.
+    A frozen span places real consumption in the wrong intervals: the readings
+    across it understate and the catch-up overstates. Blanking the cumulative
+    variable across the span turns it into an ordinary gap whose end-to-start
+    jump is exactly that consumption, which the existing redistribution then
+    spreads. No separate spreading step is needed and the volume is conserved.
 
-    The reading **before** the span is deliberately left alone. It is the last
-    genuine register value and it anchors the gap; blanking it too leaves the
-    redistribution without a starting value and the volume no longer adds up.
+    The reading before the span is kept. It is the last delivered cumulative
+    value and anchors the gap; without it the redistribution has no starting
+    value and the volume no longer adds up.
 
-    The interval column is blanked across the span *and* the catch-up, since
-    every one of those values is wrong -- zeros that understate, then one lump
-    that overstates. Imputation rebuilds them from the register.
+    The interval column is blanked across the span and the catch-up, since all of
+    those values are wrong -- zeros that understate, then one reading that
+    overstates. Imputation rebuilds them from the cumulative variable.
 
     Modifies *df* in place.
     """
@@ -2403,7 +2460,7 @@ def _treat_frozen_spans(df, rows, context=""):
     ctx = (context + ": ") if context else ""
     for row in rows:
         diff_col = row["column"]
-        cum_col = diff_col[: -len("Diff")] if diff_col.endswith("Diff") else None
+        cum_col = cumulative_column(diff_col)
         start, catchup = int(row["start"]), int(row["catchup_position"])
 
         # Record before blanking. After treatment every row in the block looks
@@ -2426,7 +2483,7 @@ def _treat_frozen_spans(df, rows, context=""):
             df.iloc[start : catchup + 1, df.columns.get_loc(diff_col)] = pd.NA
 
     logging.info(
-        f"{ctx}Treated {len(rows)} frozen span(s): the register reads missing "
+        f"{ctx}Treated {len(rows)} frozen span(s): the cumulative variable reads missing "
         f"across each, so imputation spreads the volume it was holding."
     )
     return df
@@ -2476,6 +2533,7 @@ def run_standard_pipeline(
     context: str = "",
     cadence: pd.DataFrame | None = None,
     treat_frozen_spans: bool = True,
+    grid_minutes: float | None = None,
 ) -> dict:
     """
     Standard per-household processing pipeline shared by all ETD supplier mappers.
@@ -2485,7 +2543,7 @@ def run_standard_pipeline(
     supplier-specific grid snapping (e.g. snap_readings_to_grid).
 
     Steps:
-      1. Validate ReadingDate present — raise KeyError if missing
+      1. Validate ReadingDate present -- raise KeyError if missing
       2. Coerce ReadingDate to datetime if not already; raise ValueError if any rows fail
       3. Sort by ReadingDate
       4. ensure_intervals
@@ -2498,7 +2556,7 @@ def run_standard_pipeline(
      10. Save to {mapped_folder_path}/household_{household_id}_table.parquet
 
     Note: fill_down_infrequent_devices is intentionally NOT part of this pipeline.
-    Filling down is a supplier-specific imputation choice — for some data sources
+    Filling down is a supplier-specific imputation choice -- for some data sources
     (e.g. cumulative meter readings) filling down is wrong and linear interpolation
     or other strategies are needed. Apply it explicitly in the supplier mapper before
     calling this function.
@@ -2515,6 +2573,13 @@ def run_standard_pipeline(
         Destination folder for the processed parquet file.
     context : str
         Optional log prefix, e.g. '{household_id_supplier}/{household_id}'.
+    cadence : pd.DataFrame, optional
+        Per-column cadence for this household, from ``detect_column_cadence``.
+    treat_frozen_spans : bool
+        Whether to blank detected frozen spans so imputation can spread them.
+    grid_minutes : float, optional
+        The grid to place the data on. Resolved from the household batch's
+        declared ``Gegevensfrequentie`` when not given.
 
     Returns
     -------
@@ -2565,9 +2630,14 @@ def run_standard_pipeline(
     )
 
     # ------------------------------------------------------------------
-    # 4. Ensure 5-minute intervals
+    # 4. Pad to the grid this household batch is recorded on
     # ------------------------------------------------------------------
-    df = ensure_intervals(df)
+    if grid_minutes is None:
+        grid_minutes = grid_minutes_for_household(household_id)
+    logging.info(
+        f"[run_standard_pipeline] {ctx}Grid is {cadence_label(grid_minutes)}."
+    )
+    df = ensure_intervals(df, freq=cadence_label(grid_minutes))
 
     # ------------------------------------------------------------------
     # 5. Log model column type mismatches (DEBUG)
@@ -2582,7 +2652,7 @@ def run_standard_pipeline(
         if column not in df.columns:
             logging.debug(
                 f"[run_standard_pipeline] {ctx}Model column '{column}' "
-                f"not present — will be added as NaN by rearrange_model_columns."
+                f"not present -- will be added as NaN by rearrange_model_columns."
             )
 
     # ------------------------------------------------------------------
