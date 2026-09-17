@@ -489,6 +489,49 @@ def cumulative_column(column: str) -> str | None:
     """
     return cumulative_by_interval.get(column)
 
+
+def cadence_lookup_names(column: str) -> list[str]:
+    """
+    The names *column*'s cadence may be recorded under.
+
+    Cadence is measured on the columns as delivered, so a column derived during
+    the pipeline is recorded under the name it was derived from. Returning both
+    forms lets one lookup find either, whichever side of the pair the caller
+    holds.
+    """
+    partner = interval_column(column) or cumulative_column(column)
+    return [column] if partner is None else [column, partner]
+
+
+def scale_bounds(declared: dict, cadence_minutes=None) -> tuple:
+    """
+    Both bounds from a ``thresholds_dict`` entry, scaled to a reporting interval.
+
+    A ``5-minute`` bound states what one five-minute interval may hold, so a
+    column reporting hourly is judged against twelve times that. Without a
+    cadence the declared bounds are returned unchanged, which is right for a
+    column reporting at the base interval and the only available answer
+    otherwise.
+
+    Takes the entry rather than the column name so the caller decides which
+    threshold table is in force. That matters: a corrected threshold has to take
+    effect through the dict the caller holds.
+
+    Returns
+    -------
+    tuple
+        ``(lower, upper)``. ``pd.NA`` on either side means that side is not
+        declared, which is unbounded rather than zero.
+    """
+    from etdmap.flags import scale_bound_to_cadence
+
+    kind = declared.get("ThresholdType")
+    return (
+        scale_bound_to_cadence(declared.get("Min", pd.NA), kind, cadence_minutes),
+        scale_bound_to_cadence(declared.get("Max", pd.NA), kind, cadence_minutes),
+    )
+
+
 # TEST-ONLY: hand-curated subset of aggregation variables that test fixtures
 # carry meaningful synthetic values for. Tests filter both the stored fixture
 # and the freshly-generated pipeline output to this subset before comparing,

@@ -72,6 +72,29 @@ class MappingFlag(IntFlag):
     # belongs in this composite.
     INVENTED = FILLED_DOWN | FILLED_ZERO | FROZEN_SPAN
 
+    # A cumulative fault that destroys the count. No consumption can be derived
+    # across these readings, whatever values they carry.
+    CUMULATIVE_UNUSABLE = (
+        CUMULATIVE_JUMP_BACK
+        | CUMULATIVE_REPEAT_NEGATIVE
+        | CUMULATIVE_METER_RESET
+        | CUMULATIVE_NO_RECOVERY
+        | CUMULATIVE_ZERO_TOTAL
+    )
+
+    # Not a measurement of this variable in this interval: written rather than
+    # read, read for a different interval, condemned by a cumulative fault, or
+    # outside what the variable may hold. The one test a project average filters
+    # on. Any future finding that makes a value unusable as evidence belongs
+    # here.
+    NOT_A_MEASUREMENT = (
+        INVENTED
+        | CATCHUP
+        | CUMULATIVE_UNUSABLE
+        | OUT_OF_BOUNDS_LOW
+        | OUT_OF_BOUNDS_HIGH
+    )
+
 
 def flag_column(column: str) -> str:
     """The name of the column carrying findings about *column*."""

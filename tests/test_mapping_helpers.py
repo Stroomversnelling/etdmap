@@ -1166,7 +1166,7 @@ class TestWriteThresholdRemovals:
 
     EXPECTED_COLS = [
         "HuisIdBSV", "column", "n_below", "n_above", "min_removed", "max_removed",
-        "lower_bound", "upper_bound",
+        "lower_bound", "upper_bound", "cadence_minutes",
     ]
 
     def test_writes_rows_with_nullable_dtypes(self, tmp_path):

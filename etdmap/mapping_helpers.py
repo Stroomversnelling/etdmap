@@ -10,6 +10,8 @@ import pandas as pd
 import etdmap
 
 from etdmap.data_model import (
+    cadence_lookup_names,
+    scale_bounds,
     cumulative_column,
     cumulative_columns,
     interval_column,
@@ -1874,8 +1876,36 @@ def expand_tz_columns(df: pd.DataFrame, vectorized: bool = False) -> pd.DataFram
     return pd.DataFrame(out_cols)
 
 
+def cadence_minutes_by_column(cadence) -> dict:
+    """
+    Map each column to the interval its readings cover, in minutes.
+
+    Reads the table :func:`detect_column_cadence` produces for one household.
+    A column is found under its own name or under the name of the variable it
+    is paired with, since cadence is measured on the columns as delivered and a
+    derived column is not there under its own name.
+
+    Returns an empty dict when no cadence is available, which leaves every
+    bound unscaled.
+    """
+    if cadence is None or getattr(cadence, "empty", True):
+        return {}
+
+    measured = {
+        row.column: row.cadence_minutes
+        for row in cadence.itertuples()
+        if pd.notna(row.cadence_minutes)
+    }
+    resolved = {}
+    for column in list(measured):
+        for name in cadence_lookup_names(column):
+            resolved.setdefault(name, measured[column])
+    return resolved
+
+
 def apply_thresholds_to_df(
     df,
+    cadence=None,
     return_stats=False,
 ):
     """
@@ -1884,10 +1914,20 @@ def apply_thresholds_to_df(
     This function applies lower and upper bounds to a column in the
     DataFrame. Values outside these bounds are replaced with pd.NA.
 
+    Bounds are scaled to the interval each column reports in. A column
+    delivering hourly carries twelve five-minute intervals of consumption in one
+    reading, so judging it against the five-minute bound rejects every normal
+    reading it produces.
+
     Parameters
     ----------
     df : pandas.DataFrame
         The input DataFrame containing the data.
+    cadence : pandas.DataFrame, optional
+        Per-column cadence for this household, from
+        :func:`detect_column_cadence`. Without it every bound is applied as
+        declared, which is correct only for columns reporting at the base
+        interval.
     return_stats : bool, optional
         If True, also return a dict describing what each column lost to
         the threshold pass. Default False (returns only the DataFrame,
@@ -1904,15 +1944,20 @@ def apply_thresholds_to_df(
     """
 
     stats = {}
+    minutes_by_column = cadence_minutes_by_column(cadence)
     for col in df.columns:
         if col in thresholds_dict:
+            lower_bound, upper_bound = scale_bounds(
+                thresholds_dict[col], minutes_by_column.get(col)
+            )
             df, col_stats = apply_threshold_to_col(
                 df=df,
                 col=col,
-                lower_bound=thresholds_dict[col]["Min"],
-                upper_bound=thresholds_dict[col]["Max"]
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
             )
             if col_stats is not None:
+                col_stats["cadence_minutes"] = minutes_by_column.get(col, pd.NA)
                 stats[col] = col_stats
 
     if return_stats:
@@ -1961,8 +2006,15 @@ def apply_threshold_to_col(
     flags = bound_flags(df[col], lower_bound, upper_bound)
     mask = flags != MappingFlag.NONE.value
 
-    n_below = int((flags & MappingFlag.OUT_OF_BOUNDS_LOW.value != 0).sum())
-    n_above = int((flags & MappingFlag.OUT_OF_BOUNDS_HIGH.value != 0).sum())
+    below = (flags & MappingFlag.OUT_OF_BOUNDS_LOW.value) != 0
+    above = (flags & MappingFlag.OUT_OF_BOUNDS_HIGH.value) != 0
+    n_below = int(below.sum())
+    n_above = int(above.sum())
+
+    # Record the finding before the value goes, so a removal stays
+    # distinguishable from a reading that never arrived.
+    set_flags(df, col, below, MappingFlag.OUT_OF_BOUNDS_LOW)
+    set_flags(df, col, above, MappingFlag.OUT_OF_BOUNDS_HIGH)
 
     if n_below or n_above:
         removed = df.loc[mask, col]
@@ -1998,6 +2050,7 @@ _THRESHOLD_REMOVAL_DTYPES = {
     "max_removed": "Float64",
     "lower_bound": "Float64",
     "upper_bound": "Float64",
+    "cadence_minutes": "Int64",
 }
 
 
@@ -2697,7 +2750,9 @@ def run_standard_pipeline(
     # ------------------------------------------------------------------
     # 9. Apply threshold filters -- capture removal stats in the same pass
     # ------------------------------------------------------------------
-    df, threshold_stats = apply_thresholds_to_df(df, return_stats=True)
+    df, threshold_stats = apply_thresholds_to_df(
+        df, cadence=cadence, return_stats=True
+    )
     # Per-column count of values nulled (n_below + n_above), kept for the
     # existing DEBUG summary line and _validation_summary consumers.
     threshold_counts = {
