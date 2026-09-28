@@ -74,8 +74,8 @@
         },
         "validate_columns_exist": {
             "statistics": {
-                "min": "False",
-                "max": "False",
+                "min": "True",
+                "max": "True",
                 "null_count": 0
             }
         },
@@ -375,9 +375,9 @@
         },
         "validate_ZonopwekVerbruikDiff": {
             "statistics": {
-                "min": null,
-                "max": null,
-                "null_count": 10
+                "min": "True",
+                "max": "True",
+                "null_count": 0
             }
         },
         "validate_ElektriciteitsgebruikOverigGG": {
