@@ -133,8 +133,7 @@ class TestPipelineOutputFormat:
         with _output_format("sharded"):
             run_standard_pipeline(
                 _pipeline_df(), household_id=42, household_id_supplier="HuisX",
-                mapped_folder_path=tmp_path,
-            )
+                mapped_folder_path=tmp_path, grid_minutes=5)
         shard = tmp_path / "sharded" / "HuisIdBSV=42" / "HuisBatchIdBSV=42" / "part.parquet"
         assert shard.exists()
         assert not (tmp_path / "household_42_table.parquet").exists()
@@ -143,8 +142,7 @@ class TestPipelineOutputFormat:
         with _output_format("flat"):
             run_standard_pipeline(
                 _pipeline_df(), household_id=42, household_id_supplier="HuisX",
-                mapped_folder_path=tmp_path,
-            )
+                mapped_folder_path=tmp_path, grid_minutes=5)
         assert (tmp_path / "household_42_table.parquet").exists()
         assert not (tmp_path / "sharded").exists()
 
@@ -159,13 +157,11 @@ class TestPipelineOutputFormat:
         with _output_format("flat"):
             run_standard_pipeline(
                 _pipeline_df(), household_id=7, household_id_supplier="H7",
-                mapped_folder_path=flat_dir,
-            )
+                mapped_folder_path=flat_dir, grid_minutes=5)
         with _output_format("sharded"):
             run_standard_pipeline(
                 _pipeline_df(), household_id=7, household_id_supplier="H7",
-                mapped_folder_path=shard_dir,
-            )
+                mapped_folder_path=shard_dir, grid_minutes=5)
         flat = pd.read_parquet(flat_dir / "household_7_table.parquet",
                                dtype_backend="numpy_nullable")
         shard = pd.read_parquet(
@@ -179,8 +175,7 @@ class TestPipelineOutputFormat:
             with pytest.raises(ValueError):
                 run_standard_pipeline(
                     _pipeline_df(), household_id=1, household_id_supplier="H1",
-                    mapped_folder_path=tmp_path,
-                )
+                    mapped_folder_path=tmp_path, grid_minutes=5)
 
 
 class TestDatasetValidatorsReadBothLayouts:

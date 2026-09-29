@@ -7,7 +7,9 @@ import pandas as pd
 
 import etdmap
 from etdmap.data_model import (
+    BOOLEAN_SYNONYMS,
     allowed_supplier_metadata_columns,
+    supplier_metadata_dtypes,
     cumulative_columns,
     interval_column,
 )
@@ -109,8 +111,10 @@ batch_field_dtypes = {
     "Leverancierfrequentie": pd.StringDtype(),
 }
 
-#: The grid used when a household batch does not declare one. Datasets mapped
-#: before Gegevensfrequentie existed are all on this grid.
+#: The grid the pipeline works on unless a caller names another. A stage that
+#: has to know what the data actually sits on reads the declared frequency
+#: instead: grid_minutes_for_household during mapping, dataset_grid_minutes
+#: afterwards.
 DEFAULT_GRID_MINUTES = 5
 
 
@@ -156,46 +160,67 @@ def _household_batch_table():
     return pd.read_csv(str(path), dtype_backend="numpy_nullable")
 
 
-def grid_minutes_for_household(household_id, default=DEFAULT_GRID_MINUTES):
+def grid_minutes_for_household(household_id):
     """
     The grid a household's batch is recorded on, in minutes.
 
     The grid is declared per household batch as ``Gegevensfrequentie``: it is
     the interval the mapped data sits on, not the interval any one column
-    reports at. It is what ``ensure_intervals`` pads to and what a filled value
-    is judged against.
+    reports at. It is what ``ensure_intervals`` pads to, and what every later
+    stage reads back off the index to scale a threshold with.
 
-    Falls back to *default* when the batch table is absent, does not hold this
-    household, or declares no frequency -- a household mapped before its batch
-    row exists still has to be processed.
+    An undeclared grid is an error rather than a default. Padding to the wrong
+    grid changes the row count of the whole dataset and leaves the index
+    declaring a spacing the rows are not on, which every threshold downstream
+    is then scaled against.
 
     Parameters
     ----------
     household_id : int
         HuisIdBSV.
-    default : int
-        Grid to assume when nothing is declared.
 
     Returns
     -------
     float
         Grid interval in minutes.
+
+    Raises
+    ------
+    ValueError
+        When the batch table is absent or unconfigured, does not hold this
+        household, or declares no readable frequency for it.
     """
     table = _household_batch_table()
-    if table is None or "Gegevensfrequentie" not in table.columns:
-        return float(default)
+    if table is None:
+        raise ValueError(
+            f"Household {household_id}: no household batch table is configured "
+            f"or present, so the grid it is recorded on is unknown. Check the "
+            f"data model: set etdmap.options.household_batch_csv_path and sync "
+            f"HuisBatch."
+        )
+    if "Gegevensfrequentie" not in table.columns:
+        raise ValueError(
+            f"Household {household_id}: the household batch table carries no "
+            f"Gegevensfrequentie, so the grid it is recorded on is unknown. "
+            f"Check the data model."
+        )
 
     rows = table[table["HuisIdBSV"] == household_id]
     if rows.empty:
-        return float(default)
-
-    minutes = frequency_to_minutes(rows["Gegevensfrequentie"].iloc[0])
-    if pd.isna(minutes):
-        logging.info(
-            f"[index_helpers] Household {household_id} declares no usable "
-            f"Gegevensfrequentie; assuming a {default}-minute grid."
+        raise ValueError(
+            f"Household {household_id} is not in the household batch table, so "
+            f"the grid it is recorded on is unknown. Check the data model: sync "
+            f"HuisBatch before mapping it."
         )
-        return float(default)
+
+    declared = rows["Gegevensfrequentie"].iloc[0]
+    minutes = frequency_to_minutes(declared)
+    if pd.isna(minutes):
+        raise ValueError(
+            f"Household {household_id} declares Gegevensfrequentie "
+            f"'{declared}', which is not a readable duration, so the grid it is "
+            f"recorded on is unknown. Check the data model."
+        )
     return float(minutes)
 
 
@@ -955,6 +980,7 @@ def add_supplier_metadata_to_index(
     metadata_df.sort_index(inplace=True)
 
     columns_for_update = metadata_df.columns.intersection([*allowed_supplier_metadata_columns, "ProjectIdBSV"])
+
     index_df.update(metadata_df.loc[:, columns_for_update])
     index_df.reset_index(inplace=True)
 
@@ -1170,7 +1196,48 @@ def set_metadata_dtypes(metadata_df: pd.DataFrame, strict: bool = False) -> pd.D
                 print(f"Column {col} not found in DataFrame columns.")  # Debugging line to check for missing columns.
                 raise ValueError(f"Column {col} is specified in metadata_dtypes but not present in the index_df to be saved.")  # Raise an error if a column is missing.
 
+    # The supplier metadata variables, typed from the data model rather than left
+    # to inference. A column whose values happen to be whole numbers in one
+    # supplier's file would otherwise infer an integer dtype, and another
+    # supplier's fractional value could then not be written into it.
+    for col, data_type in supplier_metadata_dtypes.items():
+        if col not in metadata_df.columns or col in metadata_dtypes:
+            continue
+        values = metadata_df[col]
+        if data_type == "boolean" and values.dtype != "boolean":
+            values = _as_boolean(values, col)
+        try:
+            metadata_df[col] = values.astype(data_type)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Metadata column '{col}' cannot hold the declared type "
+                f"{data_type}: {exc}. Check the data model -- the declared "
+                f"'Type variabele' and the delivered values disagree."
+            ) from exc
+
     return metadata_df
+
+
+def _as_boolean(values: pd.Series, column: str) -> pd.Series:
+    """A declared-boolean metadata column, from whatever the supplier wrote.
+
+    Suppliers write yes/no in their own language and some write 1/0, so the
+    recognised spellings are declared in ``BOOLEAN_SYNONYMS``. An unrecognised
+    value raises rather than becoming pd.NA: a new spelling is then a question to
+    answer, not a column that quietly empties.
+    """
+    text = values.astype("string").str.strip().str.lower()
+    mapped = text.map(BOOLEAN_SYNONYMS).astype("boolean")
+
+    unrecognised = sorted(set(text[text.notna() & mapped.isna()].unique()))
+    if unrecognised:
+        raise ValueError(
+            f"Metadata column '{column}' is declared boolean but carries "
+            f"{unrecognised}, which is not one of {sorted(BOOLEAN_SYNONYMS)}. "
+            f"Add the spelling to BOOLEAN_SYNONYMS if it is a synonym, or fix "
+            f"the value."
+        )
+    return mapped
 
 def get_mapped_file_path(household_id: int) -> str:
     """

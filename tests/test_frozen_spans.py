@@ -190,8 +190,12 @@ class TestIntervalColumnsInheritTheirCumulativeCadence:
     def _frame(self):
         n = 200
         df = pd.DataFrame({"ReadingDate": pd.date_range("2024-01-01", periods=n, freq="5min")})
+        # 300 sits between the two bounds this class contrasts: over the
+        # five-minute bound of 100, under the shaped hourly bound of 100 * 12
+        # ** 0.5 = 346.4. A value outside both would make the test pass for the
+        # wrong reason.
         df["WatergebruikWarmTapwaterDiff"] = pd.array(
-            [0.5] * 20 + [0.0] * 60 + [900.0] + [0.5] * (n - 81), dtype="Float64"
+            [0.5] * 20 + [0.0] * 60 + [300.0] + [0.5] * (n - 81), dtype="Float64"
         )
         return df
 

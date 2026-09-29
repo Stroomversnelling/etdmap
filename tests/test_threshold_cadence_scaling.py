@@ -39,8 +39,13 @@ class TestScaleBounds:
     def test_without_a_cadence_the_declared_bound_is_used(self):
         assert scale_bounds(thresholds_dict[COL])[1] == GRID_MAX
 
-    def test_a_fifteen_minute_column_is_judged_against_three_intervals(self):
-        assert scale_bounds(thresholds_dict[COL], 15)[1] == pytest.approx(float(GRID_MAX) * 3)
+    def test_a_fifteen_minute_column_takes_the_declared_shape(self):
+        """Three intervals of accumulation, but a peak cannot be held across
+        all three, so the bound grows by the declared exponent rather than in
+        proportion: B(3) = Max * 3 ** 0.5 at the default shape."""
+        assert scale_bounds(thresholds_dict[COL], 15)[1] == pytest.approx(
+            float(GRID_MAX) * 3 ** 0.5
+        )
 
     def test_the_base_interval_scales_to_itself(self):
         assert scale_bounds(thresholds_dict[COL], 5)[1] == pytest.approx(float(GRID_MAX))
@@ -78,8 +83,8 @@ class TestCoarseColumnOutOfBounds:
     one grid interval."""
 
     def test_a_normal_coarse_reading_survives(self):
-        """Just over the five-minute bound, comfortably inside three of them."""
-        value = float(GRID_MAX) * 2
+        """Over the five-minute bound, inside the shaped fifteen-minute one."""
+        value = float(GRID_MAX) * 1.5
         df, stats = apply_thresholds_to_df(
             _frame([value]), cadence=_cadence(CUM, 15), return_stats=True
         )
@@ -94,7 +99,9 @@ class TestCoarseColumnOutOfBounds:
         )
         assert df[COL].isna().all()
         assert stats[COL]["n_above"] == 1
-        assert stats[COL]["upper_bound"] == pytest.approx(float(GRID_MAX) * 3)
+        assert stats[COL]["upper_bound"] == pytest.approx(
+            float(GRID_MAX) * 3 ** 0.5
+        )
         assert stats[COL]["cadence_minutes"] == 15
 
     def test_the_same_reading_is_rejected_without_a_cadence(self):

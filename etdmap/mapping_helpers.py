@@ -17,6 +17,7 @@ from etdmap.data_model import (
     interval_column,
     model_column_order,
     model_column_type,
+    monotonic_columns,
     performance_column_dtypes,
     required_performance_data_columns,
     thresholds_dict,
@@ -513,6 +514,8 @@ def _apply_negative_diff_corrections(group, col, cases, context_string):
                 f"Diff is NA, not removing any values."
             )
 
+    _removed = pd.Series(na_mask.values, index=group.index) & group[col].notna()
+    set_flags(group, col, _removed, MappingFlag.NULLED)
     group.loc[group.index[na_mask.values], col] = pd.NA
 
 
@@ -543,6 +546,52 @@ def _carry_findings_to_intervals(group, col) -> None:
     for flag in MappingFlag.INVENTED:
         on = (flags & flag.value) != 0
         set_flags(group, diff_col, on | on.shift(1, fill_value=False), flag)
+
+
+def construct_cumulative_from_interval(df, context: str = "") -> None:
+    """Build the cumulative column of any variable delivered as intervals only.
+
+    The cleaning stages read a running total: a frozen span is a total that
+    stops advancing, a catch-up is the reading it resumes in, and a gap's
+    volume is the difference across it. A supplier that sends only the interval
+    form leaves those with nothing to read, so the total is built here, before
+    any of them run.
+
+    Built where the cumulative column is absent or entirely missing and the
+    interval column holds values. One delivered reading counts as delivered:
+    overwriting a sparse column would discard what the meter did report.
+
+    Monotonicity is not required. This runs on data as delivered, ahead of
+    every correction, so refusing a column that dips would discard exactly the
+    case those corrections exist to handle.
+
+    The result is flagged CUMULATIVE_CONSTRUCTED. Its origin is arbitrary --
+    the series starts from its own first interval, not from whatever the meter
+    had totalled before -- so only differences across it carry meaning.
+    """
+    ctx = (context + ": ") if context else ""
+    for interval in list(df.columns):
+        cumulative = cumulative_column(interval)
+        if not cumulative or cumulative == interval:
+            continue
+        if df[interval].isna().all():
+            continue
+        if cumulative in df.columns and df[cumulative].notna().any():
+            continue
+
+        # cumsum leaves NA where the interval is absent and resumes from what
+        # was accumulated before it, so a gap in the intervals stays a gap in
+        # the total rather than being bridged.
+        df[cumulative] = df[interval].cumsum()
+        set_flags(
+            df, cumulative,
+            pd.Series(True, index=df.index),
+            MappingFlag.CUMULATIVE_CONSTRUCTED,
+        )
+        logging.info(
+            f"{ctx}Built '{cumulative}' from the delivered '{interval}': the "
+            f"variable arrives as intervals only."
+        )
 
 
 def add_diff_columns(
@@ -628,18 +677,46 @@ def add_diff_columns(
             _delivered_interval = (
                 diff_col in group.columns and group[diff_col].notna().any()
             )
-            if group[col].notna().any() or not _delivered_interval:
+            # A constructed cumulative is the cumsum of this very column, so
+            # differencing it back would replace delivered values with a round
+            # trip through their own total.
+            _constructed = bool(
+                flag_column(col) in group.columns
+                and (
+                    group[flag_column(col)].fillna(0)
+                    & MappingFlag.CUMULATIVE_CONSTRUCTED.value
+                ).any()
+            )
+            if _constructed and _delivered_interval:
+                logging.debug(
+                    f"{context_string}'{col}' was built from '{diff_col}'; "
+                    f"keeping the delivered interval values."
+                )
+            elif group[col].notna().any() or not _delivered_interval:
                 logging.debug(f"{context_string}Calculating diff for {col}")
                 group[diff_col] = group[col].diff().round(10)
+                # No predecessor to difference against, so the first interval is
+                # seeded rather than measured.
                 group.loc[group.index[0], diff_col] = 0
+                _seed = pd.Series(False, index=group.index)
+                _seed.iloc[0] = True
+                set_flags(group, diff_col, _seed, MappingFlag.FIRST_ZERO)
             else:
                 logging.info(
                     f"{context_string}'{col}' is empty and '{diff_col}' was "
                     f"delivered; keeping the delivered interval values."
                 )
 
+            # A decrease is only a fault in a variable that cannot decrease.
+            # Elsewhere it is the reading, so neither detection nor correction
+            # applies.
+            if col not in monotonic_columns:
+                _carry_findings_to_intervals(group, col)
+                continue
+
             # Detection reads the column and writes nothing, so it runs for every
-            # column. Only the correction is conditional, on what was detected.
+            # monotonic column. Only the correction is conditional, on what was
+            # detected.
             cases = _detect_negative_diff_cases(group, col)
             if cases is not None:
                 _apply_negative_diff_corrections(group, col, cases, context_string)
@@ -649,6 +726,9 @@ def add_diff_columns(
                 )
                 group[diff_col] = group[col].diff().round(10)
                 group.loc[group.index[0], diff_col] = 0
+                _seed = pd.Series(False, index=group.index)
+                _seed.iloc[0] = True
+                set_flags(group, diff_col, _seed, MappingFlag.FIRST_ZERO)
 
                 if (group[diff_col] < 0).any(skipna=True):
                     logging.warning(
@@ -1991,7 +2071,8 @@ def apply_threshold_to_col(
     -------
     tuple(pandas.DataFrame, dict or None)
         The DataFrame with thresholds applied, and a stats dict describing
-        what was removed: {"n_below", "n_above", "min_removed",
+        what was removed: {"n_below", "n_above", "sum_removed_negative",
+        "sum_removed_positive", "balance_removed", "min_removed",
         "max_removed"}. The stats are computed from the same out-of-bounds
         mask used to null the values (no extra column scan). Returns None
         for the stats when the column lost no values.
@@ -2018,9 +2099,17 @@ def apply_threshold_to_col(
 
     if n_below or n_above:
         removed = df.loc[mask, col]
+        # Signed volumes, so a removal report says how much left the dataset
+        # and in which direction. A count alone cannot: one large positive and
+        # one large negative removal read the same as two small ones.
+        negative = removed[removed < 0]
+        positive = removed[removed > 0]
         col_stats = {
             "n_below": n_below,
             "n_above": n_above,
+            "sum_removed_negative": float(negative.sum()) if len(negative) else 0.0,
+            "sum_removed_positive": float(positive.sum()) if len(positive) else 0.0,
+            "balance_removed": float(removed.sum()),
             "min_removed": float(removed.min()),
             "max_removed": float(removed.max()),
             # The bounds actually checked. pd.NA means that side was not set,
@@ -2031,6 +2120,9 @@ def apply_threshold_to_col(
     else:
         col_stats = None
 
+    # The signals above say why the value is condemned; this says it was
+    # removed. Only rows that actually held a value are marked.
+    set_flags(df, col, mask & df[col].notna(), MappingFlag.NULLED)
     df.loc[mask, col] = pd.NA
 
     return df, col_stats
@@ -2046,6 +2138,9 @@ _THRESHOLD_REMOVAL_DTYPES = {
     "column": "string",
     "n_below": "Int64",
     "n_above": "Int64",
+    "sum_removed_negative": "Float64",
+    "sum_removed_positive": "Float64",
+    "balance_removed": "Float64",
     "min_removed": "Float64",
     "max_removed": "Float64",
     "lower_bound": "Float64",
@@ -2056,13 +2151,24 @@ _THRESHOLD_REMOVAL_DTYPES = {
 
 def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
     """
-    Write accumulated sidecar rows to a typed parquet beside the mapped data.
+    Merge accumulated sidecar rows into the typed parquet beside the mapped data.
 
-    An empty but correctly-typed frame is written when there are no rows, so
-    downstream readers get a stable schema either way.
+    Rows are merged on ``HuisIdBSV``: the households this run wrote replace their
+    own rows, and every other household's rows are kept. Overwriting the file
+    instead would leave a folder mapped by several suppliers holding only the
+    last one's rows, since each mapper writes only the households it processed.
+
+    An empty but correctly-typed frame is written when there are no rows and none
+    were there before, so downstream readers get a stable schema either way.
 
     Returns the path written.
     """
+    if "HuisIdBSV" not in dtypes:
+        raise ValueError(
+            f"{label} sidecar declares no HuisIdBSV, so its rows cannot be "
+            f"merged per household. Add the id to its dtype map."
+        )
+
     df = pd.DataFrame(rows, columns=list(dtypes))
 
     # Some suppliers deliver ReadingDate tz-aware and some do not, so a timestamp
@@ -2077,8 +2183,22 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
 
     df = df.astype(dtypes)
     path = os.path.join(mapped_folder_path, filename)
+
+    kept = 0
+    if os.path.exists(path):
+        existing = pd.read_parquet(path, dtype_backend="numpy_nullable")
+        if "HuisIdBSV" in existing.columns:
+            written_now = set(df["HuisIdBSV"].dropna().unique())
+            others = existing[~existing["HuisIdBSV"].isin(written_now)]
+            kept = len(others)
+            if kept:
+                df = pd.concat([others, df], ignore_index=True).astype(dtypes)
+
     df.to_parquet(path, engine="pyarrow")
-    logging.info(f"[mapping_helpers] Wrote {len(df)} {label} row(s) to {path}")
+    logging.info(
+        f"[mapping_helpers] Wrote {len(df)} {label} row(s) to {path}"
+        + (f" ({kept} kept from other households)" if kept else "")
+    )
     return path
 
 
@@ -2091,8 +2211,9 @@ def threshold_stats_to_rows(household_id, threshold_stats):
     household_id : int
         The household's HuisIdBSV.
     threshold_stats : dict
-        {column: {"n_below", "n_above", "min_removed", "max_removed",
-        "lower_bound", "upper_bound"}} as produced by
+        {column: {"n_below", "n_above", "sum_removed_negative",
+        "sum_removed_positive", "balance_removed", "min_removed",
+        "max_removed", "lower_bound", "upper_bound"}} as produced by
         apply_thresholds_to_df(return_stats=True). May be empty or None.
 
     Returns
@@ -2108,6 +2229,9 @@ def threshold_stats_to_rows(household_id, threshold_stats):
                 "column": col,
                 "n_below": s["n_below"],
                 "n_above": s["n_above"],
+                "sum_removed_negative": s["sum_removed_negative"],
+                "sum_removed_positive": s["sum_removed_positive"],
+                "balance_removed": s["balance_removed"],
                 "min_removed": s["min_removed"],
                 "max_removed": s["max_removed"],
                 "lower_bound": s["lower_bound"],
@@ -2466,9 +2590,8 @@ def _detect_frozen_spans_for_household(df, household_id, cadence=None, context="
         # in the cadence table, which was measured on the columns as delivered.
         # An interval column inherits the cadence of its cumulative variable.
         source = cumulative_column(col) or col
-        bound = scale_bound_to_cadence(
-            entry["Max"],
-            entry["ThresholdType"],
+        _, bound = scale_bounds(
+            entry,
             cadence_minutes.get(col, cadence_minutes.get(source, pd.NA)),
         )
         spans = frozen_spans(df[col], upper_bound=bound)
@@ -2532,8 +2655,19 @@ def _treat_frozen_spans(df, rows, context=""):
 
         if cum_col and cum_col in df.columns:
             df.iloc[start:catchup, df.columns.get_loc(cum_col)] = pd.NA
+
         if diff_col in df.columns:
-            df.iloc[start : catchup + 1, df.columns.get_loc(diff_col)] = pd.NA
+            # The span's own values are the zeros the frozen meter reported and
+            # the catch-up they arrive in. Anything else in that range is a
+            # delivered reading the span does not account for, so it stays.
+            positions = pd.Series(range(len(df)), index=df.index)
+            in_span = (positions >= start) & (positions < catchup)
+            is_catchup = positions == catchup
+            removable = (
+                (in_span & (df[diff_col].fillna(0) == 0)) | is_catchup
+            ) & df[diff_col].notna()
+            set_flags(df, diff_col, removable, MappingFlag.NULLED)
+            df.loc[removable, diff_col] = pd.NA
 
     logging.info(
         f"{ctx}Treated {len(rows)} frozen span(s): the cumulative variable reads missing "
@@ -2578,6 +2712,22 @@ def _report_etdmap_provenance():
         logging.info(f"[etdmap] Using etdmap from {module_path} (last written {stamp}).")
 
 
+def mark_unchanged_values(df) -> None:
+    """Record NOT_CHANGED on every value no action was taken on.
+
+    Without it, an empty findings column is ambiguous: it may mean mapping
+    looked and left the value alone, or that nothing reached the column at all.
+    Derived from the absence of MappingFlag.ACTIONS_TAKEN, so adding an action
+    extends this automatically.
+    """
+    for column in [c for c in df.columns if c.endswith("_flags")]:
+        source = column[: -len("_flags")]
+        if source not in df.columns:
+            continue
+        acted = (df[column].fillna(0) & MappingFlag.ACTIONS_TAKEN.value) != 0
+        set_flags(df, source, ~acted, MappingFlag.NOT_CHANGED)
+
+
 def run_standard_pipeline(
     df: pd.DataFrame,
     household_id: int,
@@ -2602,6 +2752,7 @@ def run_standard_pipeline(
       4. ensure_intervals
       5. Log model column type mismatches at DEBUG
       6. rearrange_model_columns(add_columns=True)
+      6b. construct_cumulative_from_interval
       7. add_diff_columns
      7b. Detect frozen spans, and blank them so imputation can spread them
       8. Apply record_flag_conditions (try/except per flag; pd.NA on error)
@@ -2714,6 +2865,13 @@ def run_standard_pipeline(
     df = rearrange_model_columns(household_df=df, add_columns=True, context=context)
 
     # ------------------------------------------------------------------
+    # 6b. Build the cumulative column of any variable delivered as intervals
+    #     only. Everything below reads a running total, so this runs before
+    #     the first stage that does.
+    # ------------------------------------------------------------------
+    construct_cumulative_from_interval(df, context=context)
+
+    # ------------------------------------------------------------------
     # 7. Add diff columns (5-minute differences for cumulative variables)
     # ------------------------------------------------------------------
     df = add_diff_columns(df, context=context)
@@ -2768,6 +2926,10 @@ def run_standard_pipeline(
         if threshold_counts:
             _parts.append("thresholds: " + ", ".join(f"{k}={v}" for k, v in sorted(threshold_counts.items())))
         logging.debug(f"[run_standard_pipeline] {ctx}Validation: " + "; ".join(_parts))
+
+    # Every value now carries whatever findings apply to it, so the ones no
+    # action touched can be marked as such.
+    mark_unchanged_values(df)
 
     # ------------------------------------------------------------------
     # 10. Save via the single format-aware primitive (sharded default; flat is

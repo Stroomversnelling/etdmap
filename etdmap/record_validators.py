@@ -164,7 +164,11 @@ def validate_reading_date_unique(df: DataFrame) -> Series:
 
 def validate_300sec(df: DataFrame) -> Series:
     """
-    Validate that the time difference between consecutive ReadingDate values is 300 seconds.
+    Validate that each row sits one grid interval after the one before it.
+
+    The interval checked against is the most common spacing in *df*, not a fixed
+    300 seconds: households are recorded on the grid their batch declares, so a
+    fixed interval marks every row of a coarser household invalid.
 
     Parameters
     ----------
@@ -174,14 +178,18 @@ def validate_300sec(df: DataFrame) -> Series:
     Returns
     -------
     Series
-        A boolean Series indicating which rows have a 300-second difference from the previous row.
+        A boolean Series indicating which rows sit one grid interval after the
+        previous row.
     """
     df = df.sort_values('ReadingDate')
     df['ReadingDateDiff'] = df['ReadingDate'].diff().dt.total_seconds().abs()
     column = ['ReadingDateDiff']
 
+    spacing = df['ReadingDateDiff'].mode()
+    expected = spacing.iloc[0] if not spacing.empty else pd.NA
+
     def condition_func(df):
-        return df['ReadingDateDiff'] == 300
+        return df['ReadingDateDiff'] == expected
 
     result = validate_columns(df, column, condition_func)
     df.drop(columns=['ReadingDateDiff'], inplace=True)

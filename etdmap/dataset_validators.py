@@ -300,11 +300,18 @@ def validate_no_readingdate_gap(df: DataFrame) -> bool:
 
     Notes
     -----
-    This function checks if the time difference between consecutive reading dates is consistently 300 seconds.
+    The spacing checked against is the most common spacing in *df*, not a fixed
+    interval: households are recorded on the grid their batch declares. A fixed
+    interval reports every row of a coarser household as a gap.
     """
-    time_diffs = df["ReadingDate"].diff().dt.total_seconds()
-    valid = all(time_diffs[1:] == 300)
-    return valid
+    time_diffs = df["ReadingDate"].diff().dt.total_seconds()[1:]
+    if time_diffs.empty:
+        return True
+
+    spacing = time_diffs.mode()
+    if spacing.empty:
+        return False
+    return bool((time_diffs == spacing.iloc[0]).all())
 
 
 def create_validate_func_col(col:str, tresholds) -> callable:

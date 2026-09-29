@@ -22,6 +22,8 @@ class MappingFlag(IntFlag):
 
     NONE = 0
 
+    # --- signals: something observed about the value ---
+
     # Outside the range declared for the variable.
     OUT_OF_BOUNDS_LOW = auto()
     OUT_OF_BOUNDS_HIGH = auto()
@@ -55,6 +57,8 @@ class MappingFlag(IntFlag):
     # Larger than one interval may hold, and paired with that span.
     CATCHUP = auto()
 
+    # --- actions: something the pipeline did to the value ---
+
     # Carried forward from an earlier reading because the device reports
     # infrequently. No measurement was taken at this timestamp.
     FILLED_DOWN = auto()
@@ -63,14 +67,60 @@ class MappingFlag(IntFlag):
     # measurement was taken; a zero set here is not a reported zero.
     FILLED_ZERO = auto()
 
+    # The zero seeded at a household's first interval. Differencing has no
+    # predecessor there, so the value is structural rather than measured.
+    FIRST_ZERO = auto()
+
+    # Blanked to pd.NA. Records that a value was removed, which the signal that
+    # condemned it does not say on its own.
+    NULLED = auto()
+
+    # The cumulative column was built from the delivered interval column
+    # because the supplier delivered only the interval form.
+    CUMULATIVE_CONSTRUCTED = auto()
+
+    # Mapping examined the value and wrote nothing. Distinguishes a value that
+    # was left alone from one no stage reached.
+    NOT_CHANGED = auto()
+
+    # The two categories, declared rather than left to a comment. A signal names
+    # something observed about a value; an action names something the pipeline
+    # did to it. Every single-bit member belongs to exactly one, which a test
+    # pins, so a report can label any flag without keeping its own list.
+    SIGNALS = (
+        OUT_OF_BOUNDS_LOW
+        | OUT_OF_BOUNDS_HIGH
+        | CUMULATIVE_JUMP_BACK
+        | CUMULATIVE_REPEAT_NEGATIVE
+        | CUMULATIVE_METER_RESET
+        | CUMULATIVE_NO_RECOVERY
+        | CUMULATIVE_ZERO_TOTAL
+        | FROZEN_SPAN
+        | CATCHUP
+    )
+    ACTIONS = (
+        FILLED_DOWN
+        | FILLED_ZERO
+        | FIRST_ZERO
+        | NULLED
+        | CUMULATIVE_CONSTRUCTED
+        | NOT_CHANGED
+    )
+
     # Faults whose affected readings run from the decrease to the recovery
     # rather than occupying a single reading.
     CUMULATIVE_DECREASE_RANGE = CUMULATIVE_JUMP_BACK | CUMULATIVE_REPEAT_NEGATIVE
 
-    # Values written by the pipeline rather than measured. Filter on this to
-    # select only delivered readings. Any future finding that writes a value
-    # belongs in this composite.
-    INVENTED = FILLED_DOWN | FILLED_ZERO | FROZEN_SPAN
+    # Values written or removed by the pipeline rather than measured. Actions
+    # only: a signal here would exclude values that were merely observed.
+    # CUMULATIVE_CONSTRUCTED is deliberately absent -- the column was built, but
+    # its values carry what the delivered intervals reported.
+    INVENTED = FILLED_DOWN | FILLED_ZERO | NULLED | FIRST_ZERO
+
+    # Every action the pipeline may take on a value, except recording that it
+    # took none. NOT_CHANGED is set where this is absent, so the two are
+    # defined from one list rather than maintained separately.
+    ACTIONS_TAKEN = INVENTED | CUMULATIVE_CONSTRUCTED
 
     # A cumulative fault that destroys the count. No consumption can be derived
     # across these readings, whatever values they carry.
@@ -89,6 +139,7 @@ class MappingFlag(IntFlag):
     # here.
     NOT_A_MEASUREMENT = (
         INVENTED
+        | FROZEN_SPAN
         | CATCHUP
         | CUMULATIVE_UNUSABLE
         | OUT_OF_BOUNDS_LOW

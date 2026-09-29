@@ -410,8 +410,8 @@
         },
         "Oppervlakte": {
             "statistics": {
-                "min": "100",
-                "max": "100",
+                "min": "100.0",
+                "max": "100.0",
                 "null_count": 0
             }
         },
@@ -431,15 +431,15 @@
         },
         "Warmtebehoefte": {
             "statistics": {
-                "min": "70",
-                "max": "70",
+                "min": "70.0",
+                "max": "70.0",
                 "null_count": 0
             }
         },
         "PrimairFossielGebruik": {
             "statistics": {
-                "min": "-5",
-                "max": "-5",
+                "min": "-5.0",
+                "max": "-5.0",
                 "null_count": 0
             }
         },
@@ -536,8 +536,8 @@
         },
         "PVWattpiekPerPaneel": {
             "statistics": {
-                "min": "335",
-                "max": "335",
+                "min": "335.0",
+                "max": "335.0",
                 "null_count": 0
             }
         },
@@ -552,14 +552,14 @@
             "statistics": {
                 "min": null,
                 "max": null,
-                "null_count": null
+                "null_count": 10
             }
         },
         "ElektriciteitVoorRenovatie": {
             "statistics": {
                 "min": null,
                 "max": null,
-                "null_count": null
+                "null_count": 10
             }
         },
         "HuisBatchIdBSV": {

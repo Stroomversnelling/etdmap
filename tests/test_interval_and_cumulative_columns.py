@@ -108,4 +108,9 @@ class TestIntervalsInheritTheirCumulativeFindings:
         fill_down_infrequent_devices(df, [CUM])
         out = add_diff_columns(df, context="clean")
 
-        assert int(out[flag_column(DIFF)].sum()) == MappingFlag.NONE.value
+        # The first interval carries FIRST_ZERO: differencing has no
+        # predecessor there, so that zero is seeded rather than measured. It is
+        # the one finding a clean column always gains.
+        flags = out[flag_column(DIFF)].fillna(0).astype("Int64")
+        assert int(flags.iloc[0]) == MappingFlag.FIRST_ZERO.value
+        assert int(flags.iloc[1:].sum()) == MappingFlag.NONE.value

@@ -346,6 +346,7 @@ def _list_files_data_fixture(folder_path):
 
 
 def _process_data_fixture_file(household_id, file_name, etd_test_fixture_path, mapped_folder_path):
+    """Map one raw fixture file, returning its index entry and its cadence."""
     file_path = os.path.join(etd_test_fixture_path, file_name)
     new_file_path = os.path.join(
         mapped_folder_path, f"household_{int(household_id)}_table.parquet"
@@ -359,6 +360,12 @@ def _process_data_fixture_file(household_id, file_name, etd_test_fixture_path, m
         str(data_fixture_df["ProjectIdLeverancier"].iloc[0])
         if "ProjectIdLeverancier" in data_fixture_df.columns
         else "unknown"
+    )
+
+    # Cadence is measured on the timestamps as delivered. Padding to the grid
+    # first would report the grid rather than what each column sends.
+    cadence = mapping.detect_column_cadence(
+        data_fixture_df, context=f"{household_id}/{file_name}"
     )
 
     data_fixture_df = mapping.ensure_intervals(data_fixture_df)
@@ -390,7 +397,7 @@ def _process_data_fixture_file(household_id, file_name, etd_test_fixture_path, m
         "HuisIdLeverancier": f'Huis{int(file_name.replace("household_", "").replace("_table.parquet", "")):02}',
         "ProjectIdLeverancier": project_id,
         "HuisIdBSV": household_id,
-    }
+    }, cadence
 
 
 def generate_mapped_dataset(
@@ -404,8 +411,8 @@ def generate_mapped_dataset(
 ):
     """Generate the synthetic mapped dataset into *target_folder*.
 
-    Writes ``household_<id>_table.parquet`` per household plus ``index.parquet``,
-    the shape downstream stages read. Raw supplier-shaped input is generated
+    Writes ``household_<id>_table.parquet`` per household, ``index.parquet`` and
+    the per-column cadence sidecar -- the shape downstream stages read. Raw supplier-shaped input is generated
     first, into *raw_folder* when given and a sibling of the target otherwise.
 
     The caller supplies the metadata paths, so each suite uses its own
@@ -461,16 +468,22 @@ def generate_mapped_dataset(
         list_files_func=_list_files_data_fixture,
     )
 
+    cadence_rows = []
     for count, (household_id, file_name) in enumerate(household_id_pairs):
         if count >= households:
             break
         logging.info(f"Starting {file_name}")
-        new_entry = _process_data_fixture_file(
+        new_entry, cadence = _process_data_fixture_file(
             household_id, file_name, raw_folder, etdmap.options.mapped_folder_path
         )
+        cadence_rows.extend(mapping.cadence_to_rows(household_id, cadence))
         index_df = index_helpers.update_index(
             index_df, new_entry, data_provider="etdmap"
         )
+
+    # The sidecar every later stage scales a threshold from. Without it the
+    # fixture is not something the pipeline can be run against.
+    mapping.write_column_cadence(cadence_rows, str(etdmap.options.mapped_folder_path))
 
     etdmap.options.project_mapping_csv_path = project_mapping_csv_path
     metadata_df = read_metadata(Path(supplier_metadata_xlsx_file))

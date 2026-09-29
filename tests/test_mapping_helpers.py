@@ -480,17 +480,17 @@ class TestRunStandardPipeline:
     def test_raises_key_error_when_no_reading_date(self, tmp_path):
         df = pd.DataFrame({"SomeCol": [1, 2, 3]})
         with pytest.raises(KeyError, match="ReadingDate"):
-            run_standard_pipeline(df, household_id=1, household_id_supplier="HuisA", mapped_folder_path=tmp_path)
+            run_standard_pipeline(df, household_id=1, household_id_supplier="HuisA", mapped_folder_path=tmp_path, grid_minutes=5)
 
     def test_raises_value_error_when_reading_date_unparseable(self, tmp_path):
         df = pd.DataFrame({"ReadingDate": ["bad", "also-bad"]})
         with pytest.raises((ValueError, Exception)):
-            run_standard_pipeline(df, household_id=1, household_id_supplier="HuisA", mapped_folder_path=tmp_path)
+            run_standard_pipeline(df, household_id=1, household_id_supplier="HuisA", mapped_folder_path=tmp_path, grid_minutes=5)
 
     def test_saves_parquet_and_returns_entry(self, tmp_path):
         """End-to-end smoke test: pipeline writes a file and returns the index entry."""
         df = _minimal_pipeline_df(n=12)
-        result = run_standard_pipeline(df, household_id=42, household_id_supplier="HuisX", mapped_folder_path=tmp_path)
+        result = run_standard_pipeline(df, household_id=42, household_id_supplier="HuisX", mapped_folder_path=tmp_path, grid_minutes=5)
         result.pop("_validation_summary", None)
         assert result == {"HuisIdLeverancier": "HuisX", "HuisIdBSV": 42}
         out_file = tmp_path / "household_42_table.parquet"
@@ -500,14 +500,14 @@ class TestRunStandardPipeline:
         """Rows must be in ascending ReadingDate order in the saved file."""
         df = _minimal_pipeline_df(n=6)
         df = df.iloc[::-1].reset_index(drop=True)  # reverse the order
-        run_standard_pipeline(df, household_id=1, household_id_supplier="H", mapped_folder_path=tmp_path)
+        run_standard_pipeline(df, household_id=1, household_id_supplier="H", mapped_folder_path=tmp_path, grid_minutes=5)
         out = pd.read_parquet(tmp_path / "household_1_table.parquet", dtype_backend="numpy_nullable")
         assert (out["ReadingDate"].diff().dropna() >= pd.Timedelta(0)).all()
 
     def test_output_has_model_columns(self, tmp_path):
         """Output parquet must contain all model columns."""
         df = _minimal_pipeline_df(n=6)
-        run_standard_pipeline(df, household_id=2, household_id_supplier="H2", mapped_folder_path=tmp_path)
+        run_standard_pipeline(df, household_id=2, household_id_supplier="H2", mapped_folder_path=tmp_path, grid_minutes=5)
         out = pd.read_parquet(tmp_path / "household_2_table.parquet", dtype_backend="numpy_nullable")
         for col in model_column_order:
             assert col in out.columns, f"Model column '{col}' missing from output"
@@ -1140,11 +1140,15 @@ class TestThresholdStatsToRows:
         stats = {
             "ElektriciteitVermogen": {
                 "n_below": 2, "n_above": 1,
+                "sum_removed_negative": -6.0, "sum_removed_positive": 25000.0,
+                "balance_removed": 24994.0,
                 "min_removed": -5.0, "max_removed": 25000.0,
                 "lower_bound": 0.0, "upper_bound": 20000.0,
             },
             "TemperatuurWoonkamer": {
                 "n_below": 0, "n_above": 3,
+                "sum_removed_negative": 0.0, "sum_removed_positive": 250.0,
+                "balance_removed": 250.0,
                 "min_removed": 40.0, "max_removed": 99.0,
                 "lower_bound": pd.NA, "upper_bound": 35.0,
             },
@@ -1157,6 +1161,11 @@ class TestThresholdStatsToRows:
         assert by_col["ElektriciteitVermogen"]["n_above"] == 1
         assert by_col["ElektriciteitVermogen"]["min_removed"] == -5.0
         assert by_col["TemperatuurWoonkamer"]["max_removed"] == 99.0
+        # Signed volumes, so the report says how much left and which way. The
+        # extremes cannot: two removals of 5 read the same as one of 10.
+        assert by_col["ElektriciteitVermogen"]["sum_removed_negative"] == -6.0
+        assert by_col["ElektriciteitVermogen"]["sum_removed_positive"] == 25000.0
+        assert by_col["ElektriciteitVermogen"]["balance_removed"] == 24994.0
         # n_below of 0 on a one-sided threshold means "not checked".
         assert pd.isna(by_col["TemperatuurWoonkamer"]["lower_bound"])
 
@@ -1165,16 +1174,22 @@ class TestWriteThresholdRemovals:
     """write_threshold_removals writes a typed sidecar parquet (ADR-005)."""
 
     EXPECTED_COLS = [
-        "HuisIdBSV", "column", "n_below", "n_above", "min_removed", "max_removed",
+        "HuisIdBSV", "column", "n_below", "n_above",
+        "sum_removed_negative", "sum_removed_positive", "balance_removed",
+        "min_removed", "max_removed",
         "lower_bound", "upper_bound", "cadence_minutes",
     ]
 
     def test_writes_rows_with_nullable_dtypes(self, tmp_path):
         rows = [
             {"HuisIdBSV": 1, "column": "A", "n_below": 2, "n_above": 0,
+             "sum_removed_negative": -1.5, "sum_removed_positive": 0.0,
+             "balance_removed": -1.5,
              "min_removed": -1.0, "max_removed": -0.5,
              "lower_bound": 0.0, "upper_bound": pd.NA},
             {"HuisIdBSV": 1, "column": "B", "n_below": 0, "n_above": 4,
+             "sum_removed_negative": 0.0, "sum_removed_positive": 600.0,
+             "balance_removed": 600.0,
              "min_removed": 100.0, "max_removed": 200.0,
              "lower_bound": 0.0, "upper_bound": 50.0},
         ]
@@ -1240,7 +1255,10 @@ class TestApplyThresholds:
         assert out["X"].isna().tolist() == [True, False, True, False, False]
         assert out["X"].dropna().astype(float).tolist() == [0.5, 0.0, 1.0]
         assert stats == {
-            "n_below": 1, "n_above": 1, "min_removed": -1.0, "max_removed": 2.0,
+            "n_below": 1, "n_above": 1,
+            "sum_removed_negative": -1.0, "sum_removed_positive": 2.0,
+            "balance_removed": 1.0,
+            "min_removed": -1.0, "max_removed": 2.0,
             "lower_bound": 0.0, "upper_bound": 1.0,
         }
 
@@ -1283,8 +1301,7 @@ class TestPipelineDropsUnmappedColumns:
 
         run_standard_pipeline(
             df, household_id=77, household_id_supplier="H77",
-            mapped_folder_path=tmp_path,
-        )
+            mapped_folder_path=tmp_path, grid_minutes=5)
         out = pd.read_parquet(tmp_path / "household_77_table.parquet", dtype_backend="numpy_nullable")
 
         assert "alklimaHeatPump_holiday" not in out.columns

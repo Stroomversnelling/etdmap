@@ -18,6 +18,15 @@ _DTYPE_MAP = {
 
 _YES_NO_CHOICE = frozenset({"ja", "nee"})
 
+#: Text a declared-boolean value may arrive as. Suppliers write yes/no in their
+#: own language and some write 1/0, and the set grows as suppliers do; anything
+#: outside it raises rather than becoming pd.NA, so a new spelling surfaces as a
+#: question instead of silently emptying a column.
+BOOLEAN_SYNONYMS = {
+    "ja": True, "yes": True, "true": True, "waar": True, "1": True,
+    "nee": False, "no": False, "false": False, "onwaar": False, "0": False,
+}
+
 peak_offpeak_substrings = ["Hoog", "Laag"]
 
 
@@ -50,6 +59,51 @@ def load_etdmodel() -> pd.DataFrame:
     return pd.read_csv(csv_path, dtype_backend="numpy_nullable")
 
 
+#: Applied when a threshold declares no shape of its own. Zero sustained rate
+#: with a square-root exponent: nothing is assumed to be holdable indefinitely,
+#: and the plausible excess grows with the square root of the interval.
+DEFAULT_UPPER_THRESHOLD_SUSTAINED = 0.0
+DEFAULT_UPPER_THRESHOLD_EXPONENT = 0.5
+
+
+def scale_upper_bound(maximum, n, sustained=pd.NA, exponent=pd.NA):
+    """The upper bound for an interval *n* times the threshold's own unit.
+
+        B(n) = n * sustained + (maximum - sustained) * n ** exponent
+
+    *sustained* is the rate that may be held for the whole interval and so
+    scales with it; the remainder is a peak and grows more slowly. B(1) is
+    *maximum* for any parameters, so a column reporting at the declared unit is
+    unaffected.
+
+    Raises
+    ------
+    ValueError
+        If *sustained* exceeds *maximum*, which would make the bound shrink as
+        the interval grows, or if *exponent* falls outside [0, 1].
+    """
+    if pd.isna(maximum):
+        return maximum
+    sustained = (
+        DEFAULT_UPPER_THRESHOLD_SUSTAINED if pd.isna(sustained) else float(sustained)
+    )
+    exponent = (
+        DEFAULT_UPPER_THRESHOLD_EXPONENT if pd.isna(exponent) else float(exponent)
+    )
+
+    if sustained > float(maximum):
+        raise ValueError(
+            f"UpperThresholdSustained {sustained} exceeds Max {maximum}: the "
+            f"bound would fall as the interval grows"
+        )
+    if not 0.0 <= exponent <= 1.0:
+        raise ValueError(
+            f"UpperThresholdExponent {exponent} is outside [0, 1]"
+        )
+
+    return n * sustained + (float(maximum) - sustained) * n ** exponent
+
+
 def load_thresholds() -> pd.DataFrame:
     """
     Load thresholds from the bundled thresholds.csv.
@@ -72,6 +126,8 @@ def load_thresholds() -> pd.DataFrame:
         "Eenheid": "string",
         "Min": "Float64",
         "Max": "Float64",
+        "UpperThresholdSustained": "Float64",
+        "UpperThresholdExponent": "Float64",
         "ThresholdToelichting": "string",
     }
 
@@ -98,6 +154,10 @@ def load_thresholds_as_dict() -> dict:
             "Min": row["Min"],
             "Max": row["Max"],
             "ThresholdType": row["ThresholdType"],
+            # Shape the upper bound takes when scaled to a coarser cadence.
+            # Absent means the defaults in scale_upper_bound apply.
+            "UpperThresholdSustained": row.get("UpperThresholdSustained", pd.NA),
+            "UpperThresholdExponent": row.get("UpperThresholdExponent", pd.NA),
         }
     return thresholds_dict
 
@@ -239,7 +299,7 @@ def _build_derived_structures():
     # fixed-choice fields; any other content is a sync bug, not
     # something to normalise away. Fail loud at import time so the gap
     # surfaces immediately.
-    for _classifier_col in ("Cumulatief", "Momentaan", "Diff"):
+    for _classifier_col in ("Cumulatief", "Momentaan", "Diff", "Monotoon"):
         _validate_yes_no_column(df, _classifier_col)
 
     # Cumulative meter-reading columns.
@@ -248,6 +308,13 @@ def _build_derived_structures():
     # The order of this list does not affect correctness.
     cumulative = df[
         (df["Cumulatief"] == "ja") & (df["Type variabele"] != "date")
+    ]["Variabele"].tolist()
+
+    # Cumulative variables that only ever increase (Monotoon="ja"). The
+    # averaging and the negative-diff corrections apply to these and to nothing
+    # else. A meter that can legitimately dip is Cumulatief=ja, Monotoon=nee.
+    monotonic = df[
+        (df["Monotoon"] == "ja") & (df["Type variabele"] != "date")
     ]["Variabele"].tolist()
 
     # Instantaneous-reading columns (Momentaan="ja"). Profile / timeline
@@ -281,9 +348,21 @@ def _build_derived_structures():
     }
 
     # Columns suppliers are allowed to provide in their metadata files.
-    supplier_meta = df[
+    supplier_meta_rows = df[
         (df["Wie vult?"] == "Dataleverancier") & (df["Entiteit"] == "Metadata")
-    ]["Variabele"].tolist()
+    ]
+    supplier_meta = supplier_meta_rows["Variabele"].tolist()
+
+    # pandas dtype per metadata column, derived from "Type variabele" exactly as
+    # the performance columns are. Declared rather than inferred: a metadata
+    # column read from one supplier's file whose values happen to be whole
+    # numbers infers an integer dtype, and writing a fractional value from
+    # another supplier into it then fails.
+    supplier_meta_types = {
+        str(row["Variabele"]): _DTYPE_MAP.get(str(row["Type variabele"]), "Float64")
+        for _, row in supplier_meta_rows.iterrows()
+        if pd.notna(row["Variabele"]) and pd.notna(row["Type variabele"])
+    }
 
     # Every performance column in the model (Prestatiedata and
     # PrestatiedataBerekend alike). The Berekend suffix names a variable's role
@@ -310,8 +389,8 @@ def _build_derived_structures():
     required_perf_cols = perf_all[perf_all["Vereist"] == "ja"]["Variabele"].tolist()
 
     return (
-        cumulative, momentaan, diff_cols,
-        col_order, col_types, supplier_meta,
+        cumulative, momentaan, diff_cols, monotonic,
+        col_order, col_types, supplier_meta, supplier_meta_types,
         all_perf_cols, required_perf_cols, all_col_types,
     )
 
@@ -320,9 +399,11 @@ def _build_derived_structures():
     cumulative_columns,
     momentaan_columns,
     diff_columns,
+    monotonic_columns,
     model_column_order,
     model_column_type,
     allowed_supplier_metadata_columns,
+    supplier_metadata_dtypes,
     all_performance_data_columns,
     required_performance_data_columns,
     performance_column_dtypes,
@@ -479,6 +560,15 @@ def interval_column(column: str) -> str | None:
     return interval_by_cumulative.get(column)
 
 
+# The interval columns of the monotonic cumulative variables: what the project
+# average and the gap fill operate on. Resolved through ComplementVariabele, so
+# a pair that cannot be resolved is absent rather than guessed at.
+monotonic_interval_columns = [
+    _interval
+    for _cumulative in monotonic_columns
+    if (_interval := interval_column(_cumulative)) is not None
+]
+
 def cumulative_column(column: str) -> str | None:
     """
     The cumulative variable that interval column *column* is derived from.
@@ -508,10 +598,10 @@ def scale_bounds(declared: dict, cadence_minutes=None) -> tuple:
     Both bounds from a ``thresholds_dict`` entry, scaled to a reporting interval.
 
     A ``5-minute`` bound states what one five-minute interval may hold, so a
-    column reporting hourly is judged against twelve times that. Without a
-    cadence the declared bounds are returned unchanged, which is right for a
-    column reporting at the base interval and the only available answer
-    otherwise.
+    column reporting hourly is judged against twelve times that. Called without
+    a cadence it returns the declared bounds, which is the unscaled pair; a
+    caller judging real readings resolves the cadence first, since the declared
+    pair belongs to the base interval and to no other.
 
     Takes the entry rather than the column name so the caller decides which
     threshold table is in force. That matters: a corrected threshold has to take
@@ -523,12 +613,23 @@ def scale_bounds(declared: dict, cadence_minutes=None) -> tuple:
         ``(lower, upper)``. ``pd.NA`` on either side means that side is not
         declared, which is unbounded rather than zero.
     """
-    from etdmap.flags import scale_bound_to_cadence
+    from etdmap.flags import THRESHOLD_BASE_MINUTES, scale_bound_to_cadence
 
     kind = declared.get("ThresholdType")
-    return (
-        scale_bound_to_cadence(declared.get("Min", pd.NA), kind, cadence_minutes),
-        scale_bound_to_cadence(declared.get("Max", pd.NA), kind, cadence_minutes),
+    lower = scale_bound_to_cadence(declared.get("Min", pd.NA), kind, cadence_minutes)
+
+    # The lower bound scales in proportion -- a floor of zero stays zero, and a
+    # signed floor is a rate. The upper bound takes a declared shape, because a
+    # peak plausible for one interval is not plausible sustained across twelve.
+    maximum = declared.get("Max", pd.NA)
+    if kind != "5-minute" or pd.isna(maximum) or pd.isna(cadence_minutes):
+        return lower, maximum
+
+    return lower, scale_upper_bound(
+        maximum,
+        float(cadence_minutes) / THRESHOLD_BASE_MINUTES,
+        declared.get("UpperThresholdSustained", pd.NA),
+        declared.get("UpperThresholdExponent", pd.NA),
     )
 
 

@@ -13,7 +13,6 @@ import pytest
 
 import etdmap
 from etdmap.index_helpers import (
-    DEFAULT_GRID_MINUTES,
     frequency_to_minutes,
     grid_minutes_for_household,
 )
@@ -70,21 +69,34 @@ class TestGridMinutesForHousehold:
         assert grid_minutes_for_household(1) == 5.0
         assert grid_minutes_for_household(2) == 15.0
 
-    def test_a_household_with_no_declared_grid_falls_back(self, batch_table):
-        assert grid_minutes_for_household(3) == float(DEFAULT_GRID_MINUTES)
+    def test_a_household_with_no_declared_grid_raises(self, batch_table):
+        with pytest.raises(ValueError, match="Gegevensfrequentie"):
+            grid_minutes_for_household(3)
 
-    def test_a_household_not_in_the_table_falls_back(self, batch_table):
-        """A household is mapped before its batch row exists, and still has to
-        be processed."""
-        assert grid_minutes_for_household(99) == float(DEFAULT_GRID_MINUTES)
+    def test_a_household_not_in_the_table_raises(self, batch_table):
+        """Mapping a household whose batch row is not yet synced would pad it to
+        a grid nobody declared, and the index would then say otherwise."""
+        with pytest.raises(ValueError, match="not in the household batch table"):
+            grid_minutes_for_household(99)
 
-    def test_no_batch_table_at_all_falls_back(self):
+    def test_no_batch_table_at_all_raises(self):
         previous = etdmap.options.household_batch_csv_path
         etdmap.options.household_batch_csv_path = None
         try:
-            assert grid_minutes_for_household(1) == float(DEFAULT_GRID_MINUTES)
+            with pytest.raises(ValueError, match="household_batch_csv_path"):
+                grid_minutes_for_household(1)
         finally:
             etdmap.options.household_batch_csv_path = previous
+
+    def test_the_message_names_the_household(self, batch_table):
+        with pytest.raises(ValueError, match="Household 99"):
+            grid_minutes_for_household(99)
+
+    def test_it_points_at_the_data_model(self, batch_table):
+        """The grid is declared metadata, so the fix is a sync, not a code
+        change."""
+        with pytest.raises(ValueError, match="data model"):
+            grid_minutes_for_household(99)
 
 
 class TestEnsureIntervalsUsesTheGridItIsGiven:
