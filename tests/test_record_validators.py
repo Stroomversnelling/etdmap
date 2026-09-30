@@ -5,7 +5,7 @@ import etdmap.record_validators as record_validators
 from etdmap.data_model import cumulative_columns, interval_column
 from etdmap.index_helpers import read_metadata
 from etdmap.record_validators import (
-    columns_5min_momentaan,
+    columns_with_value_bounds,
     record_flag_conditions,
     validate_thresholds_combined,
 )
@@ -34,7 +34,7 @@ def test_record_flag_conditions():
     )
 
     # check all momentaal column-checks are in record-validator keys
-    assert all('validate_' + col in record_flag_conditions for col in columns_5min_momentaan)
+    assert all('validate_' + col in record_flag_conditions for col in columns_with_value_bounds)
     special_checks = (
         "validate_reading_date_unique",
         "validate_300sec",
@@ -47,6 +47,34 @@ def test_record_flag_conditions():
 
     # check if each value in dict is a function
     assert all(callable(value) for value in record_flag_conditions.values())
+
+
+# ---------------------------------------------------------------------------
+# Which ThresholdTypes get a per-column bound check. Pins the rule rather than
+# today's thresholds.csv, so it holds as types are added to the data model.
+# ---------------------------------------------------------------------------
+
+class TestWhichThresholdsGetAPerColumnCheck:
+    CHECKED_PER_READING = {"5-minute", "momentaan", "algemeen"}
+
+    def test_selection_matches_the_rule_exactly(self):
+        thresholds = record_validators.thresholds_df
+        selected = set(columns_with_value_bounds)
+        for _, row in thresholds.iterrows():
+            expected = row["ThresholdType"] in self.CHECKED_PER_READING
+            assert (row["Variabele"] in selected) is expected, row["Variabele"]
+
+    def test_a_cumulative_total_is_not_checked_per_reading(self):
+        """A meter total is checked by the cumulative-diff category instead."""
+        thresholds = record_validators.thresholds_df
+        cumulative = thresholds[thresholds["ThresholdType"] == "cumulatief"]["Variabele"]
+        assert not set(cumulative) & set(columns_with_value_bounds)
+
+    def test_every_selected_column_got_a_validator(self):
+        assert all(
+            "validate_" + col in record_flag_conditions
+            for col in columns_with_value_bounds
+        )
 
 
 # ---------------------------------------------------------------------------

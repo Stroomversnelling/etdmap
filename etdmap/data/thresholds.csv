@@ -89,6 +89,6 @@ ZonopwekVerbruikDiff,5-minute,kWh,0.0,,,,
 TemperatuurWaterOmgeving,momentaan,graden C,0.0,99.0,,,
 Ventilatievoud,momentaan,1 / uur,0.0,99.0,,,
 WarmteproductieWarmTapwaterDiff,5-minute,GJ,0.0,0.0576,,,"bij COP = 10, wp+boiler+booster"
-ZelfgebruikPercentage,5-minute,procenten,0.0,100.0,,,
+ZelfgebruikPercentage,algemeen,procenten,0.0,100.0,,,
 ElektriciteitsgebruikWarmtepompInternDiff,5-minute,kWh,0.0,,,,
 ElektriciteitsgebruikCollectiefPomp,5-minute,kWh,0.0,,,,Bovengrens is afhankelijk van aantal woningen en topologie van netwerk. Een max van 1 kWh per woning per uur lijkt een solide bovengrens. Daar zou het nooit bovenuit mogen komen. 

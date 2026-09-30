@@ -165,7 +165,7 @@ Energieverbruik,PrestatiedataBerekend,ZonopwekVerbruikDiff,"['L', 34]",ZonopwekV
 Temperatuur,Prestatiedata,TemperatuurWaterOmgeving,,,,graden C,,,,number,nee,Bronfrequentie,,,nee,nee,ja,,,,,0.0,99.0,,momentaan,avg,avg,True,"['L', 1, 2, 3]",0.0,,,nee,
 Luchtkwaliteit,PrestatiedataBerekendMomentaan,Ventilatievoud,"['L', 34]",,,1 / uur,,,,number,nee,Bronfrequentie,,,nee,nee,ja,,,,,0.0,99.0,,momentaan,avg,avg,True,"['L', 1, 2, 3]",0.0,,,nee,
 Energieproductie,PrestatiedataBerekend,WarmteproductieWarmTapwaterDiff,"['L', 34]",WarmteproductieWarmTapwater,,GJ,,,,number,nee,Bronfrequentie,,,nee,ja,nee,,,,,0.0,0.0576,"bij COP = 10, wp+boiler+booster",5-minute,avg,sum,True,"['L', 1, 2, 3]",58.0,,,nee,
-Energieverbruik,PrestatiedataBerekend,ZelfgebruikPercentage,"['L', 34]",,,procenten,,,,number,nee,Bronfrequentie,,,nee,ja,nee,,,,,0.0,100.0,,5-minute,derive,derive,True,"['L', 1, 2, 3]",0.0,,,nee,
+Energieverbruik,PrestatiedataBerekend,ZelfgebruikPercentage,"['L', 34]",,,procenten,,,,number,nee,Bronfrequentie,,,nee,ja,nee,,,,,0.0,100.0,,algemeen,derive,derive,True,"['L', 1, 2, 3]",0.0,,,nee,
 Energieverbruik,PrestatiedataBerekend,ElektriciteitsgebruikWarmtepompInternDiff,"['L', 34]",ElektriciteitsgebruikWarmtepompIntern,,kWh,,,,number,nee,Bronfrequentie,,,nee,ja,nee,,,,,0.0,,,5-minute,avg,sum,True,"['L', 1, 2, 3]",0.0,,,nee,
 Admin,Metadata,BatchIdBSV,"['L', 34]",,ja,,nee,ja,ja,integer,ja,vaste waarde,ETD,Stroomversnelling,nee,nee,nee,code toegekend door Stroomversnelling,nee,,,,,,,,,False,"['L', 1, 2, 3]",,,,,
 Admin,Metadata,HuisBatchIdBSV,"['L', 34]",,ja,,nee,ja,ja,integer,ja,vaste waarde,ETD,Stroomversnelling,nee,nee,nee,code toegekend door Stroomversnelling,nee,,,,,,,,,False,"['L', 1, 2, 3]",,,,,

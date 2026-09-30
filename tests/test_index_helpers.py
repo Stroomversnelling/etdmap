@@ -20,7 +20,7 @@ from etdmap.index_helpers import (
     get_bsv_metadata,
     read_metadata,
 )
-from etdmap.record_validators import columns_5min_momentaan, record_flag_conditions
+from etdmap.record_validators import columns_with_value_bounds, record_flag_conditions
 
 
 def test_read_metadata(valid_metadata_file, invalid_metadata_file):
@@ -84,7 +84,7 @@ def test_creation_validation_columns_index_data_files(mapped_fixtures, request):
         "validate_" + interval_column(col) + "_outliers" in df_hh.columns
         for col in cumulative_columns
     )
-    assert all('validate_' + col in df_hh.columns for col in columns_5min_momentaan)
+    assert all('validate_' + col in df_hh.columns for col in columns_with_value_bounds)
 
     # Check the index.parquet file
     df_index = pd.read_parquet(os.path.join(folder_path, 'index.parquet'), dtype_backend="numpy_nullable")
@@ -246,12 +246,12 @@ def _diff_json(a, b, path=""):
 
 def _classify_metadata_diffs(results, expected_json, generated_json):
     """
-    Splits diff results into new columns (model expanded → warn only) and real failures.
+    Splits diff results into new columns (model expanded -> warn only) and real failures.
 
-    "Missing in first" means the column is in generated but not in the fixture — this
+    "Missing in first" means the column is in generated but not in the fixture -- this
     is expected when the data model grows and the fixture hasn't been regenerated yet.
 
-    "Missing in second" means the fixture has a column that generated output lost — that
+    "Missing in second" means the fixture has a column that generated output lost -- that
     is a regression and counts as a failure.
 
     The num_columns count mismatch is suppressed as a failure only when it is fully
@@ -271,7 +271,7 @@ def _classify_metadata_diffs(results, expected_json, generated_json):
     expected_n = expected_json.get("num_columns", 0)
     generated_n = generated_json.get("num_columns", 0)
     if num_col_diffs and generated_n == expected_n + len(new_col_diffs) and not failure_diffs:
-        pass  # num_columns difference is fully accounted for by new columns → warn only
+        pass  # num_columns difference is fully accounted for by new columns -> warn only
     else:
         failure_diffs.extend(num_col_diffs)
 
@@ -313,7 +313,7 @@ def test_files_equal_expected(mapped_fixtures, load_metadata):
 
         if new_cols:
             warnings.warn(
-                f"metadata_{name}.json fixture is outdated — {len(new_cols)} new column(s) in "
+                f"metadata_{name}.json fixture is outdated -- {len(new_cols)} new column(s) in "
                 f"generated output not yet in fixture: {new_cols}. "
                 "Regenerate: python tests/test_helpers.py (see test docstring for details).",
                 UserWarning,
@@ -334,7 +334,7 @@ def test_files_equal_expected(mapped_fixtures, load_metadata):
 
         if sample_new_cols:
             warnings.warn(
-                f"sample_{name}.parquet fixture is outdated — new column(s) not in sample "
+                f"sample_{name}.parquet fixture is outdated -- new column(s) not in sample "
                 f"fixture: {sample_new_cols}. "
                 "Regenerate: python tests/test_helpers.py (see test docstring for details).",
                 UserWarning,

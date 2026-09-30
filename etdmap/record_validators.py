@@ -139,7 +139,7 @@ def validate_columns(df: DataFrame, columns: list, condition_func) -> Series:
         return condition
     else:
         logging.debug(
-            f"[record_validators] Cannot validate {columns}: column(s) not in DataFrame — returning NA."
+            f"[record_validators] Cannot validate {columns}: column(s) not in DataFrame -- returning NA."
         )
         return pd.Series(pd.NA, dtype='boolean', index=df.index)
 
@@ -298,16 +298,17 @@ def validate_not_outliers(x: pd.DataFrame):
 
 
 def create_validate_momentaan(
-        columns_5min_momentaan: list,
+        columns_with_value_bounds: list,
         record_flag_conditions: dict
         ) -> None:
     """
-    Create validation functions for momentary columns and add them to the record_flag_conditions dictionary.
+    Create validation functions for columns whose declared bound applies to a
+    single reading, and add them to the record_flag_conditions dictionary.
 
     Parameters
     ----------
-    columns_5min_momentaan : list
-        List of column names for momentary data.
+    columns_with_value_bounds : list
+        Column names whose Min/Max can be checked against one reading.
     record_flag_conditions : dict
         Dictionary to store the validation functions.
 
@@ -315,7 +316,7 @@ def create_validate_momentaan(
     -------
     None
     """
-    for col in columns_5min_momentaan:
+    for col in columns_with_value_bounds:
         def validate_momentaan(df: DataFrame, col=col) -> Series:
             # Checks thresholds
             condition_func = condition_func_threshold(col)
@@ -381,12 +382,15 @@ record_quality_flag_conditions = {
     'validate_thresholds_combined': validate_thresholds_combined,
 }
 
-# Category 2: per-column momentaan / 5-minute threshold checks
+# Category 2: per-column threshold checks, for every type whose bound applies to
+# a single reading. 'cumulatief' is excluded because a meter total is checked by
+# category 3 instead. 'algemeen' is a dimensionless bound, such as a percentage,
+# which holds at any cadence and so is checkable per reading.
 momentaan_flag_conditions: dict = {}
-columns_5min_momentaan = thresholds_df[
-    thresholds_df['ThresholdType'].isin(['5-minute', 'momentaan'])
+columns_with_value_bounds = thresholds_df[
+    thresholds_df['ThresholdType'].isin(['5-minute', 'momentaan', 'algemeen'])
 ]['Variabele']
-create_validate_momentaan(columns_5min_momentaan, momentaan_flag_conditions)
+create_validate_momentaan(columns_with_value_bounds, momentaan_flag_conditions)
 
 # Category 3: cumulative diff outlier checks (negative / statistical)
 cumulative_diff_flag_conditions: dict = {}
