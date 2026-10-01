@@ -7,7 +7,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 # Maps the data model's "Type variabele" values to pandas dtype strings.
-# This mapping belongs in code, not data — it's a fixed translation layer.
+# This mapping belongs in code, not data -- it's a fixed translation layer.
 _DTYPE_MAP = {
     "number": "Float64",
     "date": "datetime64[ns]",
@@ -40,7 +40,7 @@ def load_etdmodel() -> pd.DataFrame:
         import etdmap
         etdmap.options.etdmodel_csv_path = "/path/to/my_model.csv"
 
-    The CSV can be updated by any tooling that writes to that path — the
+    The CSV can be updated by any tooling that writes to that path -- the
     derived structures (cumulative_columns, model_column_order, etc.) update
     automatically on next import.
 
@@ -280,7 +280,7 @@ def get_aggregation_config() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Derived structures — built once at import time from load_etdmodel().
+# Derived structures -- built once at import time from load_etdmodel().
 # Change the CSV (or set etdmap.options.etdmodel_csv_path) to update these.
 # ---------------------------------------------------------------------------
 
@@ -304,7 +304,7 @@ def _build_derived_structures():
 
     # Cumulative meter-reading columns.
     # Exclude date-type columns (ReadingDate may be flagged Cumulatief in some
-    # CSV versions — filtering by type is more robust than filtering by name).
+    # CSV versions -- filtering by type is more robust than filtering by name).
     # The order of this list does not affect correctness.
     cumulative = df[
         (df["Cumulatief"] == "ja") & (df["Type variabele"] != "date")
@@ -334,7 +334,7 @@ def _build_derived_structures():
 
     # Performance columns that carry a declared Volgorde, in that order.
     # Scope: Entiteit == "Prestatiedata" ONLY. This is an ordering convenience,
-    # NOT a statement about which columns a supplier may deliver — any data
+    # NOT a statement about which columns a supplier may deliver -- any data
     # model column is valid raw data. Do NOT use this as a membership test
     # (use all_col_types) or as the derivation target universe (use all_perf_cols).
     # See etdmap/DECISIONS.md ADR-001 for the rationale.
@@ -422,8 +422,43 @@ data_analysis_columns = model_column_order
 thresholds_dict = load_thresholds_as_dict()
 
 
+def load_projects() -> pd.DataFrame:
+    """
+    Load the project registry.
+
+    Returns an empty frame when the file has not been synced yet. A consumer
+    that needs a project's physical model raises then, naming the projects it
+    could not resolve -- an unsynced registry must be loud, never a default.
+    """
+    projects_file = files("etdmap.data").joinpath("projects.csv")
+    if not projects_file.is_file():
+        return pd.DataFrame(
+            columns=["Dataleverancier", "ProjectIdBSV", "FysischModel"]
+        )
+    return pd.read_csv(
+        projects_file,
+        dtype={
+            "Dataleverancier": "string",
+            "ProjectIdBSV": "Int64",
+            "FysischModel": "string",
+        },
+        na_values=["n.a.", "NA", "N/A", ""],
+        keep_default_na=True,
+    )
+
+
+# The physical model each project's households follow, keyed by ProjectIdBSV.
+# Built once at import like the threshold tables: rule selection reads it per
+# row, and a per-row lookup cannot afford a file read.
+physical_model_by_project = {
+    int(row.ProjectIdBSV): str(row.FysischModel)
+    for row in load_projects().itertuples()
+    if pd.notna(row.ProjectIdBSV) and pd.notna(row.FysischModel)
+}
+
+
 # ---------------------------------------------------------------------------
-# Tariff register pairs (Hoog/Laag) — derived from etdmodel.csv variable names.
+# Tariff register pairs (Hoog/Laag) -- derived from etdmodel.csv variable names.
 # Hoog = peak tariff register, Laag = off-peak. Suppliers report either the
 # combined root (single-tariff meter) or the split pair (multi-tariff meter).
 # Consumers use these structures to reason about which side of a pair has data.

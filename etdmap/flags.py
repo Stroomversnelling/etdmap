@@ -407,3 +407,54 @@ def frozen_spans(
             )
 
     return pd.DataFrame(rows, columns=list(_SPAN_DTYPES)).astype(_SPAN_DTYPES)
+
+
+#: One line per member, saying what the flag means. Kept here beside the class
+#: so a new flag and its meaning land in one change. Every single-bit member
+#: must appear; a test enforces it.
+DESCRIPTIONS = {
+    "OUT_OF_BOUNDS_LOW": "Below the range declared for the variable.",
+    "OUT_OF_BOUNDS_HIGH": "Above the range declared for the variable.",
+    "CUMULATIVE_JUMP_BACK": (
+        "A cumulative variable decreased and then returned to at least its "
+        "previous value."
+    ),
+    "CUMULATIVE_REPEAT_NEGATIVE": "A cumulative variable decreased more than once in succession.",
+    "CUMULATIVE_METER_RESET": (
+        "A cumulative variable decreased and then counted up from the lower "
+        "value."
+    ),
+    "CUMULATIVE_NO_RECOVERY": "A cumulative variable decreased and never increased again.",
+    "CUMULATIVE_ZERO_TOTAL": "A cumulative variable read zero after it had accumulated.",
+    "FROZEN_SPAN": "A cumulative variable did not advance while consumption continued.",
+    "CATCHUP": "The reading a frozen span's accumulated consumption arrives in.",
+    "FILLED_DOWN": "A value carried forward from an earlier reading.",
+    "FILLED_ZERO": "A zero written for a device the household does not have.",
+    "FIRST_ZERO": "The zero at a household's first interval.",
+    "NULLED": "A value blanked to pd.NA.",
+    "CUMULATIVE_CONSTRUCTED": "A cumulative column built from the delivered interval column.",
+    "NOT_CHANGED": "A value mapping examined and left as delivered.",
+}
+
+
+def flag_kind(flag) -> str:
+    """``"signal"`` or ``"action"``, read from the flag class's own composites.
+
+    A signal names a condition a value was found in; an action names something a
+    stage did to it. Both flag classes declare the split as ``SIGNALS`` and
+    ``ACTIONS`` composite members, and those are the reference -- a second list
+    of which flag is which drifts from them silently, so nothing keeps one.
+
+    Raises ``ValueError`` for a member in both or in neither, which is a flag
+    that was added without being categorised.
+    """
+    owner = type(flag)
+    is_signal = bool(flag & owner.SIGNALS)
+    is_action = bool(flag & owner.ACTIONS)
+    if is_signal == is_action:
+        raise ValueError(
+            f"{owner.__name__}.{flag.name} is in "
+            f"{'both' if is_signal else 'neither'} of SIGNALS and ACTIONS. "
+            f"Every single-bit member must be in exactly one."
+        )
+    return "signal" if is_signal else "action"

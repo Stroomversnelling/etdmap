@@ -100,6 +100,74 @@ class TestItLeavesDeliveredCumulativesAlone:
         assert (_flags(df, CUM) & MappingFlag.CUMULATIVE_CONSTRUCTED.value).all()
 
 
+class TestAnInventedCumulativeDoesNotBlockConstruction:
+    """Only delivered values block construction. A cumulative holding nothing
+    but invented zeros -- written for a device the household was assumed not
+    to have -- reports nothing the meter said, and left in place its zeros
+    would later be diffed over the delivered intervals."""
+
+    def test_a_zero_filled_cumulative_is_replaced_by_the_construction(self):
+        from etdmap.mapping_helpers import fill_zeros_for_device_not_installed
+
+        df = _frame([0.5, 1.0, 0.25, 2.0])
+        fill_zeros_for_device_not_installed(df, columns=[CUM])
+        construct_cumulative_from_interval(df)
+        assert df[CUM].astype(float).tolist() == pytest.approx([0.5, 1.5, 1.75, 3.75])
+        assert (_flags(df, CUM) & MappingFlag.CUMULATIVE_CONSTRUCTED.value).all()
+
+    def test_the_delivered_intervals_survive_the_whole_chain(self):
+        """The collision the guard exists to prevent: zeros invented before
+        the pipeline, then add_diff_columns replacing the delivered intervals
+        with diffs of those zeros."""
+        from etdmap.mapping_helpers import (
+            add_diff_columns,
+            fill_zeros_for_device_not_installed,
+        )
+
+        df = _frame([0.5, 1.0, 0.25, 2.0])
+        fill_zeros_for_device_not_installed(df, columns=[CUM])
+        construct_cumulative_from_interval(df)
+        before = df[DIFF].astype(float).tolist()
+        out = add_diff_columns(df, context="constructed over invented zeros")
+        assert out[DIFF].astype(float).tolist() == pytest.approx(before)
+
+    def test_a_delivered_value_with_a_finding_still_blocks(self):
+        """A signal is an observation about a delivered value, not an
+        invention: the value is still what the meter reported."""
+        from etdmap.flags import set_flags
+
+        df = _frame([0.5, 0.5], cumulative=[100.0, 100.5])
+        set_flags(
+            df, CUM,
+            pd.Series([True, False], index=df.index),
+            MappingFlag.OUT_OF_BOUNDS_HIGH,
+        )
+        construct_cumulative_from_interval(df)
+        assert df[CUM].astype(float).tolist() == pytest.approx([100.0, 100.5])
+        assert not (_flags(df, CUM) & MappingFlag.CUMULATIVE_CONSTRUCTED.value).any()
+
+    def test_one_delivered_reading_among_invented_zeros_still_blocks(self):
+        from etdmap.flags import set_flags
+
+        df = _frame([0.5, 0.5, 0.5], cumulative=[0.0, 100.5, 0.0])
+        set_flags(
+            df, CUM,
+            pd.Series([True, False, True], index=df.index),
+            MappingFlag.FILLED_ZERO,
+        )
+        construct_cumulative_from_interval(df)
+        assert float(df[CUM].iloc[1]) == pytest.approx(100.5)
+        assert not (_flags(df, CUM) & MappingFlag.CUMULATIVE_CONSTRUCTED.value).any()
+
+    def test_values_with_no_findings_column_still_block(self):
+        """Nothing recorded against the values means every one counts as
+        delivered, which is exactly the old guard."""
+        df = _frame([0.5, 0.5], cumulative=[0.0, 0.0])
+        construct_cumulative_from_interval(df)
+        assert df[CUM].astype(float).tolist() == pytest.approx([0.0, 0.0])
+        assert not (_flags(df, CUM) & MappingFlag.CUMULATIVE_CONSTRUCTED.value).any()
+
+
 class TestItNeedsSomethingToBuildFrom:
     def test_an_absent_interval_column_builds_nothing(self):
         df = pd.DataFrame({

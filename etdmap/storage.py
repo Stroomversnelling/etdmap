@@ -28,6 +28,10 @@ import etdmap
 
 _SHARD_PART_RE = _re.compile(r"HuisIdBSV=(\d+)[\\/]HuisBatchIdBSV=(\d+)")
 
+# The flat layout stores one file per household and carries the id only here,
+# so a reader that ignores the name loses the household identity entirely.
+_FLAT_FILE_RE = _re.compile(r"household_(\d+)_table\.parquet$")
+
 
 def detect_mapped_format(mapped_folder_path=None) -> str:
     """
@@ -220,26 +224,89 @@ def read_mapped_households(household_ids, columns=None, mapped_folder_path=None)
 # hive-sharded DIRECTORY (any pipeline stage artifact).
 # ---------------------------------------------------------------------------
 
+def shard_root(path):
+    """Where a directory's hive partitions actually are, or None if it has none.
+
+    A directory holding ``HuisIdBSV=*`` is its own shard root. A stage folder
+    keeps its partitions one level down, under ``sharded/``, beside whatever
+    flat files it also carries. Anything else is flat, however many parquet
+    files sit in it.
+
+    Resolving this is the difference between reading a folder and guessing at
+    it: ``data/mapped`` holds 425 flat ``household_<id>_table.parquet`` files at
+    its root and its partitions under ``sharded/``, so a recursive glob from the
+    root matches both layouts at once and the reader rejects the mixture.
+    """
+    p = str(path)
+    if not os.path.isdir(p):
+        return None
+    if _glob.glob(os.path.join(p, "HuisIdBSV=*")):
+        return p
+    nested = os.path.join(p, "sharded")
+    if _glob.glob(os.path.join(nested, "HuisIdBSV=*")):
+        return nested
+    return None
+
+
+def source_layout(path) -> str:
+    """``"file"``, ``"sharded"`` or ``"flat"``.
+
+    The three read differently, so every caller that branches needs all three
+    rather than "is it a directory". A flat directory carries the household
+    identity in its file names and nowhere else, so reading it as shards
+    returns rows with no ``HuisIdBSV`` at all and raises nothing.
+    """
+    if not os.path.isdir(str(path)):
+        return "file"
+    return "sharded" if shard_root(path) is not None else "flat"
+
+
 def source_is_sharded(path) -> bool:
-    """True when path is a directory (read as hive shards)."""
-    return os.path.isdir(str(path))
+    """True when path holds hive partitions.
+
+    Not "is a directory": a directory of flat per-household files is a
+    directory and is not hive-partitioned, and those are different questions
+    with different answers.
+    """
+    return source_layout(path) == "sharded"
+
+
+def source_is_directory(path) -> bool:
+    """True for either directory layout, i.e. anything that is not one file."""
+    return source_layout(path) != "file"
 
 
 def shard_glob(path) -> str:
-    """Recursive parquet glob under a shard directory."""
-    return os.path.join(str(path), "**", "*.parquet")
+    """Recursive parquet glob under the directory's resolved shard root."""
+    root = shard_root(path)
+    if root is None:
+        raise ValueError(
+            f"{path} holds no HuisIdBSV=* partitions, at its root or under "
+            f"sharded/, so it has no shard glob. Check source_layout first."
+        )
+    return os.path.join(root, "**", "*.parquet")
+
+
+def flat_glob(path) -> str:
+    """The per-household files directly under a flat directory."""
+    return os.path.join(str(path), "household_*_table.parquet")
 
 
 def resolve_source_path(folder, artifact_name: str):
     """
     Resolve a stage artifact inside a folder: the hive shard DIRECTORY named
-    ``<artifact_name>`` when present, else the legacy single file
-    ``<artifact_name>.parquet``. Returns the path (existence of the fallback
-    file is NOT checked -- callers keep their own not-found handling).
+    ``<artifact_name>`` -- directly in the folder or under its ``sharded``
+    area, where the sharded pipeline writes its stage outputs -- when
+    present, else the legacy single file ``<artifact_name>.parquet``.
+    Returns the path (existence of the fallback file is NOT checked --
+    callers keep their own not-found handling).
     """
-    dir_candidate = os.path.join(str(folder), artifact_name)
-    if os.path.isdir(dir_candidate):
-        return dir_candidate
+    for candidate in (
+        os.path.join(str(folder), artifact_name),
+        os.path.join(str(folder), "sharded", artifact_name),
+    ):
+        if os.path.isdir(candidate):
+            return candidate
     return os.path.join(str(folder), f"{artifact_name}.parquet")
 
 
@@ -269,18 +336,27 @@ def source_read_targets(path, household_ids=None):
         A single path/glob, or one glob per requested household.
     """
     p = str(path)
-    if not source_is_sharded(p):
+    layout = source_layout(p)
+    if layout == "file":
         return p
     if household_ids is None:
-        return shard_glob(p)
+        return shard_glob(p) if layout == "sharded" else flat_glob(p)
     wanted = sorted({int(h) for h in household_ids})
     if not wanted:
         raise ValueError(
             f"No households requested for {p}; pass None to read them all."
         )
+    root = shard_root(p) if layout == "sharded" else None
     targets, absent = [], []
     for household_id in wanted:
-        shard_dir = os.path.join(p, f"HuisIdBSV={household_id}")
+        if layout == "flat":
+            flat_file = os.path.join(p, f"household_{household_id}_table.parquet")
+            if os.path.exists(flat_file):
+                targets.append(flat_file)
+            else:
+                absent.append(household_id)
+            continue
+        shard_dir = os.path.join(root, f"HuisIdBSV={household_id}")
         if os.path.isdir(shard_dir):
             targets.append(os.path.join(shard_dir, "**", "*.parquet"))
         else:
@@ -312,11 +388,13 @@ def source_schema_types(path) -> dict:
     """
     import pyarrow.parquet as _pq
     p = str(path)
-    if source_is_sharded(p):
+    layout = source_layout(p)
+    if layout != "file":
         types: dict = {}
-        part_files = sorted(_glob.glob(shard_glob(p), recursive=True))
+        pattern = shard_glob(p) if layout == "sharded" else flat_glob(p)
+        part_files = sorted(_glob.glob(pattern, recursive=True))
         if not part_files:
-            raise FileNotFoundError(f"No parquet shards under {p}.")
+            raise FileNotFoundError(f"No parquet files under {p} ({layout} layout).")
         for pf in part_files:
             for field in _pq.read_schema(pf):
                 types.setdefault(field.name, field.type)
@@ -326,9 +404,14 @@ def source_schema_types(path) -> dict:
 
 
 def source_schema_names(path) -> set:
-    """Column-name set of a source, including hive partition ids for a directory."""
+    """Column-name set of a source, including the ids a directory supplies.
+
+    Either directory layout carries the household ids outside the footers --
+    sharded in the partition directories, flat in the file names -- and the
+    frame reader injects them, so both report them here.
+    """
     names = set(source_schema_types(path))
-    if source_is_sharded(path):
+    if source_is_directory(path):
         names |= {"HuisIdBSV", "HuisBatchIdBSV"}
     return names
 
@@ -347,18 +430,29 @@ def read_source_frame(path, columns=None) -> pd.DataFrame:
     """
     import pyarrow.parquet as _pq
     p = str(path)
-    if not source_is_sharded(p):
+    layout = source_layout(p)
+    if layout == "file":
         return pd.read_parquet(p, columns=columns, dtype_backend="numpy_nullable")
-    part_files = sorted(_glob.glob(shard_glob(p), recursive=True))
+    flat = layout == "flat"
+    pattern = flat_glob(p) if flat else shard_glob(p)
+    part_files = sorted(_glob.glob(pattern, recursive=True))
     if not part_files:
-        raise FileNotFoundError(f"No parquet shards under {p}.")
+        raise FileNotFoundError(f"No parquet files under {p} ({layout} layout).")
     frames = []
     for f in part_files:
-        m = _SHARD_PART_RE.search(f)
+        m = (_FLAT_FILE_RE if flat else _SHARD_PART_RE).search(
+            os.path.basename(f) if flat else f
+        )
         if m is None:
             raise ValueError(
-                f"Cannot parse HuisIdBSV/HuisBatchIdBSV from shard path {f!r}."
+                f"Cannot parse the household id from {f!r} ({layout} layout)."
             )
+        # One file per household in the flat layout, so the batch id is the
+        # household id -- the same equivalence mapped_household_files applies.
+        ids = (
+            (int(m.group(1)), int(m.group(1))) if flat
+            else (int(m.group(1)), int(m.group(2)))
+        )
         if columns is None:
             df = pd.read_parquet(f, dtype_backend="numpy_nullable")
             n_rows = len(df)
@@ -378,7 +472,7 @@ def read_source_frame(path, columns=None) -> pd.DataFrame:
                 n_rows = _pq.read_metadata(f).num_rows
                 df = pd.DataFrame(index=range(n_rows))
         for pos, (name, val) in enumerate(
-            (("HuisIdBSV", int(m.group(1))), ("HuisBatchIdBSV", int(m.group(2))))
+            (("HuisIdBSV", ids[0]), ("HuisBatchIdBSV", ids[1]))
         ):
             if name not in df.columns and (columns is None or name in columns):
                 df.insert(min(pos, df.shape[1]), name,
@@ -388,7 +482,7 @@ def read_source_frame(path, columns=None) -> pd.DataFrame:
     if columns is not None:
         missing = [c for c in columns if c not in out.columns]
         if missing:
-            raise ValueError(f"Column(s) {missing} not found in any shard under {p}.")
+            raise ValueError(f"Column(s) {missing} not found in any file under {p}.")
         out = out[list(columns)]
     return out
 
@@ -396,16 +490,27 @@ def read_source_frame(path, columns=None) -> pd.DataFrame:
 def source_sql(path) -> str:
     """
     DuckDB ``read_parquet(...)`` SQL fragment for a source (a plain string;
-    no engine import). Directory sources read the shard glob with
+    no engine import). A sharded source reads the shard glob with
     union_by_name and hive partitioning (ids come from the path).
+
+    Raises ``ValueError`` for a flat directory: it carries the household id only
+    in its file names, so this fragment would produce rows with no ``HuisIdBSV``
+    and no error. Use ``read_source_frame``, which injects the ids.
     """
     def _lit(s) -> str:
         return "'" + str(s).replace("\\", "/").replace("'", "''") + "'"
 
     p = str(path)
-    if source_is_sharded(p):
+    layout = source_layout(p)
+    if layout == "sharded":
         return (
             f"read_parquet({_lit(shard_glob(p))}, "
             f"union_by_name=True, hive_partitioning=True)"
+        )
+    if layout == "flat":
+        raise ValueError(
+            f"{p} is a flat directory: the household id lives in the file names, "
+            f"so SQL over it would silently drop HuisIdBSV. Read it with "
+            f"read_source_frame, or point at the sharded artifact."
         )
     return f"read_parquet({_lit(p)})"

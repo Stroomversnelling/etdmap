@@ -76,12 +76,22 @@ class TestMixedAndFullReads:
         assert list(out.columns) == ["HuisIdBSV"]
         assert out["HuisIdBSV"].tolist() == [4] * 6
 
-    def test_unparseable_shard_path_raises(self, tmp_path):
-        # A parquet not under a HuisIdBSV=/HuisBatchIdBSV= path -> never guess.
+    def test_a_directory_with_no_recognised_layout_raises(self, tmp_path):
+        # No HuisIdBSV=/HuisBatchIdBSV= partitions and no household_<n>_table
+        # files: there is no layout to read, so refuse rather than guess.
         bad = tmp_path / "loose"
         bad.mkdir()
         pd.DataFrame({"value": [1]}).to_parquet(bad / "x.parquet")
-        with pytest.raises(ValueError):
+        with pytest.raises(FileNotFoundError, match="No parquet files"):
+            read_source_frame(tmp_path, columns=["HuisIdBSV"])
+
+    def test_a_stray_parquet_among_real_shards_raises(self, tmp_path):
+        # The original point, on a directory that IS sharded: a parquet sitting
+        # outside the partition directories has no id to read, and a quiet 1:1
+        # fallback would mask multi-batch data.
+        _write_shard(tmp_path, 1, 1, 3, store_id_in_file=False)
+        pd.DataFrame({"value": [1]}).to_parquet(tmp_path / "stray.parquet")
+        with pytest.raises(ValueError, match="household id"):
             read_source_frame(tmp_path, columns=["HuisIdBSV"])
 
 

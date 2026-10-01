@@ -410,10 +410,12 @@ def _detect_negative_diff_cases(group, col):
 
 def _apply_negative_diff_corrections(group, col, cases, context_string):
     """
-    Set the cumulative readings that *cases* condemns to pd.NA.
+    Record what *cases* found and set the readings it condemns to pd.NA.
 
-    Modifies *group* in place, with a single assignment at the end. The four
-    flags resolve to three deletion scopes:
+    Modifies *group* in place, with a single assignment to *col* at the end.
+    Every finding in *cases* is written to the findings column of *col*, on the
+    reading it was observed on, whether or not that reading is removed. The four
+    decrease classifications then resolve to three deletion scopes:
 
     - ``CUMULATIVE_DECREASE_RANGE`` (jump-back or repeat-negative) blanks the
       half-open date range from the dip up to the recovery, accumulated with a
@@ -514,6 +516,19 @@ def _apply_negative_diff_corrections(group, col, cases, context_string):
                 f"Diff is NA, not removing any values."
             )
 
+    # The classification itself, recorded on the reading it describes. Without it
+    # the output says a reading was removed and never which fault condemned it,
+    # and a fault that removes nothing goes unrecorded altogether. The findings
+    # do not share the deletion scopes above: a no-recovery dip condemns every
+    # later reading but is observed on one, and a reset whose interval is NA is
+    # observed without any reading being removed.
+    # cases.flags is aligned to the readings that carried a value, so it is
+    # reindexed back onto the whole group; a reading the classifier never saw has
+    # no finding.
+    findings = cases.flags.reindex(group.index, fill_value=MappingFlag.NONE.value)
+    for flag in MappingFlag.CUMULATIVE_UNUSABLE:
+        set_flags(group, col, (findings & flag.value) != 0, flag)
+
     _removed = pd.Series(na_mask.values, index=group.index) & group[col].notna()
     set_flags(group, col, _removed, MappingFlag.NULLED)
     group.loc[group.index[na_mask.values], col] = pd.NA
@@ -576,8 +591,21 @@ def construct_cumulative_from_interval(df, context: str = "") -> None:
             continue
         if df[interval].isna().all():
             continue
-        if cumulative in df.columns and df[cumulative].notna().any():
-            continue
+        # Only delivered values block construction. A cumulative holding
+        # nothing but invented values -- zeros written for a device the
+        # household does not have -- reports nothing the meter said, and
+        # leaving it in place would later turn into diffs of those zeros
+        # overwriting the delivered intervals. Without a findings column
+        # nothing is recorded against the values, so every one counts.
+        if cumulative in df.columns:
+            delivered = df[cumulative].notna()
+            findings = flag_column(cumulative)
+            if findings in df.columns:
+                delivered &= (
+                    df[findings].fillna(0) & MappingFlag.INVENTED.value
+                ) == 0
+            if delivered.any():
+                continue
 
         # cumsum leaves NA where the interval is absent and resumes from what
         # was accumulated before it, so a gap in the intervals stays a gap in
@@ -1386,17 +1414,40 @@ def fill_zeros_for_device_not_installed(
     -----
     Only meaningful for cumulative variables. The columns are written as
     Float64 so that a missing value is pd.NA rather than a numeric sentinel.
+
+    "Not installed" is an assertion the data can falsify: a delivered value
+    in the column's linked pair -- the interval form of a cumulative, or the
+    cumulative form of an interval -- is the device reporting. Such a column
+    is skipped rather than zeroed, and the standard pipeline constructs the
+    missing form from the delivered one instead.
     """
+    from etdmap.data_model import cumulative_column, interval_column
+
     for col in columns:
-        if col not in df.columns or df[col].isna().all():
-            df[col] = pd.array([0] * len(df), dtype="Float64")
-            # A zero that was invented is not the same as a zero that was
-            # reported, and after this assignment they look identical.
-            set_flags(
-                df, col,
-                pd.Series(True, index=df.index),
-                MappingFlag.FILLED_ZERO,
+        if col in df.columns and not df[col].isna().all():
+            continue
+
+        pair = interval_column(col) or cumulative_column(col)
+        if (
+            pair is not None
+            and pair in df.columns
+            and df[pair].notna().any()
+        ):
+            logging.info(
+                f"Not zero-filling '{col}': its pair '{pair}' holds delivered "
+                f"values, so the device reports and the pipeline will "
+                f"construct '{col}' from it."
             )
+            continue
+
+        df[col] = pd.array([0] * len(df), dtype="Float64")
+        # A zero that was invented is not the same as a zero that was
+        # reported, and after this assignment they look identical.
+        set_flags(
+            df, col,
+            pd.Series(True, index=df.index),
+            MappingFlag.FILLED_ZERO,
+        )
     return df
 
 
