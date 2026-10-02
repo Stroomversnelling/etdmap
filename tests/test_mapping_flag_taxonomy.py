@@ -21,6 +21,7 @@ SIGNALS = {
     MappingFlag.CUMULATIVE_ZERO_TOTAL,
     MappingFlag.FROZEN_SPAN,
     MappingFlag.CATCHUP,
+    MappingFlag.TARIFF_SIMULTANEOUS,
 }
 ACTIONS = {
     MappingFlag.FILLED_DOWN,
@@ -29,6 +30,7 @@ ACTIONS = {
     MappingFlag.NULLED,
     MappingFlag.CUMULATIVE_CONSTRUCTED,
     MappingFlag.NOT_CHANGED,
+    MappingFlag.TARIFF_COMBINED,
 }
 
 
@@ -70,6 +72,11 @@ class TestInventedHoldsActionsOnly:
         information. Excluding them from averaging would discard real data."""
         assert not (MappingFlag.CUMULATIVE_CONSTRUCTED & MappingFlag.INVENTED)
 
+    def test_a_combined_tariff_root_is_not_invented(self):
+        """Same reasoning as the constructed cumulative: the combined root
+        carries what the delivered registers reported."""
+        assert not (MappingFlag.TARIFF_COMBINED & MappingFlag.INVENTED)
+
 
 class TestNotAMeasurement:
     """The one test a project average filters on."""
@@ -100,6 +107,19 @@ class TestNotAMeasurement:
             MappingFlag.CUMULATIVE_CONSTRUCTED & MappingFlag.NOT_A_MEASUREMENT
         )
 
+    def test_a_combined_tariff_root_still_counts_as_a_measurement(self):
+        assert not (
+            MappingFlag.TARIFF_COMBINED & MappingFlag.NOT_A_MEASUREMENT
+        )
+
+    def test_a_simultaneous_tariff_reading_still_counts_as_a_measurement(self):
+        """The signal marks a suspicious delivered pattern; the readings were
+        delivered and removing them from the average is a separate decision
+        no one has taken."""
+        assert not (
+            MappingFlag.TARIFF_SIMULTANEOUS & MappingFlag.NOT_A_MEASUREMENT
+        )
+
 
 class TestValuesAreStable:
     """Bits are written into every mapped dataset. Members are appended, so an
@@ -123,11 +143,17 @@ class TestValuesAreStable:
 
     def test_new_members_were_appended(self):
         for name in ("FIRST_ZERO", "NULLED", "CUMULATIVE_CONSTRUCTED",
-                     "NOT_CHANGED"):
+                     "NOT_CHANGED", "TARIFF_COMBINED", "TARIFF_SIMULTANEOUS"):
             assert MappingFlag[name].value > MappingFlag.FILLED_ZERO.value, (
                 f"{name} was inserted rather than appended, which renumbers "
                 f"every member after it"
             )
+
+    def test_the_tariff_members_took_the_next_free_bits(self):
+        """Appended after NOT_CHANGED: these values are now written into
+        mapped datasets and must never move."""
+        assert MappingFlag.TARIFF_COMBINED.value == 32768
+        assert MappingFlag.TARIFF_SIMULTANEOUS.value == 65536
 
 
 class TestNotChangedIsDerivable:
@@ -136,7 +162,9 @@ class TestNotChangedIsDerivable:
 
     def test_the_action_set_is_named_once(self):
         assert MappingFlag.ACTIONS_TAKEN == (
-            MappingFlag.INVENTED | MappingFlag.CUMULATIVE_CONSTRUCTED
+            MappingFlag.INVENTED
+            | MappingFlag.CUMULATIVE_CONSTRUCTED
+            | MappingFlag.TARIFF_COMBINED
         )
 
     def test_it_holds_every_action_except_not_changed(self):

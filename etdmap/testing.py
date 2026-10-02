@@ -460,7 +460,10 @@ def generate_mapped_dataset(
     meta_df.to_csv(first_mapping_metadata, index=False)
     etdmap.options.bsv_metadata_file = first_mapping_metadata
 
-    index_df, _ = index_helpers.read_index()
+    # Bootstrap: this generates a brand-new synthetic dataset into an empty
+    # folder, so there is no index to look household ids up from and the
+    # sequential assignment is the intended behaviour here.
+    index_df, _ = index_helpers.read_index(allow_missing=True)
     if "Dataleverancier" not in index_df.columns:
         index_df.loc[:, "Dataleverancier"] = "etdmap"
     household_id_pairs = index_helpers.get_household_id_pairs(

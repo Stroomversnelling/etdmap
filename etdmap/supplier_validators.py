@@ -1,16 +1,25 @@
 """
-supplier_validators.py — Generic pre-flight validation for supplier column mappings.
+supplier_validators.py -- Generic pre-flight validation for supplier column mappings.
 
 Validates that every raw column in a supplier's data file has an explicit
 Mapping_Meenemen entry in the ETD DatamodelLeverancier CSV, before any processing starts.
 
 Rules per raw column
 --------------------
-Mapping_Meenemen == 1, Mapping_VariabeleBSV non-empty  → OK (finalized, will be mapped)
-Mapping_Meenemen == 1, Mapping_VariabeleBSV empty      → ERROR (says "include" but no target)
-Mapping_Meenemen == 0                                  → OK (explicitly excluded, no mapping needed)
-Mapping_Meenemen missing / NaN                         → ERROR (coverage undefined — must be decided)
-Column not found in CSV at all                         → ERROR (not covered at all)
+Mapping_Meenemen == 1, Mapping_VariabeleBSV non-empty  -> OK (finalized, renamed to it)
+Mapping_Meenemen == 1, Dependent_VariableBSV non-empty -> OK (finalized, CONTRIBUTES
+                                                          to the named target(s)
+                                                          through a combination, so
+                                                          Mapping_VariabeleBSV is
+                                                          legitimately empty)
+Mapping_Meenemen == 1, both empty                      -> ERROR (says "include" but no target)
+Mapping_Meenemen == 0                                  -> OK (explicitly excluded, no mapping needed)
+Mapping_Meenemen missing / NaN                         -> ERROR (coverage undefined -- must be decided)
+Column not found in CSV at all                         -> ERROR (not covered at all)
+
+Two declaration styles exist and both are complete. Reading only
+Mapping_VariabeleBSV is blind to every combination-declared column: before
+2026-10-01 this validator rejected those rows as errors.
 
 The function returns a list of human-readable error strings. An empty list means
 all columns are covered. The caller decides whether to raise or log.
@@ -80,9 +89,21 @@ def _build_column_map(
             else str(target_variable).strip()
         )
 
+        # A raw column may instead CONTRIBUTE to one or more BSV variables
+        # through a downstream combination, declared by leaving
+        # Mapping_VariabeleBSV empty and naming the target(s) in
+        # Dependent_VariableBSV (comma-separated for several targets). That
+        # is a complete mapping declaration, not a missing one.
+        dependent_raw = row.get("Dependent_VariableBSV", None)
+        dependent_targets = (
+            [] if (dependent_raw is None or pd.isna(dependent_raw))
+            else [t.strip() for t in str(dependent_raw).split(",") if t.strip()]
+        )
+
         column_map[source_variable] = {
             "include": include,
             "target_variable": target_variable,
+            "dependent_targets": dependent_targets,
         }
 
     return column_map
@@ -129,7 +150,7 @@ def validate_mapping_coverage(
     for col in raw_columns:
         if col in skip:
             logging.debug(
-                f"[validate_mapping_coverage] '{col}' in skip_columns — skipping."
+                f"[validate_mapping_coverage] '{col}' in skip_columns -- skipping."
             )
             continue
 
@@ -155,10 +176,18 @@ def validate_mapping_coverage(
                 f"Set to 1 (include with BSV target) or 0 (explicitly exclude)."
             )
         elif include == 1.0:
-            if target_variable is None:
+            dependent_targets = entry["dependent_targets"]
+            if target_variable is None and not dependent_targets:
                 errors.append(
                     f"Column '{col}' ({project_label}): Mapping_Meenemen=1 but "
-                    f"Mapping_VariabeleBSV is empty. Add the BSV target column name."
+                    f"neither Mapping_VariabeleBSV nor Dependent_VariableBSV is "
+                    f"set. Name the BSV target column it is renamed to, or the "
+                    f"target(s) it contributes to through a combination."
+                )
+            elif target_variable is None:
+                logging.debug(
+                    f"[validate_mapping_coverage] '{col}' contributes to "
+                    f"{dependent_targets} through a combination (finalized). OK."
                 )
             else:
                 logging.debug(
@@ -270,7 +299,7 @@ def run_mapping_coverage_preflight(
     supplier : str
         Supplier name.
     project_files : dict[str, list[Path]]
-        {project_folder_name: [parquet_path, ...]} — as collected before the
+        {project_folder_name: [parquet_path, ...]} -- as collected before the
         processing loop. Each parquet file is read to discover its columns;
         only unique column names are checked.
     skip_columns : set of str, optional
@@ -289,14 +318,14 @@ def run_mapping_coverage_preflight(
 
     all_errors: list[str] = []
 
-    # Build site→ProjectIdBSV map if project-level validation is requested
+    # Build site->ProjectIdBSV map if project-level validation is requested
     site_to_project_id: dict = {}
     if raw_project_col is not None and project_table_csv is not None:
         project_df = _load_project_table(project_table_csv)
         site_to_project_id = _build_site_to_project_id_map(project_df, supplier=supplier)
         if not site_to_project_id:
             logging.warning(
-                f"[run_mapping_coverage_preflight] Site->ProjectIdBSV map is empty — "
+                f"[run_mapping_coverage_preflight] Site->ProjectIdBSV map is empty -- "
                 f"check Project table CSV at {project_table_csv}. "
                 f"Falling back to supplier-level validation."
             )
@@ -324,13 +353,13 @@ def run_mapping_coverage_preflight(
                         break
                 except Exception as e:
                     logging.warning(
-                        f"[run_mapping_coverage_preflight] Could not read {path}: {e} — trying next."
+                        f"[run_mapping_coverage_preflight] Could not read {path}: {e} -- trying next."
                     )
 
             if folder_project_id is None:
                 raise RuntimeError(
                     f"[run_mapping_coverage_preflight] Could not determine ProjectIdBSV "
-                    f"for folder '{project_folder}' — no file in the folder returned a "
+                    f"for folder '{project_folder}' -- no file in the folder returned a "
                     f"recognisable site value. Known sites: {list(site_to_project_id.keys())}. "
                     f"Update ProjectIdLeverancier in the source Project table to match the "
                     f"exact values in the '{raw_project_col}' column of the raw parquet files, "

@@ -615,6 +615,34 @@ def cumulative_column(column: str) -> str | None:
     return cumulative_by_interval.get(column)
 
 
+def parse_device_declaration(cell) -> set:
+    """Parse a household's device or variable declaration cell into a set.
+
+    Metadata tables holds comma-separated performance
+    variable names (cumulative device forms, e.g.
+    ``ElektriciteitsgebruikRadiator``). Shared by the mappers and the
+    index/metadata path so the two never parse differently.
+
+    NA, empty and whitespace-only cells are an empty declaration. Every
+    parsed name must be a performance variable the data model knows --
+    an unknown name is inconsistent metadata, which is always a hard
+    failure (same contract as the sync's completeness check), so it
+    raises rather than passing a typo through as a silently-ignored
+    declaration.
+    """
+    if cell is None or pd.isna(cell) or str(cell).strip() == "":
+        return set()
+    names = {part.strip() for part in str(cell).split(",") if part.strip()}
+    unknown = names - set(performance_column_dtypes)
+    if unknown:
+        raise ValueError(
+            f"Device declaration names unknown to the data model: "
+            f"{sorted(unknown)}. Correct the household metadata "
+            f"(ApparaatOntbrekend / GegevensOntbrekend)."
+        )
+    return names
+
+
 def cadence_lookup_names(column: str) -> list[str]:
     """
     The names *column*'s cadence may be recorded under.

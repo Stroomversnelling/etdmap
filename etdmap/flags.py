@@ -83,6 +83,17 @@ class MappingFlag(IntFlag):
     # was left alone from one no stage reached.
     NOT_CHANGED = auto()
 
+    # The tariff root was written as the sum of its delivered Hoog/Laag
+    # registers. Like CUMULATIVE_CONSTRUCTED, the value carries what the
+    # delivered registers reported, so it is neither INVENTED nor excluded
+    # from measurement.
+    TARIFF_COMBINED = auto()
+
+    # Both tariff registers delivered a nonzero value at the same reading.
+    # Peak and off-peak registers alternate, so simultaneous consumption on
+    # both is a suspicious delivered pattern. Observation only.
+    TARIFF_SIMULTANEOUS = auto()
+
     # The two categories, declared rather than left to a comment. A signal names
     # something observed about a value; an action names something the pipeline
     # did to it. Every single-bit member belongs to exactly one, which a test
@@ -97,6 +108,7 @@ class MappingFlag(IntFlag):
         | CUMULATIVE_ZERO_TOTAL
         | FROZEN_SPAN
         | CATCHUP
+        | TARIFF_SIMULTANEOUS
     )
     ACTIONS = (
         FILLED_DOWN
@@ -105,6 +117,7 @@ class MappingFlag(IntFlag):
         | NULLED
         | CUMULATIVE_CONSTRUCTED
         | NOT_CHANGED
+        | TARIFF_COMBINED
     )
 
     # Faults whose affected readings run from the decrease to the recovery
@@ -120,7 +133,10 @@ class MappingFlag(IntFlag):
     # Every action the pipeline may take on a value, except recording that it
     # took none. NOT_CHANGED is set where this is absent, so the two are
     # defined from one list rather than maintained separately.
-    ACTIONS_TAKEN = INVENTED | CUMULATIVE_CONSTRUCTED
+    # TARIFF_COMBINED is here (an action was taken) but, like
+    # CUMULATIVE_CONSTRUCTED, not in INVENTED: the written value carries what
+    # the delivered registers reported.
+    ACTIONS_TAKEN = INVENTED | CUMULATIVE_CONSTRUCTED | TARIFF_COMBINED
 
     # A cumulative fault that destroys the count. No consumption can be derived
     # across these readings, whatever values they carry.
@@ -434,6 +450,8 @@ DESCRIPTIONS = {
     "NULLED": "A value blanked to pd.NA.",
     "CUMULATIVE_CONSTRUCTED": "A cumulative column built from the delivered interval column.",
     "NOT_CHANGED": "A value mapping examined and left as delivered.",
+    "TARIFF_COMBINED": "A tariff root written as the sum of its delivered Hoog/Laag registers.",
+    "TARIFF_SIMULTANEOUS": "Both tariff registers delivered nonzero at the same reading.",
 }
 
 

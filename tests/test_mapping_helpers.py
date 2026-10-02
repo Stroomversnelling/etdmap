@@ -185,12 +185,22 @@ class TestFillDownInfrequentDevices:
         result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
         assert result[col].iloc[0] == 5.0  # bfilled
 
-    def test_all_na_replaced_with_zero(self):
+    def test_all_na_stays_all_na(self):
+        """A never-seen device column is left untouched. The old remaining-NA
+        -> 0.0 fallback was an implicit absence claim inferred from
+        missingness; absence is now declared per household in the metadata
+        (ApparaatOntbrekend), so this function may only densify a device
+        that actually reports."""
+        from etdmap.flags import flag_column
         col = self._FILL_COLS[0]
         df = pd.DataFrame({col: pd.array([pd.NA] * 3, dtype="Float64")})
         result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
-        assert (result[col] == 0.0).all()
+        assert result[col].isna().all()
         assert result[col].dtype == "Float64"  # no silent downcast on fill
+        # No values were written, so no findings may be recorded either.
+        findings = flag_column(col)
+        if findings in result.columns:
+            assert (result[findings].fillna(0) == 0).all()
 
     def test_ignores_unknown_columns(self):
         df = pd.DataFrame({

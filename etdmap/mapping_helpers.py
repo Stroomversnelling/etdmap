@@ -622,6 +622,128 @@ def construct_cumulative_from_interval(df, context: str = "") -> None:
         )
 
 
+def combine_tariff_registers(df, context: str = "") -> pd.DataFrame:
+    """Combine delivered Hoog/Laag tariff registers into their root column.
+
+    Peak and off-peak registers are two halves of one quantity: the root is
+    their sum wherever either register delivered, and NA only where both are
+    missing -- the same semantics the stats-side synthesis uses, applied per
+    cell. A cell where the root itself was delivered is never overwritten:
+    the delivered root wins and the cell is untouched.
+
+    Every cell this function writes is flagged TARIFF_COMBINED. Like a
+    constructed cumulative, the value carries what the delivered registers
+    reported, so the flag is an action without being INVENTED.
+
+    An interval in which BOTH registers advanced is flagged
+    TARIFF_SIMULTANEOUS on the INTERVAL root, whether or not the root cell
+    was delivered: tariff registers alternate, so consumption on both
+    within one interval is a suspicious delivered pattern. Observation
+    only; nothing is removed.
+
+    Alternation is an INTERVAL property and the flag belongs only to the
+    interval form. Testing "both registers nonzero" on the CUMULATIVE
+    registers is meaningless -- a cumulative reading is a running total, so
+    both tariff counters hold nonzero totals essentially always. Measured on
+    the 2026-10-01 estate remap, that test was true for 103,001 of 103,001
+    delivered readings on one household (100%) and fired on 18.5M Watch-E
+    and 11.3M Factory Zero cells, while the interval test was true for 277
+    of ~74,400 consuming intervals (0.37%). So the cumulative root cell
+    never carries this signal: flagging it would re-create an always-on bit
+    that says nothing. Where only cumulative registers are delivered, the
+    interval each one consumed is its advance between readings, which is
+    what the test uses -- and the flag still lands on the interval root.
+    The surviving 0.37% are the readings worth looking at; an interval in
+    which the tariff switch fell part-way through would advance both
+    registers legitimately, which is the likeliest benign explanation but
+    is not established here.
+
+    Covers the cumulative pairs and the interval (Diff) pairs alike. Call it
+    BEFORE ``add_diff_columns`` so a combined cumulative root produces its
+    Diff naturally; interval splits a supplier delivers directly combine
+    into the Diff root the same way.
+
+    Modifies *df* in place and returns it.
+    """
+    from etdmap.data_model import (
+        cumulative_column,
+        interval_column,
+        tariff_root_to_splits,
+    )
+
+    ctx = f"{context}: " if context else ""
+    for root, (hoog, laag) in tariff_root_to_splits.items():
+        hoog_present = hoog in df.columns
+        laag_present = laag in df.columns
+        if not (hoog_present or laag_present):
+            continue
+
+        absent = pd.Series(pd.NA, index=df.index, dtype="Float64")
+        hoog_num = (
+            pd.to_numeric(df[hoog], errors="coerce").astype("Float64")
+            if hoog_present else absent
+        )
+        laag_num = (
+            pd.to_numeric(df[laag], errors="coerce").astype("Float64")
+            if laag_present else absent
+        )
+        either = hoog_num.notna() | laag_num.notna()
+        if not bool(either.any()):
+            continue
+
+        combined = (
+            (hoog_num.fillna(0) + laag_num.fillna(0))
+            .mask(~either, pd.NA)
+            .astype("Float64")
+        )
+
+        if root not in df.columns:
+            df[root] = pd.Series(pd.NA, index=df.index, dtype="Float64")
+        delivered = df[root].notna()
+        write = either & ~delivered
+        if bool(write.any()):
+            df.loc[write, root] = combined[write]
+            set_flags(df, root, write, MappingFlag.TARIFF_COMBINED)
+            logging.info(
+                f"{ctx}Combined '{hoog}'/'{laag}' into '{root}' on "
+                f"{int(write.sum())} row(s) "
+                f"({int(delivered.sum())} delivered root cell(s) untouched)."
+            )
+
+        # The interval form carries the alternation signal (see the
+        # docstring): this pair is either already the interval form, or a
+        # cumulative pair whose interval root is its linked Diff column.
+        if cumulative_column(root) is not None:
+            interval_root = root
+            hoog_step, laag_step = hoog_num, laag_num
+        else:
+            interval_root = interval_column(root)
+            if interval_root is None:
+                continue
+            # The interval each register consumed is its advance between
+            # readings. The first reading has no predecessor, which matches
+            # add_diff_columns seeding the first interval rather than
+            # measuring it.
+            hoog_step = hoog_num.diff().round(10)
+            laag_step = laag_num.diff().round(10)
+
+        # Both ADVANCED, not both nonzero: a negative step is a meter reset
+        # or a correction case, which the CUMULATIVE_* findings already
+        # record, and conflating the two would hide both.
+        simultaneous = (hoog_step > 0).fillna(False) & (laag_step > 0).fillna(False)
+        if bool(simultaneous.any()):
+            set_flags(
+                df, interval_root, simultaneous, MappingFlag.TARIFF_SIMULTANEOUS
+            )
+            logging.info(
+                f"{ctx}'{hoog}' and '{laag}' both advanced within "
+                f"{int(simultaneous.sum())} interval(s); flagged "
+                f"TARIFF_SIMULTANEOUS on '{interval_root}'."
+            )
+
+    return df
+
+
 def add_diff_columns(
     data: pd.DataFrame,
     id_column: str = None,
@@ -1257,7 +1379,9 @@ def fill_down_infrequent_devices(
 
     Intended for cumulative columns from optional devices that report infrequently.
     When the device is idle the cumulative meter holds its last value (forward-fill).
-    When the device is absent from a household the column is set to 0.0.
+    A column with no readings at all is left untouched: a never-seen device is
+    an absence claim, and absence is declared per household in the metadata
+    (ApparaatOntbrekend), never invented as zeros.
 
     The column list is intentionally required -- it must be defined per project/mapper
     script because the set of optional devices differs between data suppliers.
@@ -1312,8 +1436,10 @@ def fill_down_infrequent_devices(
 
     Notes
     -----
-    Fill order: forward fill, then backward fill, then 0.0 for any remaining pd.NA
-    (households where the sensor was never present).
+    Fill order: forward fill, then backward fill. A column that remains
+    all-NA (sensor never seen for the household) stays all-NA -- device
+    absence is a per-household metadata declaration, not something this
+    function may infer from missingness.
     Only meaningful for cumulative variables -- do not apply to instantaneous sensors.
     """
     minutes_by_column = {}
@@ -1330,9 +1456,11 @@ def fill_down_infrequent_devices(
             continue
 
         delivered = df[col].notna()
-        filled = df[col].ffill().bfill().fillna(0.0)
+        filled = df[col].ffill().bfill()
         # Every cell this writes was not measured. Record it before the values
-        # go in, while the two are still distinguishable.
+        # go in, while the two are still distinguishable. A never-seen column
+        # produces no fills here (ffill/bfill of all-NA is all-NA), so it
+        # gains no values and no flags.
         set_flags(df, col, ~delivered & filled.notna(), MappingFlag.FILLED_DOWN)
 
         minutes = minutes_by_column.get(col, pd.NA)
@@ -1388,8 +1516,9 @@ def fill_zeros_for_device_not_installed(
     Difference from fill_down_infrequent_devices
     --------------------------------------------
     fill_down_infrequent_devices: the device IS present but reports rarely.
-      Forward/backward fill holds the last known cumulative value; remaining
-      NA (device never seen for a household) is set to 0.
+      Forward/backward fill holds the last known cumulative value; a column
+      with no readings at all is left as pd.NA (absence is declared in the
+      household metadata, never inferred from missingness).
 
     fill_zeros_for_device_not_installed: the device is NOT present at all.
       The entire column is set to 0 unconditionally. Do not use this for
@@ -1449,6 +1578,85 @@ def fill_zeros_for_device_not_installed(
             MappingFlag.FILLED_ZERO,
         )
     return df
+
+
+def assert_no_delivered_in_declared_absent(
+    df: pd.DataFrame,
+    declared_absent,
+    context: str = "",
+) -> None:
+    """Raise when the data falsifies a device-absence declaration.
+
+    A household's ``ApparaatOntbrekend`` declaration is an explicit metadata
+    claim: the device does not exist, its term is zero. A delivered reading
+    in a declared-absent column falsifies that claim, and falsified metadata
+    is always a hard failure -- the metadata (not the data) must be
+    corrected. This replaces the old conditional-default semantics, where a
+    supplier-wide zero list silently applied only to households whose column
+    happened to be empty and said nothing when it was not.
+
+    Migration started contradiction-free by construction -- only households
+    with no delivered reading over their whole span were declared -- so this
+    guard exists for FUTURE drift: a device installed later that starts
+    reporting raises here until the declaration is removed.
+
+    Checked per declared variable: the column itself AND its linked pair
+    (the interval form of a cumulative, or the cumulative form of an
+    interval) -- a reading on either is the device reporting. Delivered
+    means a non-NA value whose findings carry no INVENTED bit; values the
+    pipeline itself wrote (e.g. legacy zero-prefill) do not count against
+    the declaration.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The household frame, after mapping renames, before or after fills.
+    declared_absent : iterable of str
+        The household's declared-absent variables (cumulative names, as in
+        the ``ApparaatOntbrekend`` metadata column).
+    context : str
+        Household/file label for the error message.
+
+    Raises
+    ------
+    ValueError
+        Naming every falsified declaration: the variable, the column the
+        readings sit in, how many delivered readings, and the first/last
+        ReadingDate of them.
+    """
+    ctx = (context + ": ") if context else ""
+    violations = []
+    for variable in sorted({str(v).strip() for v in declared_absent} - {""}):
+        pair = interval_column(variable) or cumulative_column(variable)
+        candidates = [c for c in (variable, pair) if c and c in df.columns]
+        for col in candidates:
+            delivered = df[col].notna()
+            findings = flag_column(col)
+            if findings in df.columns:
+                delivered &= (
+                    df[findings].fillna(0).astype("Int64")
+                    & MappingFlag.INVENTED.value
+                ) == 0
+            n_delivered = int(delivered.sum())
+            if n_delivered == 0:
+                continue
+            if "ReadingDate" in df.columns:
+                dates = df.loc[delivered, "ReadingDate"]
+                span = f", first {dates.min()}, last {dates.max()}"
+            else:
+                span = ""
+            violations.append(
+                f"'{variable}' is declared absent but '{col}' holds "
+                f"{n_delivered} delivered reading(s){span}"
+            )
+    if violations:
+        raise ValueError(
+            f"{ctx}device-absence declaration falsified by delivered data: "
+            + "; ".join(violations)
+            + ". Correct the metadata (ApparaatOntbrekend / "
+            "GegevensOntbrekend in the household table) -- the data is the "
+            "evidence, the declaration is the error."
+        )
 
 
 def combine_source_columns(

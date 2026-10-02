@@ -19,7 +19,7 @@ from etdmap.storage import read_mapped_households
 class HouseholdKey(NamedTuple):
     """Composite key uniquely identifying a household within a supplier dataset.
 
-    HuisIdLeverancier alone is never unique — the same address string can exist
+    HuisIdLeverancier alone is never unique -- the same address string can exist
     in multiple projects. Always use both fields together.
     """
     project_id_supplier: str
@@ -347,7 +347,9 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
         )
 
 
-def read_index(mapped_folder_path=None) -> tuple[pd.DataFrame, str]:
+def read_index(
+    mapped_folder_path=None, allow_missing: bool = False
+) -> tuple[pd.DataFrame, str]:
     """
     Read index.parquet.
 
@@ -356,11 +358,23 @@ def read_index(mapped_folder_path=None) -> tuple[pd.DataFrame, str]:
     unchanged. Raises when an included row (Meenemen == True) lacks a
     Gegevensfrequentie while the batch fields are present.
 
+    An ABSENT index is refused unless *allow_missing* says otherwise. The
+    index is the household-id registry: ``assign_ids`` looks HuisIdBSV up by
+    (Dataleverancier, ProjectIdLeverancier, HuisIdLeverancier) and invents a
+    new id only for a key it cannot find. Reading an empty index therefore
+    makes every household look new, so a mapping run into a folder without
+    one renumbers the whole dataset in mapper execution order -- silently,
+    and HuisIdBSV is the join key of every comparison against an earlier
+    run. Only a genuinely new dataset starts without an index.
+
     Parameters
     ----------
     mapped_folder_path : str or Path, optional
         Folder holding index.parquet. Defaults to
         ``etdmap.options.mapped_folder_path``.
+    allow_missing : bool, default False
+        Return an empty index instead of raising when index.parquet does not
+        exist. For bootstrapping a new dataset only.
 
     Returns
     -------
@@ -368,15 +382,32 @@ def read_index(mapped_folder_path=None) -> tuple[pd.DataFrame, str]:
         A tuple containing:
             - DataFrame: The DataFrame of the index.
             - str: The path to the index file.
+
+    Raises
+    ------
+    FileNotFoundError
+        When index.parquet is absent and *allow_missing* is False.
     """
     if mapped_folder_path is None:
         mapped_folder_path = etdmap.options.mapped_folder_path
     index_path = os.path.join(str(mapped_folder_path), "index.parquet")
     if os.path.exists(index_path):
         index_df = pd.read_parquet(index_path, dtype_backend="numpy_nullable")
-    else:
+    elif allow_missing:
         index_df = pd.DataFrame(
             columns=bsv_metadata_columns
+        )
+    else:
+        raise FileNotFoundError(
+            f"No index found at {index_path}. The index is the household-id "
+            f"registry: without it every household looks new, so ids are "
+            f"reassigned in mapper execution order and every comparison "
+            f"against an earlier run silently pairs the wrong households. "
+            f"Either copy the canonical index.parquet into this folder "
+            f"first, which is what a remap of existing households needs, or "
+            f"ask for it explicitly (read_index(allow_missing=True), or the "
+            f"mappers' --allow-new-index flag) if this really is a brand-new "
+            f"dataset."
         )
 
     if "HuisId" in index_df.columns:
@@ -459,7 +490,7 @@ def assign_bsv_ids(
         The supplier name (Dataleverancier).
     household_keys : list[HouseholdKey]
         Ordered list of (project_id_supplier, household_id_supplier) pairs
-        to assign. Duplicates are safe — each unique key gets one ID.
+        to assign. Duplicates are safe -- each unique key gets one ID.
 
     Returns
     -------
@@ -737,7 +768,7 @@ def update_include() -> pd.DataFrame:
         result_names=('bsv_metadata', 'index'),
     )
 
-    # 2) missing/extra key‐rows
+    # 2) missing/extra key-rows
     merge_df = metadata_keys_df.merge(
         index_keys_df,
         on=index_key_columns,
@@ -886,7 +917,7 @@ def add_supplier_metadata_to_index(
         columns=[col for col in protected_columns if col in metadata_df.columns],
     )
 
-    # Validate that ProjectIdLeverancier is populated before the join —
+    # Validate that ProjectIdLeverancier is populated before the join --
     # a null here means a silent failure (null != null in join keys).
     null_project_supplier = metadata_df["ProjectIdLeverancier"].isna().sum() if "ProjectIdLeverancier" in metadata_df.columns else len(metadata_df)
     if null_project_supplier > 0:
@@ -896,8 +927,8 @@ def add_supplier_metadata_to_index(
             f"no ProjectIdLeverancier. Fill these in before running."
         )
 
-    # Load the project mapping CSV (Dataleverancier × ProjectIdLeverancier → ProjectIdBSV).
-    # This is a project-level mapping, not household-level — correct authority for ProjectIdBSV.
+    # Load the project mapping CSV (Dataleverancier x ProjectIdLeverancier -> ProjectIdBSV).
+    # This is a project-level mapping, not household-level -- correct authority for ProjectIdBSV.
     project_mapping_csv_path = etdmap.options.project_mapping_csv_path
     if project_mapping_csv_path is None:
         raise ValueError(
@@ -924,7 +955,7 @@ def add_supplier_metadata_to_index(
     # need the project-level mapping (ProjectIdLeverancier -> ProjectIdBSV) here.
     # Deduplicate to one row per project before the merge so we don't multiply
     # metadata rows. Raise if the same supplier project maps to conflicting BSV
-    # project IDs — that is a data entry error.
+    # project IDs -- that is a data entry error.
     conflicts = (
         project_df_raw.dropna(subset=["ProjectIdBSV"])
         .groupby(["Dataleverancier", "ProjectIdLeverancier"])["ProjectIdBSV"]
