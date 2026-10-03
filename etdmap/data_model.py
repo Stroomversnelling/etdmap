@@ -615,6 +615,21 @@ def cumulative_column(column: str) -> str | None:
     return cumulative_by_interval.get(column)
 
 
+def complement_column(column: str) -> str | None:
+    """
+    The other half of *column*'s cumulative/interval pair, whichever side it is.
+
+    One lookup for callers that hold a column without knowing which form it is,
+    which is the common case: a cadence recorded under the delivered name, a
+    declaration naming either form, a guard checking a pair is complete. The
+    direction-specific lookups remain for callers that do know.
+
+    Returns None when no link is declared -- a calculated interval quantity
+    with no cumulative form, or a pair ``ComplementVariabele`` does not state.
+    """
+    return interval_column(column) or cumulative_column(column)
+
+
 def parse_device_declaration(cell) -> set:
     """Parse a household's device or variable declaration cell into a set.
 
@@ -652,7 +667,7 @@ def cadence_lookup_names(column: str) -> list[str]:
     forms lets one lookup find either, whichever side of the pair the caller
     holds.
     """
-    partner = interval_column(column) or cumulative_column(column)
+    partner = complement_column(column)
     return [column] if partner is None else [column, partner]
 
 

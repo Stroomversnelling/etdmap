@@ -12,6 +12,7 @@ import etdmap
 from etdmap.data_model import (
     cadence_lookup_names,
     scale_bounds,
+    complement_column,
     cumulative_column,
     cumulative_columns,
     interval_column,
@@ -1550,13 +1551,13 @@ def fill_zeros_for_device_not_installed(
     is skipped rather than zeroed, and the standard pipeline constructs the
     missing form from the delivered one instead.
     """
-    from etdmap.data_model import cumulative_column, interval_column
+    from etdmap.data_model import complement_column
 
     for col in columns:
         if col in df.columns and not df[col].isna().all():
             continue
 
-        pair = interval_column(col) or cumulative_column(col)
+        pair = complement_column(col)
         if (
             pair is not None
             and pair in df.columns
@@ -1627,7 +1628,7 @@ def assert_no_delivered_in_declared_absent(
     ctx = (context + ": ") if context else ""
     violations = []
     for variable in sorted({str(v).strip() for v in declared_absent} - {""}):
-        pair = interval_column(variable) or cumulative_column(variable)
+        pair = complement_column(variable)
         candidates = [c for c in (variable, pair) if c and c in df.columns]
         for col in candidates:
             delivered = df[col].notna()
