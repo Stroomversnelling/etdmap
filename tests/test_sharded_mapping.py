@@ -23,12 +23,23 @@ import etdmap
 from etdmap.mapping_helpers import run_standard_pipeline, save_household_shard
 
 
+#: The grid these frames are built on and declared to sit on. Passed
+#: explicitly: there is no default grid.
+GRID = 5
+
+
 def _pipeline_df(n=12, freq="5min"):
     """Tiny valid input for run_standard_pipeline (mirrors _minimal_pipeline_df)."""
     from etdmap.data_model import cumulative_columns
     col = cumulative_columns[0]
     dates = pd.date_range("2023-01-01", periods=n, freq=freq)
     return pd.DataFrame({"ReadingDate": dates, col: range(n)})
+
+
+def _pipeline_cadence(df):
+    """The cadence table a mapper measures before calling the pipeline."""
+    from etdmap.mapping_helpers import detect_column_cadence
+    return detect_column_cadence(df, grid_minutes=GRID)
 
 
 class _output_format:
@@ -133,7 +144,8 @@ class TestPipelineOutputFormat:
         with _output_format("sharded"):
             run_standard_pipeline(
                 _pipeline_df(), household_id=42, household_id_supplier="HuisX",
-                mapped_folder_path=tmp_path, grid_minutes=5)
+                mapped_folder_path=tmp_path, grid_minutes=GRID,
+                cadence=_pipeline_cadence(_pipeline_df()))
         shard = tmp_path / "sharded" / "HuisIdBSV=42" / "HuisBatchIdBSV=42" / "part.parquet"
         assert shard.exists()
         assert not (tmp_path / "household_42_table.parquet").exists()
@@ -142,7 +154,8 @@ class TestPipelineOutputFormat:
         with _output_format("flat"):
             run_standard_pipeline(
                 _pipeline_df(), household_id=42, household_id_supplier="HuisX",
-                mapped_folder_path=tmp_path, grid_minutes=5)
+                mapped_folder_path=tmp_path, grid_minutes=GRID,
+                cadence=_pipeline_cadence(_pipeline_df()))
         assert (tmp_path / "household_42_table.parquet").exists()
         assert not (tmp_path / "sharded").exists()
 
@@ -157,11 +170,13 @@ class TestPipelineOutputFormat:
         with _output_format("flat"):
             run_standard_pipeline(
                 _pipeline_df(), household_id=7, household_id_supplier="H7",
-                mapped_folder_path=flat_dir, grid_minutes=5)
+                mapped_folder_path=flat_dir, grid_minutes=GRID,
+                cadence=_pipeline_cadence(_pipeline_df()))
         with _output_format("sharded"):
             run_standard_pipeline(
                 _pipeline_df(), household_id=7, household_id_supplier="H7",
-                mapped_folder_path=shard_dir, grid_minutes=5)
+                mapped_folder_path=shard_dir, grid_minutes=GRID,
+                cadence=_pipeline_cadence(_pipeline_df()))
         flat = pd.read_parquet(flat_dir / "household_7_table.parquet",
                                dtype_backend="numpy_nullable")
         shard = pd.read_parquet(
@@ -175,7 +190,8 @@ class TestPipelineOutputFormat:
             with pytest.raises(ValueError):
                 run_standard_pipeline(
                     _pipeline_df(), household_id=1, household_id_supplier="H1",
-                    mapped_folder_path=tmp_path, grid_minutes=5)
+                    mapped_folder_path=tmp_path, grid_minutes=GRID,
+                    cadence=_pipeline_cadence(_pipeline_df()))
 
 
 class TestDatasetValidatorsReadBothLayouts:
@@ -198,6 +214,21 @@ class TestDatasetValidatorsReadBothLayouts:
             "Dataleverancier": pd.array(["etdmap"], dtype="string"),
         })
 
+    @pytest.fixture
+    def _declared_batch(self, tmp_path, monkeypatch):
+        """The batch this household is recorded in. The dataset validators read
+        the declared grid from it to know how many rows a year should hold."""
+        path = tmp_path / "huisbatch.csv"
+        pd.DataFrame({
+            "HuisIdBSV": pd.array([self.HOUSEHOLD_ID], dtype="Int64"),
+            "HuisBatchIdBSV": pd.array([self.HOUSEHOLD_ID], dtype="Int64"),
+            "Gegevensfrequentie": pd.array([f"{GRID}min"], dtype="string"),
+        }).to_csv(path, index=False)
+        monkeypatch.setattr(
+            etdmap.options, "household_batch_csv_path", str(path)
+        )
+        return path
+
     def _update_index_for(self, tmp_path, monkeypatch, fmt):
         from etdmap.index_helpers import update_index
         from etdmap.mapping_helpers import save_mapped_household
@@ -216,7 +247,9 @@ class TestDatasetValidatorsReadBothLayouts:
         )
 
     @pytest.mark.parametrize("fmt", ["flat", "sharded"])
-    def test_dataset_flags_are_evaluated(self, tmp_path, monkeypatch, fmt):
+    def test_dataset_flags_are_evaluated(
+        self, tmp_path, monkeypatch, fmt, _declared_batch
+    ):
         from etdmap.dataset_validators import dataset_flag_conditions
 
         out = self._update_index_for(tmp_path, monkeypatch, fmt)

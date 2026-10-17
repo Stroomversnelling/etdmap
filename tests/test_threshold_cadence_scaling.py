@@ -73,7 +73,9 @@ class TestCadenceLookup:
         resolved = cadence_minutes_by_column(_cadence(CUM, 15))
         assert resolved[COL] == 15
 
-    def test_no_cadence_table_leaves_every_bound_unscaled(self):
+    def test_no_cadence_table_resolves_nothing(self):
+        """Empty means unresolved, not unscaled: the caller then falls back to
+        the dataset's own interval, or raises."""
         assert cadence_minutes_by_column(None) == {}
         assert cadence_minutes_by_column(pd.DataFrame()) == {}
 
@@ -104,12 +106,15 @@ class TestCoarseColumnOutOfBounds:
         )
         assert stats[COL]["cadence_minutes"] == 15
 
-    def test_the_same_reading_is_rejected_without_a_cadence(self):
-        """The bug S2 records: unscaled, a normal coarse reading is destroyed."""
+    def test_without_a_cadence_the_reading_is_not_judged_at_all(self):
+        """The fix for the bug S2 records. Unscaled, a normal coarse reading
+        was destroyed, because applying the declared bound multiplies it by one
+        -- the same arithmetic as deciding the column reports at the interval
+        the bound was written against. That decision is not this function's to
+        make, so it raises instead of making it."""
         value = float(GRID_MAX) * 2
-        df, stats = apply_thresholds_to_df(_frame([value]), return_stats=True)
-        assert df[COL].isna().all()
-        assert stats[COL]["n_above"] == 1
+        with pytest.raises(ValueError, match="no cadence was resolved"):
+            apply_thresholds_to_df(_frame([value]), return_stats=True)
 
     def test_the_removal_is_flagged_not_just_deleted(self):
         """A destroyed value must stay distinguishable from one that never
@@ -140,10 +145,14 @@ class TestCoarseColumnOutOfBounds:
         name = flag_column(COL)
         assert name not in df.columns or int(df[name].fillna(0).iloc[0]) == 0
 
-    def test_a_grid_cadence_column_is_unaffected_by_the_change(self):
+    def test_a_grid_cadence_column_is_judged_against_the_declared_bound(self):
+        """A column reporting at the interval its bound was written against
+        scales by one, so the declared bound is what it is judged by. This is
+        the case the old unscaled behaviour happened to get right."""
         value = float(GRID_MAX) * 2
-        with_cadence, _ = apply_thresholds_to_df(
+        df, stats = apply_thresholds_to_df(
             _frame([value]), cadence=_cadence(CUM, 5), return_stats=True
         )
-        without, _ = apply_thresholds_to_df(_frame([value]), return_stats=True)
-        pd.testing.assert_series_equal(with_cadence[COL], without[COL])
+        assert df[COL].isna().all()
+        assert stats[COL]["n_above"] == 1
+        assert stats[COL]["upper_bound"] == pytest.approx(float(GRID_MAX))

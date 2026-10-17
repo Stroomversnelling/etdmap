@@ -20,6 +20,16 @@ from etdmap.flags import (
 )
 
 # A plausible 5-minute bound for a tap water variable, in litres.
+#: The grid these frames are built on and declared to sit on. Passed
+#: explicitly: there is no default grid.
+GRID = 5
+
+
+def _measured_cadence(df):
+    """The cadence table a mapper measures before the pipeline runs."""
+    from etdmap.mapping_helpers import detect_column_cadence
+    return detect_column_cadence(df, grid_minutes=GRID)
+
 MAX_PER_INTERVAL = 100.0
 
 
@@ -202,7 +212,8 @@ class TestIntervalColumnsInheritTheirCumulativeCadence:
     def _spans(self, cadence_minutes):
         from etdmap.mapping_helpers import _detect_frozen_spans_for_household
         cadence = pd.DataFrame({
-            "column": ["WatergebruikWarmTapwater"],
+            "HuisIdBSV": pd.array([1], dtype="Int64"),
+            "column": pd.array(["WatergebruikWarmTapwater"], dtype="string"),
             "cadence_minutes": pd.array([cadence_minutes], dtype="Int64"),
         })
         return _detect_frozen_spans_for_household(self._frame(), 1, cadence=cadence)
@@ -248,7 +259,9 @@ class TestTreatment:
             _detect_frozen_spans_for_household,
             _treat_frozen_spans,
         )
-        rows = _detect_frozen_spans_for_household(df, 1)
+        rows = _detect_frozen_spans_for_household(
+            df, 1, cadence=_measured_cadence(df)
+        )
         _treat_frozen_spans(df, rows)
         return rows
 
@@ -309,12 +322,16 @@ class TestOnlyAccumulatingVariables:
     def test_a_momentaan_column_is_never_treated_as_a_frozen_span(self):
         from etdmap.mapping_helpers import _detect_frozen_spans_for_household
         df = self._frame("SlimmemeterVoltageL1")
-        assert _detect_frozen_spans_for_household(df, 1) == []
+        assert _detect_frozen_spans_for_household(
+            df, 1, cadence=_measured_cadence(df)
+        ) == []
 
     def test_a_cumulative_column_with_the_same_shape_is(self):
         from etdmap.mapping_helpers import _detect_frozen_spans_for_household
         df = self._frame("WatergebruikWarmTapwater")
-        assert len(_detect_frozen_spans_for_household(df, 1)) == 1
+        assert len(_detect_frozen_spans_for_household(
+            df, 1, cadence=_measured_cadence(df)
+        )) == 1
 
     def test_an_interval_column_follows_its_cumulative_variable(self):
         from etdmap.mapping_helpers import _accumulates
@@ -343,7 +360,7 @@ class TestFlagsSurviveTheColumnFilter:
                 dtype="Float64",
             ),
         })
-        return col, fill_down_infrequent_devices(df, columns=[col])
+        return col, fill_down_infrequent_devices(df, columns=[col], grid_minutes=GRID)
 
     def test_a_findings_column_survives_with_the_column_it_describes(self):
         from etdmap.flags import flag_column

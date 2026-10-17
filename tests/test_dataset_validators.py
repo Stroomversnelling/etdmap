@@ -5,7 +5,6 @@ from etdmap.data_model import cumulative_columns, interval_column
 from etdmap.dataset_validators import (
     dataset_flag_conditions,
     validate_columns,
-    validate_cumm_thesholds,
 )
 from etdmap.index_helpers import read_metadata
 
@@ -53,29 +52,103 @@ def test_dataset_flag_conditions():
     assert all(callable(value) for value in dataset_flag_conditions.values())
 
 
-# ---------------------------------------------------------------------------
-# validate_cumm_thesholds: per-interval diff must fall within [Min, Max].
-# Fail-path coverage with crafted input independent of thresholds.csv.
-# ---------------------------------------------------------------------------
+class TestRowCountFollowsTheGrid:
+    """How many rows a complete year holds depends on the interval the
+    household is recorded on: 105,120 at five minutes, 35,040 at fifteen, 8,760
+    hourly.
 
-class TestValidateCummThresholds:
-    _TH = {"X": {"Min": 0.0, "Max": 1.0}}
+    The check used to be a fixed 100,000..110,000 window, which is a statement
+    about the five-minute grid alone. Every household on any other grid failed
+    it unconditionally, and the flag went into the index as a verdict rather
+    than as "this was never applicable".
+    """
 
-    def test_within_bounds_true(self):
-        # cumulative -> diffs 0.5, 0.5, 0.5 all within [0, 1]
-        df = pd.DataFrame({"X": pd.array([0.0, 0.5, 1.0, 1.5], dtype="Float64")})
-        assert validate_cumm_thesholds(df, "X", self._TH) is True
+    GRIDS = [5, 15, 60]
 
-    def test_out_of_bounds_false(self):
-        # diffs of 2.0 exceed Max=1.0
-        df = pd.DataFrame({"X": pd.array([0.0, 2.0, 4.0], dtype="Float64")})
-        assert validate_cumm_thesholds(df, "X", self._TH) is False
+    def _year(self, grid_minutes):
+        """A full year of readings on *grid_minutes*."""
+        rows = int((365 * 24 * 60) / grid_minutes)
+        return pd.DataFrame({
+            "ReadingDate": pd.date_range(
+                "2024-01-01", periods=rows, freq=f"{grid_minutes}min"
+            ),
+        })
 
-    def test_all_na_returns_na(self):
-        df = pd.DataFrame({"X": pd.array([pd.NA, pd.NA, pd.NA], dtype="Float64")})
-        assert validate_cumm_thesholds(df, "X", self._TH) is pd.NA
+    @pytest.mark.parametrize("grid_minutes", GRIDS)
+    def test_a_full_year_passes_on_its_own_grid(self, grid_minutes):
+        from etdmap.dataset_validators import validate_monitoring_data_counts
+        df = self._year(grid_minutes)
+        assert validate_monitoring_data_counts(df, grid_minutes) is True
+
+    @pytest.mark.parametrize("grid_minutes", [15, 60])
+    def test_a_full_year_failed_the_old_fixed_window(self, grid_minutes):
+        """The contrast that makes the test above mean something: these row
+        counts sit outside the window that used to be hardcoded."""
+        rows = len(self._year(grid_minutes))
+        assert not (100000 <= rows <= 110000)
+
+    @pytest.mark.parametrize("grid_minutes", GRIDS)
+    def test_a_third_of_a_year_fails_on_its_own_grid(self, grid_minutes):
+        from etdmap.dataset_validators import validate_monitoring_data_counts
+        df = self._year(grid_minutes).iloc[: len(self._year(grid_minutes)) // 3]
+        assert validate_monitoring_data_counts(df, grid_minutes) is False
+
+    def test_an_unknown_grid_reports_nothing_rather_than_a_verdict(self, caplog):
+        """Without the grid there is no expected count, so nothing was checked.
+        pd.NA says that; True or False would both be claims."""
+        import logging
+        from etdmap.dataset_validators import validate_monitoring_data_counts
+        df = self._year(5)
+        with caplog.at_level(logging.WARNING):
+            assert validate_monitoring_data_counts(df, None) is pd.NA
+        assert "no grid was given" in caplog.text
+
+    def test_an_empty_frame_reports_nothing(self):
+        from etdmap.dataset_validators import validate_monitoring_data_counts
+        assert validate_monitoring_data_counts(pd.DataFrame(), 5) is pd.NA
 
 
-if __name__ == "__main__":
-    # Run pytest for debugging the testing
-    pytest.main(["-v"])
+class TestValidatorsReturnNaRatherThanRaising:
+    """A validator handed a frame without the columns it needs reports that
+    nothing was checked. It used to raise KeyError, which update_index caught
+    and recorded as pd.NA -- the same result, reached by swallowing an
+    exception, which also swallowed real faults."""
+
+    def test_energiegebruik_warmteopwekker_without_its_parts(self):
+        from etdmap.dataset_validators import (
+            validate_energiegebruik_warmteopwekker,
+        )
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range("2024-01-01", periods=3, freq="5min"),
+        })
+        assert validate_energiegebruik_warmteopwekker(df) is pd.NA
+
+    def test_it_does_not_add_a_column_to_the_frame_it_is_given(self):
+        from etdmap.dataset_validators import (
+            validate_energiegebruik_warmteopwekker,
+        )
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range("2024-01-01", periods=3, freq="5min"),
+            "ElektriciteitsgebruikWarmtepomp": pd.array(
+                [1.0, 2.0, 3.0], dtype="Float64"
+            ),
+            "ElektriciteitsgebruikBooster": pd.array(
+                [1.0, 2.0, 3.0], dtype="Float64"
+            ),
+            "ElektriciteitsgebruikBoilervat": pd.array(
+                [1.0, 2.0, 3.0], dtype="Float64"
+            ),
+        })
+        before = list(df.columns)
+        validate_energiegebruik_warmteopwekker(df)
+        assert list(df.columns) == before
+
+    def test_the_cumulative_outlier_summary_without_its_flag_column(self):
+        from etdmap.dataset_validators import (
+            create_validate_func_outliers_neg_cum,
+        )
+        col = next(
+            c for c in cumulative_columns if interval_column(c) is not None
+        )
+        validator = create_validate_func_outliers_neg_cum(col)
+        assert validator(pd.DataFrame({"ReadingDate": []})) is pd.NA

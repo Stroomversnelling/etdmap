@@ -14,6 +14,10 @@ from etdmap.mapping_helpers import (
     rearrange_model_columns,
 )
 
+#: The grid these frames are built on and declared to sit on. Passed
+#: explicitly: there is no default grid.
+GRID = 5
+
 CUM = "WatergebruikWarmTapwater"
 DIFF = f"{CUM}Diff"
 
@@ -77,7 +81,7 @@ class TestIntervalsInheritTheirCumulativeFindings:
                 CUM: pd.array(values, dtype="Float64"),
             }
         )
-        fill_down_infrequent_devices(df, [CUM])
+        fill_down_infrequent_devices(df, [CUM], grid_minutes=GRID)
         return add_diff_columns(df, context="infrequent")
 
     def test_a_filled_reading_marks_the_interval_it_produced(self):
@@ -105,7 +109,7 @@ class TestIntervalsInheritTheirCumulativeFindings:
                 CUM: pd.array([10.0 + i for i in range(n)], dtype="Float64"),
             }
         )
-        fill_down_infrequent_devices(df, [CUM])
+        fill_down_infrequent_devices(df, [CUM], grid_minutes=GRID)
         out = add_diff_columns(df, context="clean")
 
         # The first interval carries FIRST_ZERO: differencing has no

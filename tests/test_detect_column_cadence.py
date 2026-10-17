@@ -14,16 +14,20 @@ from etdmap.mapping_helpers import (
 
 START = '2024-01-01 00:00'
 
+#: The grid _frame builds on, and the grid these frames are declared to sit
+#: on. Passed explicitly throughout: there is no default grid.
+GRID = 5
+
 
 def _frame(specs, periods=288):
     """One 5-minute grid, with each column carrying a value every Nth slot.
 
     specs maps column name -> the column's own cadence in minutes.
     """
-    grid = pd.date_range(START, periods=periods, freq='5min')
+    grid = pd.date_range(START, periods=periods, freq=f'{GRID}min')
     df = pd.DataFrame({'ReadingDate': grid})
     for col, minutes in specs.items():
-        every = minutes // 5
+        every = minutes // GRID
         values = [
             float(i) if i % every == 0 else pd.NA for i in range(periods)
         ]
@@ -32,6 +36,7 @@ def _frame(specs, periods=288):
 
 
 def _cadence(df, **kwargs):
+    kwargs.setdefault('grid_minutes', GRID)
     out = detect_column_cadence(df, **kwargs)
     return dict(zip(out['column'], out['cadence_minutes']))
 
@@ -64,29 +69,29 @@ class TestDetectColumnCadence:
         assert _cadence(df)['x'] == 15
 
     def test_confidence_reports_how_regular_the_column_is(self):
-        regular = detect_column_cadence(_frame({'x': 15}))
+        regular = detect_column_cadence(_frame({'x': 15}), grid_minutes=GRID)
         assert _row(regular, 'x')['confidence'] == 1.0
 
         df = _frame({'x': 15})
         df.loc[40:80, 'x'] = pd.NA
-        gappy = detect_column_cadence(df)
+        gappy = detect_column_cadence(df, grid_minutes=GRID)
         assert 0.0 < _row(gappy, 'x')['confidence'] < 1.0
 
     def test_too_few_readings_yields_na_not_a_guess(self):
         df = _frame({'x': 5}, periods=2)
-        out = detect_column_cadence(df)
+        out = detect_column_cadence(df, grid_minutes=GRID)
         assert pd.isna(_row(out, 'x')['cadence_detected'])
         assert _row(out, 'x')['n_readings'] == 2
 
     def test_all_na_column_yields_na(self):
         df = _frame({'x': 5})
         df['x'] = pd.array([pd.NA] * len(df), dtype='Float64')
-        out = detect_column_cadence(df)
+        out = detect_column_cadence(df, grid_minutes=GRID)
         assert pd.isna(_row(out, 'x')['cadence_detected'])
         assert _row(out, 'x')['n_readings'] == 0
 
     def test_nullable_dtypes(self):
-        out = detect_column_cadence(_frame({'x': 15}))
+        out = detect_column_cadence(_frame({'x': 15}), grid_minutes=GRID)
         assert str(out['cadence_minutes'].dtype) == 'Int64'
         assert str(out['confidence'].dtype) == 'Float64'
         assert str(out['n_readings'].dtype) == 'Int64'
@@ -120,15 +125,15 @@ class TestCadenceMustRunBeforeFilling:
         df = _frame({'x': 60})
         assert _cadence(df)['x'] == 60
 
-        filled = fill_down_infrequent_devices(df.copy(), columns=['x'])
+        filled = fill_down_infrequent_devices(df.copy(), columns=['x'], grid_minutes=GRID)
         assert _cadence(filled)['x'] == 5
 
 
 class TestCadenceSidecar:
     def test_round_trips_with_nullable_dtypes(self, tmp_path):
         df = _frame({'fast': 5, 'slow': 60})
-        rows = cadence_to_rows(7, detect_column_cadence(df))
-        rows += cadence_to_rows(9, detect_column_cadence(_frame({'fast': 15})))
+        rows = cadence_to_rows(7, detect_column_cadence(df, grid_minutes=GRID))
+        rows += cadence_to_rows(9, detect_column_cadence(_frame({'fast': 15}), grid_minutes=GRID))
 
         path = write_column_cadence(rows, str(tmp_path))
         out = pd.read_parquet(path, dtype_backend='numpy_nullable')
@@ -151,7 +156,7 @@ class TestCadenceSidecar:
         assert str(out['cadence_minutes'].dtype) == 'Int64'
 
     def test_unmeasurable_column_survives_as_na(self, tmp_path):
-        rows = cadence_to_rows(1, detect_column_cadence(_frame({'x': 5}, periods=2)))
+        rows = cadence_to_rows(1, detect_column_cadence(_frame({'x': 5}, periods=2), grid_minutes=GRID))
         path = write_column_cadence(rows, str(tmp_path))
         out = pd.read_parquet(path, dtype_backend='numpy_nullable')
         assert pd.isna(out.set_index('column').loc['x', 'cadence_detected'])
@@ -164,7 +169,10 @@ class TestCadenceResolution:
     """Declared beats detected beats the dataset's own cadence."""
 
     def _resolved(self, df, declared=None, **kwargs):
-        return detect_column_cadence(df, declared=declared, **kwargs).set_index('column')
+        kwargs.setdefault('grid_minutes', GRID)
+        return detect_column_cadence(
+            df, declared=declared, **kwargs
+        ).set_index('column')
 
     def test_a_confident_detection_is_used(self):
         r = self._resolved(_frame({'x': 60}))
@@ -219,8 +227,10 @@ class TestCadenceResolution:
 
     def test_the_declared_value_reaches_the_fill(self):
         df = _frame({'x': 60})
-        resolved = detect_column_cadence(df, declared={'x': 15})
-        out = fill_down_infrequent_devices(df.copy(), columns=['x'], cadence=resolved)
+        resolved = detect_column_cadence(df, declared={'x': 15}, grid_minutes=GRID)
+        out = fill_down_infrequent_devices(
+            df.copy(), columns=['x'], cadence=resolved, grid_minutes=GRID
+        )
         # Declared 15min on a 5-minute grid: every 3rd row, not every 12th.
         assert int(out['x'].notna().sum()) == len(df) // 3
 
@@ -228,13 +238,15 @@ class TestCadenceResolution:
 class TestFillAtDeviceCadence:
     def test_without_cadence_fills_every_row_as_before(self):
         df = _frame({'x': 60})
-        out = fill_down_infrequent_devices(df.copy(), columns=['x'])
+        out = fill_down_infrequent_devices(df.copy(), columns=['x'], grid_minutes=GRID)
         assert out['x'].notna().all()
 
     def test_fills_only_the_slots_the_device_reports_on(self):
         df = _frame({'x': 60})
-        cadence = detect_column_cadence(df)
-        out = fill_down_infrequent_devices(df.copy(), columns=['x'], cadence=cadence)
+        cadence = detect_column_cadence(df, grid_minutes=GRID)
+        out = fill_down_infrequent_devices(
+            df.copy(), columns=['x'], cadence=cadence, grid_minutes=GRID
+        )
 
         # One value an hour on a 5-minute grid, not one every five minutes.
         assert int(out['x'].notna().sum()) == len(df) // 12
@@ -246,7 +258,9 @@ class TestFillAtDeviceCadence:
         df = _frame({'x': 60})
         delivered = df.loc[df['x'].notna(), ['ReadingDate', 'x']]
         out = fill_down_infrequent_devices(
-            df.copy(), columns=['x'], cadence=detect_column_cadence(df)
+            df.copy(), columns=['x'],
+            cadence=detect_column_cadence(df, grid_minutes=GRID),
+            grid_minutes=GRID,
         )
         kept = out.loc[out['ReadingDate'].isin(delivered['ReadingDate']), 'x']
         assert kept.tolist() == delivered['x'].tolist()
@@ -258,17 +272,41 @@ class TestFillAtDeviceCadence:
         df.loc[off_slot, 'x'] = 999.0
 
         out = fill_down_infrequent_devices(
-            df.copy(), columns=['x'], cadence=detect_column_cadence(df)
+            df.copy(), columns=['x'],
+            cadence=detect_column_cadence(df, grid_minutes=GRID),
+            grid_minutes=GRID,
         )
         assert out.loc[off_slot, 'x'].iloc[0] == 999.0
 
-    def test_undetectable_cadence_falls_back_to_every_row(self):
+    def test_an_unmeasurable_cadence_falls_back_to_the_declared_grid(self):
+        """Two readings are too few to measure a cadence from. The answer is
+        then the grid the household is recorded on -- a fact about the
+        household -- rather than pd.NA, which every later stage would have to
+        decide what to do with."""
         df = _frame({'x': 5}, periods=2)
-        cadence = detect_column_cadence(df)
-        assert pd.isna(cadence.loc[0, 'cadence_minutes'])
+        cadence = detect_column_cadence(df, grid_minutes=GRID).set_index('column')
 
-        out = fill_down_infrequent_devices(df.copy(), columns=['x'], cadence=cadence)
+        assert pd.isna(cadence.loc['x', 'cadence_detected'])
+        assert cadence.loc['x', 'cadence_minutes'] == GRID
+        assert cadence.loc['x', 'cadence_source'] == 'dataset'
+
+        out = fill_down_infrequent_devices(
+            df.copy(), columns=['x'], cadence=cadence.reset_index(),
+            grid_minutes=GRID,
+        )
+        # At the grid cadence the fill lands on every row.
         assert out['x'].notna().all()
+
+    def test_the_fallback_grid_is_declared_not_measured(self):
+        """The readings arrive every 15 minutes but the batch declares 5. A
+        column too short to measure takes the declared grid, and the
+        disagreement is reported rather than silently resolved."""
+        grid = pd.date_range(START, periods=2, freq='15min')
+        df = pd.DataFrame({'ReadingDate': grid})
+        df['x'] = pd.array([1.0, 2.0], dtype='Float64')
+
+        out = detect_column_cadence(df, grid_minutes=5).set_index('column')
+        assert out.loc['x', 'cadence_minutes'] == 5
 
     def test_a_coarser_grid_is_measured_not_assumed(self):
         """A 15-minute dataset has no 5-minute rows. The fallback is the grid's
@@ -281,7 +319,7 @@ class TestFillAtDeviceCadence:
         by_col = _cadence(df)
         assert by_col['ReadingDate'] == 15
         assert by_col['x'] == 60
-        cadence = detect_column_cadence(df)
+        cadence = detect_column_cadence(df, grid_minutes=GRID)
 
         out = fill_down_infrequent_devices(
             df.copy(), columns=['x'], cadence=cadence, grid_minutes=15
@@ -300,7 +338,7 @@ class TestFillAtDeviceCadence:
         by_col = _cadence(df)
         assert by_col['ReadingDate'] == 7
         assert by_col['x'] == 21
-        cadence = detect_column_cadence(df)
+        cadence = detect_column_cadence(df, grid_minutes=GRID)
 
         out = fill_down_infrequent_devices(
             df.copy(), columns=['x'], cadence=cadence, grid_minutes=7
@@ -310,23 +348,29 @@ class TestFillAtDeviceCadence:
     def test_a_five_minute_device_is_unchanged_by_cadence(self):
         df = _frame({'x': 5})
         with_cadence = fill_down_infrequent_devices(
-            df.copy(), columns=['x'], cadence=detect_column_cadence(df)
+            df.copy(), columns=['x'],
+            cadence=detect_column_cadence(df, grid_minutes=GRID),
+            grid_minutes=GRID,
         )
-        without = fill_down_infrequent_devices(df.copy(), columns=['x'])
+        without = fill_down_infrequent_devices(df.copy(), columns=['x'], grid_minutes=GRID)
         pd.testing.assert_series_equal(with_cadence['x'], without['x'])
 
     def test_never_present_device_still_becomes_zero(self):
         df = _frame({'x': 5})
         df['x'] = pd.array([pd.NA] * len(df), dtype='Float64')
         out = fill_down_infrequent_devices(
-            df.copy(), columns=['x'], cadence=detect_column_cadence(df)
+            df.copy(), columns=['x'],
+            cadence=detect_column_cadence(df, grid_minutes=GRID),
+            grid_minutes=GRID,
         )
         assert (out['x'] == 0.0).all()
 
     def test_each_column_uses_its_own_cadence(self):
         df = _frame({'fast': 5, 'slow': 60})
         out = fill_down_infrequent_devices(
-            df.copy(), columns=['fast', 'slow'], cadence=detect_column_cadence(df)
+            df.copy(), columns=['fast', 'slow'],
+            cadence=detect_column_cadence(df, grid_minutes=GRID),
+            grid_minutes=GRID,
         )
         assert out['fast'].notna().all()
         assert int(out['slow'].notna().sum()) == len(df) // 12
@@ -346,10 +390,10 @@ class TestFillIsLosslessWhateverTheCadence:
         df = pd.DataFrame({'ReadingDate': grid})
         df['x'] = pd.array(values, dtype='Float64')
 
-        dense = fill_down_infrequent_devices(df.copy(), columns=['x'])['x']
-        cadence = detect_column_cadence(df, declared=declared)
+        dense = fill_down_infrequent_devices(df.copy(), columns=['x'], grid_minutes=GRID)['x']
+        cadence = detect_column_cadence(df, declared=declared, grid_minutes=GRID)
         sparse = fill_down_infrequent_devices(
-            df.copy(), columns=['x'], cadence=cadence
+            df.copy(), columns=['x'], cadence=cadence, grid_minutes=GRID
         )['x']
 
         delivered = df['x'].notna()
@@ -400,10 +444,10 @@ class TestFillIsLosslessWhateverTheCadence:
         df['x'] = pd.array(
             [float(i) if i % 4 == 0 else pd.NA for i in range(48)], dtype='Float64'
         )
-        cadence = detect_column_cadence(df, declared={'x': 8})
+        cadence = detect_column_cadence(df, declared={'x': 8}, grid_minutes=GRID)
         with caplog.at_level('INFO'):
             out = fill_down_infrequent_devices(
-                df.copy(), columns=['x'], cadence=cadence
+                df.copy(), columns=['x'], cadence=cadence, grid_minutes=GRID
             )
         assert out['x'].notna().all()
         assert 'does not land on the 5min grid' in caplog.text

@@ -25,10 +25,14 @@ from etdmap.mapping_helpers import snap_readings_to_grid
 
 T0 = pd.Timestamp("2023-01-01 00:00:00")
 
+#: The grid these fixtures are built on, and the grid they are snapped to.
+#: Passed explicitly throughout: there is no default grid.
+GRID = 5
+
 
 def slot(n: int) -> pd.Timestamp:
-    """Return the n-th 5-minute grid slot from T0."""
-    return T0 + pd.Timedelta(minutes=5 * n)
+    """Return the n-th grid slot from T0."""
+    return T0 + pd.Timedelta(minutes=GRID * n)
 
 
 def at(n: int, seconds: int = 0) -> pd.Timestamp:
@@ -47,7 +51,7 @@ def test_already_on_grid_is_unchanged():
         "ReadingDate": [slot(0), slot(1), slot(2)],
         "val": pd.array([1.0, 2.0, 3.0], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert list(result["ReadingDate"]) == [slot(0), slot(1), slot(2)]
     assert list(result["val"]) == [1.0, 2.0, 3.0]
@@ -59,7 +63,7 @@ def test_uniform_offset_snaps_to_grid():
         "ReadingDate": [at(0, 22), at(1, 22), at(2, 22)],
         "val": pd.array([1.0, 2.0, 3.0], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert list(result["ReadingDate"]) == [slot(0), slot(1), slot(2)]
     assert list(result["val"]) == [1.0, 2.0, 3.0]
@@ -71,7 +75,7 @@ def test_single_row():
         "ReadingDate": [at(0, 22)],
         "val": pd.array([42.0], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert len(result) == 1
     assert result["ReadingDate"].iloc[0] == slot(0)
@@ -89,7 +93,7 @@ def test_output_row_count_equals_unique_slots():
         ],
         "val": pd.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert len(result) == 3
     assert list(result["ReadingDate"]) == [slot(0), slot(1), slot(2)]
@@ -114,7 +118,7 @@ def test_two_stream_merge_non_overlapping_columns():
         # +0s stream only
         "col_b": pd.array([pd.NA] * n + [float(i * 10) for i in range(n)], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert len(result) == n
     assert list(result["ReadingDate"]) == [slot(i) for i in range(n)]
@@ -170,7 +174,7 @@ def test_two_stream_kpass_modal_picks_correct_row():
             dtype="Float64",
         ),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     total = n_regular + n_contested
     assert len(result) == total
@@ -209,7 +213,7 @@ def test_three_stream_merge_k_equals_3():
         "col_45": pd.array(
             [pd.NA] * (n * 2) + [float(i * 100) for i in range(n)], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert len(result) == n
     assert list(result["col_0"])  == [float(i) for i in range(n)]
@@ -239,7 +243,7 @@ def test_irregular_timing_single_value_per_column_per_slot():
         "col_b": pd.array([pd.NA, 10.0, pd.NA, pd.NA, 20.0, pd.NA], dtype="Float64"),
         "col_c": pd.array([pd.NA, pd.NA, 100.0, pd.NA, pd.NA, 200.0], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert len(result) == 2
     assert list(result["col_a"]) == [1.0, 2.0]
@@ -267,7 +271,7 @@ def test_irregular_timing_modal_wins_with_competing_values():
         "ReadingDate": regular_times + [at(contested, 22), at(contested, 30)],
         "col_a": pd.array(regular_vals + [10.0, 99.0], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert result["col_a"].iloc[contested] == 10.0
     assert 99.0 not in result["col_a"].tolist()
@@ -288,7 +292,7 @@ def test_all_na_column_does_not_crash():
         "good_col":  pd.array([1.0, 2.0, 3.0], dtype="Float64"),
         "empty_col": pd.array([pd.NA, pd.NA, pd.NA], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert len(result) == 3
     assert list(result["good_col"]) == [1.0, 2.0, 3.0]
@@ -305,7 +309,7 @@ def test_non_numeric_column_passes_through():
         "label": pd.array(["A", pd.NA, "B", pd.NA], dtype="string"),
         "num":   pd.array([pd.NA, 1.0, pd.NA, 2.0], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert len(result) == 2
     assert list(result["label"]) == ["A", "B"]
@@ -318,7 +322,7 @@ def test_custom_date_column_name():
         "Timestamp": [slot(0), slot(1)],
         "val": pd.array([1.0, 2.0], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df, date_column="Timestamp")
+    result = snap_readings_to_grid(df, date_column="Timestamp", freq_minutes=GRID)
 
     assert "Timestamp" in result.columns
     assert "ReadingDate" not in result.columns
@@ -369,7 +373,7 @@ def test_cumulative_column_stream_consistency():
         "OtherCol": pd.array(
             [pd.NA] * n + [float(i * 2) for i in range(n)], dtype="Float64"),
     })
-    result = snap_readings_to_grid(df)
+    result = snap_readings_to_grid(df, freq_minutes=GRID)
 
     assert len(result) == n
     assert list(result["ElektriciteitCum"]) == cum_values

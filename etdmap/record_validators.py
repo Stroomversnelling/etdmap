@@ -5,9 +5,12 @@ import pandas as pd
 from pandas import DataFrame, Series
 
 from etdmap.data_model import (
+    cadence_minutes_by_column,
+    dataset_cadence_minutes,
     interval_column,
     cumulative_columns,
     load_thresholds,
+    resolve_bounds,
     thresholds_dict,
 )
 from etdmap.flags import MappingFlag, bound_flags
@@ -25,9 +28,32 @@ created that can be used to get insight in the data. The columns are:
 - 'validate'+ col (thresholds for both cumulative and diff/delta columns)
 - 'validate_combined' (checks for each row if any value
     is outside of thresholds)
+
+Every validator takes (df, cadence=None) and returns a Series, so one loop can
+call them all. A bound written per interval has to be scaled to the interval the
+column reports in before it means anything, and *cadence* is where that comes
+from; validators whose check does not depend on it accept the argument and
+ignore it.
 """
 
-def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
+
+def _bounds_for(col: str, cadence) -> tuple:
+    """
+    The bounds to judge *col* by, scaled to the interval it reports in.
+
+    Scales through the same :func:`etdmap.data_model.resolve_bounds` the mapping
+    stage uses, so this check and the threshold pass agree on which values are
+    out of range.
+    """
+    by_column = cadence_minutes_by_column(cadence)
+    return resolve_bounds(
+        thresholds_dict[col],
+        by_column.get(col, dataset_cadence_minutes(cadence)),
+        col,
+    )
+
+
+def validate_thresholds_combined(df: pd.DataFrame, cadence=None) -> pd.Series:
     """
     Per row, determine if at least one value fall outside of the Thresholds.
 
@@ -35,6 +61,10 @@ def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
     ----------
     df : pd.DataFrame
         Dataframe with columns to be checked.
+    cadence : pd.DataFrame, optional
+        Per-column cadence for this household, from
+        :func:`etdmap.mapping_helpers.detect_column_cadence`. Required for any
+        column whose bound is written per interval.
 
     Returns
     -------
@@ -43,16 +73,18 @@ def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
     """
     columns = [col for col in df.columns if col in thresholds_dict]
 
+    # A column with no values has nothing to judge, so it needs no bound and no
+    # cadence. It would contribute an all-valid mask anyway.
+    checkable = [col for col in columns if df[col].notna().any()]
+
     # A missing value is not a violation, so it leaves the row valid here.
     valid_masks = pd.DataFrame(
         {
-            col: bound_flags(
-                df[col],
-                thresholds_dict[col]['Min'],
-                thresholds_dict[col]['Max'],
-            ) == MappingFlag.NONE.value
-            for col in columns
-        }
+            col: bound_flags(df[col], *_bounds_for(col, cadence))
+            == MappingFlag.NONE.value
+            for col in checkable
+        },
+        index=df.index,
     )
     valid_combined = valid_masks.all(axis=1)
 
@@ -66,31 +98,24 @@ def validate_thresholds_combined(df: pd.DataFrame) -> pd.Series:
     return valid_combined
 
 
-def get_columns_threshold_validator(cols):
-    """
-    Get a validator function for thresholds of specified columns.
-
-    Parameters
-    ----------
-    cols : list
-        List of column names to validate.
-
-    Returns
-    -------
-    function
-        A function that validates thresholds for the specified columns.
-    """
-    return lambda df: validate_thresholds_combined(df[cols])
-
-
-def condition_func_threshold(col: str) -> Callable[[pd.DataFrame], bool]:
+def condition_func_threshold(
+    col: str, cadence=None
+) -> Callable[[pd.DataFrame], bool]:
     """
     Define condition function for column based on min, max from thresholdscsv.
+
+    The bounds are scaled to the interval *col* reports in, through the same
+    :func:`etdmap.data_model.scale_bounds` the mapping stage uses, so this check
+    and the threshold pass agree on which values are out of range.
 
     Parameters
     ----------
     col : str
         Column name for which the function holds.
+    cadence : pd.DataFrame, optional
+        Per-column cadence for this household, from
+        :func:`etdmap.mapping_helpers.detect_column_cadence`. Required for any
+        column whose bound is written per interval.
 
     Returns
     -------
@@ -99,13 +124,15 @@ def condition_func_threshold(col: str) -> Callable[[pd.DataFrame], bool]:
     """
     if (col in thresholds_dict):
         def condition_func(df: pd.DataFrame) -> bool:
-            flags = bound_flags(
-                df[col],
-                thresholds_dict[col]['Min'],
-                thresholds_dict[col]['Max'],
-            )
+            present = df[col].notna()
+            # Resolved here, not when this closure was built: a column with no
+            # values has nothing to judge, so it needs no bound and no cadence.
+            if not present.any():
+                return pd.Series(pd.NA, dtype='boolean', index=df.index)
+
+            flags = bound_flags(df[col], *_bounds_for(col, cadence))
             # A missing value gets a missing result: nothing was checked.
-            return (flags == MappingFlag.NONE.value).where(df[col].notna(), pd.NA)
+            return (flags == MappingFlag.NONE.value).where(present, pd.NA)
         return condition_func
     else:
         logging.error(
@@ -144,7 +171,7 @@ def validate_columns(df: DataFrame, columns: list, condition_func) -> Series:
         return pd.Series(pd.NA, dtype='boolean', index=df.index)
 
 
-def validate_reading_date_unique(df: DataFrame) -> Series:
+def validate_reading_date_unique(df: DataFrame, cadence=None) -> Series:
     """
     Validate that ReadingDate column has only unique values.
 
@@ -162,13 +189,14 @@ def validate_reading_date_unique(df: DataFrame) -> Series:
     return (~df.duplicated(subset=['ReadingDate'])).astype('boolean')
 
 
-def validate_300sec(df: DataFrame) -> Series:
+def validate_observed_spacing(df: DataFrame, cadence=None) -> Series:
     """
     Validate that each row sits one grid interval after the one before it.
 
-    The interval checked against is the most common spacing in *df*, not a fixed
-    300 seconds: households are recorded on the grid their batch declares, so a
-    fixed interval marks every row of a coarser household invalid.
+    The interval checked against is the most common spacing in *df*, measured
+    rather than assumed: households are recorded on the grid their batch
+    declares, so a fixed interval would mark every row of a coarser household
+    invalid.
 
     Parameters
     ----------
@@ -196,7 +224,7 @@ def validate_300sec(df: DataFrame) -> Series:
     return result
 
 
-def validate_elektriciteitgebruik(df: DataFrame) -> Series:
+def validate_elektriciteitgebruik(df: DataFrame, cadence=None) -> Series:
     """
     Validate that ElektriciteitsgebruikTotaalHuishoudelijk is less than or equal to the sum of ZonopwekTotaal,
     ElektriciteitNetgebruikHoog, and ElektriciteitNetgebruikLaag.
@@ -229,7 +257,7 @@ def validate_elektriciteitgebruik(df: DataFrame) -> Series:
     return validate_columns(df, columns, condition_func)
 
 
-def validate_warmteproductie(df: DataFrame) -> Series:
+def validate_warmteproductie(df: DataFrame, cadence=None) -> Series:
     """
     Validate that WarmteproductieWarmtepomp is greater than or equal to WarmteproductieWarmTapwater.
 
@@ -317,9 +345,9 @@ def create_validate_momentaan(
     None
     """
     for col in columns_with_value_bounds:
-        def validate_momentaan(df: DataFrame, col=col) -> Series:
-            # Checks thresholds
-            condition_func = condition_func_threshold(col)
+        def validate_momentaan(df: DataFrame, cadence=None, col=col) -> Series:
+            # Checks thresholds, scaled to the interval the column reports in
+            condition_func = condition_func_threshold(col, cadence)
             result = validate_columns(df, [col], condition_func)
             return result
         record_flag_conditions['validate_' + col] = validate_momentaan
@@ -357,7 +385,11 @@ def create_validate_cumulative(
             )
 
         logging.info(f"Creating {interval_col} outliers check")
-        def validate_cumulative_outliers(df: DataFrame, diff_col=interval_col) -> Series:
+        # cadence is accepted and ignored: an outlier here is judged against the
+        # column's own distribution, which is already in its reporting interval.
+        def validate_cumulative_outliers(
+            df: DataFrame, cadence=None, diff_col=interval_col
+        ) -> Series:
             logging.debug(f"[record_validators] Checking {diff_col} outliers")
             try:
                 result = validate_columns(df, [diff_col], validate_not_outliers)
@@ -375,17 +407,19 @@ thresholds_df = load_thresholds()
 # Category 1: hand-written record quality checks
 record_quality_flag_conditions = {
     'validate_reading_date_unique': validate_reading_date_unique,
-    'validate_300sec': validate_300sec,
+    'validate_observed_spacing': validate_observed_spacing,
     #'validate_zonopwek_totaal_tegen_gebruik': validate_zonopwek_totaal_tegen_gebruik,
     'validate_elektriciteitgebruik': validate_elektriciteitgebruik,
     'validate_warmteproductie': validate_warmteproductie,
     'validate_thresholds_combined': validate_thresholds_combined,
 }
 
-# Category 2: per-column threshold checks, for every type whose bound applies to
-# a single reading. 'cumulatief' is excluded because a meter total is checked by
-# category 3 instead. 'algemeen' is a dimensionless bound, such as a percentage,
-# which holds at any cadence and so is checkable per reading.
+# Category 2: per-column threshold checks, for every type whose bound can be
+# judged against a single reading. 'cumulatief' is excluded because a meter
+# total is checked by category 3 instead. 'algemeen' is a dimensionless bound,
+# such as a percentage, which holds at any cadence. '5-minute' is written per
+# interval, so its bound is scaled to the column's cadence before the check --
+# see _bounds_for.
 momentaan_flag_conditions: dict = {}
 columns_with_value_bounds = thresholds_df[
     thresholds_df['ThresholdType'].isin(['5-minute', 'momentaan', 'algemeen'])

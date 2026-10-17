@@ -10,8 +10,12 @@ import pandas as pd
 import etdmap
 
 from etdmap.data_model import (
-    cadence_lookup_names,
-    scale_bounds,
+    # cadence_minutes_by_column lives in data_model, beside cadence_lookup_names
+    # which it uses, so record_validators can reach it too. Re-exported here for
+    # callers that import it from this module.
+    cadence_minutes_by_column,  # noqa: F401
+    dataset_cadence_minutes,
+    resolve_bounds,
     complement_column,
     cumulative_column,
     cumulative_columns,
@@ -24,7 +28,6 @@ from etdmap.data_model import (
     thresholds_dict,
 )
 from etdmap.index_helpers import (
-    DEFAULT_GRID_MINUTES,
     get_mapped_data,
     grid_minutes_for_household,
     read_index,
@@ -1213,6 +1216,39 @@ def _modal_gap_minutes(timestamps: pd.Series):
     return minutes, float((gaps == minutes).sum() / len(gaps))
 
 
+def _reject_sub_minute(minutes_by_name: dict, ctx: str = "") -> None:
+    """
+    Refuse an interval the cadence table cannot record.
+
+    ``cadence_minutes`` is Int64, so the table holds whole minutes. A 30-second
+    interval has no representation in it: rounding it gives a zero-minute
+    cadence, and the Int64 cast raises a TypeError that names neither the
+    column nor the value.
+
+    Raises
+    ------
+    ValueError
+        Naming each interval that is not a whole number of minutes.
+    """
+    offenders = {
+        name: value
+        for name, value in minutes_by_name.items()
+        if value is not None
+        and pd.notna(value)
+        and float(value) != int(float(value))
+    }
+    if not offenders:
+        return
+
+    listed = ', '.join(
+        f"'{name}' at {cadence_label(value)}" for name, value in offenders.items()
+    )
+    raise ValueError(
+        f"{ctx}detect_column_cadence: the cadence table records whole minutes, "
+        f"so these intervals cannot be stored in it: {listed}."
+    )
+
+
 def detect_column_cadence(
     df: pd.DataFrame,
     columns: tuple[str, ...] | list[str] | None = None,
@@ -1221,6 +1257,8 @@ def detect_column_cadence(
     min_readings: int = 3,
     min_confidence: float = 0.8,
     context: str = '',
+    grid_minutes: float | None = None,
+    household_id: int | None = None,
 ) -> pd.DataFrame:
     """
     Infer how often each column actually reports, from its own timestamps.
@@ -1229,20 +1267,25 @@ def detect_column_cadence(
     Only rows where the column has a value are counted, so a column reporting
     every 15 minutes on a 5-minute grid is measured at 15 minutes, not 5.
 
-    ``date_column`` is measured as well and returned as its own row. That is the
-    dataset's cadence: the grid the data sits on, and the floor on any column's
-    cadence, since no column can report more often than the dataset records.
+    ``date_column`` is measured as well and returned as its own row, which
+    records the spacing the data was actually delivered at.
 
-    Cadence is settled here, once, from three sources in order of authority:
+    Cadence is settled here, once, from three sources, checked in this order:
 
-    1. Declared. The metadata takes precedence, since corrections are made there
-       and the delivered data is static.
-    2. Detected, where the readings were regular enough to trust.
-    3. The dataset's own cadence, as the floor and the last resort.
+    1. Declared, from ``Meetfrequentie`` in the supplier mapping table. The
+       metadata is used in preference to measurement, since corrections are made
+       there and the delivered data is static.
+    2. Measured, where the readings were regular enough to trust.
+    3. The grid the household batch declares.
 
-    A declaration that disagrees with a confident detection is logged and the
-    detected value is kept in ``cadence_detected`` so a report can surface the
-    disagreement. The declaration still takes precedence.
+    A declaration that disagrees with a confident measurement is logged and the
+    measured value is kept in ``cadence_detected`` so a report can surface the
+    disagreement. The declared value is still the one used.
+
+    The grid is required, because it is what source 3 uses. Pass it as
+    *grid_minutes*, or pass *household_id* and it is read from the batch
+    metadata. A column too short or too irregular to measure then still ends up
+    with the interval its household is recorded on, rather than nothing.
 
     Everything downstream reads ``cadence_minutes`` rather than measuring again.
 
@@ -1266,16 +1309,22 @@ def detect_column_cadence(
     date_column : str
         Name of the timestamp column. Default 'ReadingDate'.
     declared : dict, optional
-        Column -> cadence in minutes, as declared in the metadata. Absent columns
-        mean nothing was declared, which is the normal case: ``Meetfrequentie``
-        is unpopulated by design.
+        Column -> cadence in minutes, as declared in the metadata. Read from
+        ``Meetfrequentie`` with ``load_supplier_cadence``. Absent columns mean
+        nothing was declared for them, which is the common case.
     min_readings : int
         Fewest readings that can support a cadence. Below this the column gets
         pd.NA rather than a guess. Default 3, which is two gaps.
     min_confidence : float
-        Lowest confidence at which a detected cadence is trusted.
+        Lowest confidence at which a measured cadence is trusted.
     context : str
         Optional prefix for log messages, e.g. a household identifier.
+    grid_minutes : float, optional
+        The grid the household batch is recorded on, in minutes. Required unless
+        *household_id* is given.
+    household_id : int, optional
+        HuisIdBSV, used to read the grid from the batch metadata when
+        *grid_minutes* is not given.
 
     Returns
     -------
@@ -1287,12 +1336,35 @@ def detect_column_cadence(
         - ``cadence_detected`` (Int64) -- what the readings themselves showed,
           kept even when a declaration overrides it so the report can surface
           the disagreement.
-        - ``confidence`` (Float64) -- the share of gaps at the detected cadence.
+        - ``confidence`` (Float64) -- the share of gaps at the measured cadence.
           A low share means the readings are irregular and the measurement is a
           weak claim.
         - ``n_readings`` (Int64).
+
+    Raises
+    ------
+    ValueError
+        When neither *grid_minutes* nor *household_id* is given, or when the
+        household declares no readable frequency.
     """
     ctx = (context + ': ') if context else ''
+    if grid_minutes is None and household_id is not None:
+        grid_minutes = grid_minutes_for_household(household_id)
+    if grid_minutes is None or pd.isna(grid_minutes):
+        raise ValueError(
+            f"{ctx}detect_column_cadence: neither grid_minutes nor household_id "
+            f"was given, so the grid a column falls back to is unknown. It is "
+            f"declared per household batch as Gegevensfrequentie."
+        )
+
+    # The cadence table records whole minutes (_CADENCE_TABLE_DTYPES), so a
+    # sub-minute interval cannot be represented in it. Checked here rather than
+    # left to the Int64 cast below, which raises an opaque TypeError, or to
+    # rounding, which would turn 30s into a zero-minute cadence.
+    _reject_sub_minute(
+        {date_column: grid_minutes, **(declared or {})}, ctx
+    )
+
     if columns is None:
         columns = list(df.columns)
 
@@ -1332,9 +1404,13 @@ def detect_column_cadence(
     # An unmeasured column has no confidence rather than a low one. The mask
     # must still be free of pd.NA, which .loc would read as False silently.
     trusted = (out['confidence'] >= min_confidence).fillna(False)
-    grid = dict(zip(out['column'], out['cadence_detected'])).get(date_column, pd.NA)
 
-    # Declared, then a detection regular enough to trust, then the grid.
+    # The grid the batch declares, not the spacing measured off date_column. A
+    # record too short or too irregular to measure has no measured spacing to
+    # fall back to, which is the case this source exists to cover.
+    grid = round(float(grid_minutes))
+
+    # Declared, then a measurement regular enough to trust, then the grid.
     out['cadence_minutes'] = (
         declared_minutes
         .combine_first(out['cadence_detected'].where(trusted))
@@ -1346,6 +1422,16 @@ def detect_column_cadence(
         .mask(trusted, 'detected')
         .mask(declared_minutes.notna(), 'declared')
     )
+
+    measured_grid = dict(
+        zip(out['column'], out['cadence_detected'])
+    ).get(date_column, pd.NA)
+    if pd.notna(measured_grid) and round(float(measured_grid)) != grid:
+        logging.warning(
+            f"{ctx}The batch declares a {cadence_label(grid_minutes)} grid but "
+            f"the readings arrive every {cadence_label(measured_grid)}. Using "
+            f"the declared grid."
+        )
 
     drifted = (
         declared_minutes.notna() & trusted
@@ -1373,7 +1459,7 @@ def fill_down_infrequent_devices(
     df: pd.DataFrame,
     columns: tuple[str, ...] | list[str],
     cadence: pd.DataFrame | None = None,
-    grid_minutes: float = DEFAULT_GRID_MINUTES,
+    grid_minutes: float | None = None,
 ) -> pd.DataFrame:
     """
     Fill down (forward fill) and then up (backward fill) values for specified columns.
@@ -1406,6 +1492,11 @@ def fill_down_infrequent_devices(
     ``ensure_intervals`` pads it. A column reporting faster than the grid cannot
     have a sparser fill than the grid, so it fills every row.
 
+    The grid is required. It is declared per household batch as
+    ``Gegevensfrequentie``; resolve it with ``grid_minutes_for_household``. A
+    caller that does not know the grid cannot know which rows a filled value
+    belongs on, and assuming one places every fill on the wrong slots.
+
     Slots are stepped in rows rather than in wall-clock time, so a grid of any
     cadence works and a column's cadence need not divide the hour. The step is
     anchored on the device's first real reading, which puts the slots where its
@@ -1427,13 +1518,18 @@ def fill_down_infrequent_devices(
     cadence : pd.DataFrame, optional
         The output of ``detect_column_cadence``, measured on this data before any
         fill. Columns absent from it are filled every row.
-    grid_minutes : int
-        The grid the pipeline imposes, in minutes. Default 5.
+    grid_minutes : float
+        The grid the pipeline imposes, in minutes. Required.
 
     Returns
     -------
     pd.DataFrame
         The input DataFrame with the specified columns filled in place.
+
+    Raises
+    ------
+    ValueError
+        When *grid_minutes* is not given.
 
     Notes
     -----
@@ -1443,6 +1539,13 @@ def fill_down_infrequent_devices(
     function may infer from missingness.
     Only meaningful for cumulative variables -- do not apply to instantaneous sensors.
     """
+    if grid_minutes is None or pd.isna(grid_minutes):
+        raise ValueError(
+            "fill_down_infrequent_devices: grid_minutes was not given, so the "
+            "grid these columns are filled onto is unknown. It is declared per "
+            "household batch as Gegevensfrequentie."
+        )
+
     minutes_by_column = {}
     if cadence is not None and not cadence.empty:
         # Cadence is settled by detect_column_cadence and only read here.
@@ -1777,7 +1880,7 @@ def combine_source_columns(
 def snap_readings_to_grid(
     df: pd.DataFrame,
     date_column: str = 'ReadingDate',
-    freq_minutes: float = DEFAULT_GRID_MINUTES,
+    freq_minutes: float | None = None,
     max_deviation_seconds: float = None,
     context: str = '',
 ) -> pd.DataFrame:
@@ -1817,17 +1920,22 @@ def snap_readings_to_grid(
     This function does no fill-down or fill-up.  It only snaps and merges.
     Call ensure_intervals afterwards to pad any remaining missing grid slots.
 
+    The grid is required. It is declared per household batch as
+    ``Gegevensfrequentie``; resolve it with ``grid_minutes_for_household``.
+    Snapping to the wrong grid moves every reading, and snapping to no grid
+    leaves the streams unmerged while reporting success.
+
     Parameters
     ----------
     df : pd.DataFrame
         Input DataFrame.  The date_column must already be datetime dtype.
     date_column : str
         Name of the datetime column.  Default 'ReadingDate'.
-    freq_minutes : int
-        Grid slot size in minutes.  Default 5.
+    freq_minutes : float
+        Grid slot size in minutes.  Required.
     max_deviation_seconds : float, optional
         Log a warning if any reading deviates from its nearest slot by more
-        than this many seconds.  Default: half the slot size (150 s for 5-min).
+        than this many seconds.  Default: half the slot size.
     context : str
         Optional prefix for log messages, e.g. a household identifier.
 
@@ -1836,11 +1944,23 @@ def snap_readings_to_grid(
     pd.DataFrame
         One row per grid slot, columns merged from all input rows that
         mapped to that slot.  The date_column contains exact grid timestamps.
+
+    Raises
+    ------
+    ValueError
+        When *freq_minutes* is not given.
     """
+    if freq_minutes is None or pd.isna(freq_minutes):
+        raise ValueError(
+            "snap_readings_to_grid: freq_minutes was not given, so the grid to "
+            "snap onto is unknown. It is declared per household batch as "
+            "Gegevensfrequentie."
+        )
+
     ctx = (context + ': ') if context else ''
     freq_seconds = freq_minutes * 60
     if max_deviation_seconds is None:
-        max_deviation_seconds = freq_seconds / 2.0  # 150 s for 5-min grid
+        max_deviation_seconds = freq_seconds / 2.0
 
     df = df.copy()
 
@@ -1856,15 +1976,16 @@ def snap_readings_to_grid(
     offset_rounded = raw_offsets.round(0)
 
     max_dev = raw_offsets.abs().max()
+    slot = cadence_label(freq_minutes)
     logging.debug(
         f"{ctx}snap_readings_to_grid: max deviation from nearest "
-        f"{freq_minutes}-min slot = {max_dev:.2f}s "
+        f"{slot} slot = {max_dev:.2f}s "
         f"(tolerance {max_deviation_seconds:.0f}s)"
     )
     if max_dev > max_deviation_seconds:
         logging.warning(
             f"{ctx}snap_readings_to_grid: some readings deviate by more than "
-            f"{max_deviation_seconds:.0f}s from their nearest {freq_minutes}-min "
+            f"{max_deviation_seconds:.0f}s from their nearest {slot} "
             f"slot (max={max_dev:.2f}s).  This may indicate irregular data."
         )
 
@@ -1976,7 +2097,7 @@ def snap_readings_to_grid(
 def ensure_intervals(
     df: pd.DataFrame,
     date_column: str = 'ReadingDate',
-    freq='5min',
+    freq=None,
 ) -> pd.DataFrame:
     """
     Ensure that the DataFrame has a consistent number of records and expected time intervals.
@@ -1992,15 +2113,22 @@ def ensure_intervals(
         The input DataFrame containing the time series data.
     date_column : str, optional
         The name of the column containing the datetime information, by default 'ReadingDate'.
-    freq : str, optional
-        The grid to pad to, written as a duration, by default '5min'. This is
-        the household batch's ``Gegevensfrequentie``; callers that process a
-        household resolve it with ``grid_minutes_for_household``.
+    freq : str
+        The grid to pad to, written as a duration. Required. This is the
+        household batch's ``Gegevensfrequentie``; callers that process a
+        household resolve it with ``grid_minutes_for_household`` and render it
+        with ``cadence_label``. Padding to the wrong grid changes the row count
+        of the whole dataset.
 
     Returns
     -------
     pd.DataFrame
         A DataFrame with consistent time intervals.
+
+    Raises
+    ------
+    ValueError
+        When *freq* is not given.
 
     Notes
     -----
@@ -2016,6 +2144,12 @@ def ensure_intervals(
     - This function assumes that an effort has already been made to prepare the data source in the intervals.
     - If raw data has more frequent data or if it records are coming in at a variable or different frequence, it will first need to be processed to meet the given interval.
     """
+    if freq is None or (not isinstance(freq, str) and pd.isna(freq)):
+        raise ValueError(
+            "ensure_intervals: freq was not given, so the grid to pad to is "
+            "unknown. It is declared per household batch as "
+            "Gegevensfrequentie."
+        )
 
     df[date_column] = pd.to_datetime(df[date_column])
 
@@ -2216,33 +2350,6 @@ def expand_tz_columns(df: pd.DataFrame, vectorized: bool = False) -> pd.DataFram
     return pd.DataFrame(out_cols)
 
 
-def cadence_minutes_by_column(cadence) -> dict:
-    """
-    Map each column to the interval its readings cover, in minutes.
-
-    Reads the table :func:`detect_column_cadence` produces for one household.
-    A column is found under its own name or under the name of the variable it
-    is paired with, since cadence is measured on the columns as delivered and a
-    derived column is not there under its own name.
-
-    Returns an empty dict when no cadence is available, which leaves every
-    bound unscaled.
-    """
-    if cadence is None or getattr(cadence, "empty", True):
-        return {}
-
-    measured = {
-        row.column: row.cadence_minutes
-        for row in cadence.itertuples()
-        if pd.notna(row.cadence_minutes)
-    }
-    resolved = {}
-    for column in list(measured):
-        for name in cadence_lookup_names(column):
-            resolved.setdefault(name, measured[column])
-    return resolved
-
-
 def apply_thresholds_to_df(
     df,
     cadence=None,
@@ -2265,9 +2372,9 @@ def apply_thresholds_to_df(
         The input DataFrame containing the data.
     cadence : pandas.DataFrame, optional
         Per-column cadence for this household, from
-        :func:`detect_column_cadence`. Without it every bound is applied as
-        declared, which is correct only for columns reporting at the base
-        interval.
+        :func:`detect_column_cadence`. Required for any column whose bound is
+        written per interval; without it those columns raise rather than being
+        judged against an interval nobody resolved.
     return_stats : bool, optional
         If True, also return a dict describing what each column lost to
         the threshold pass. Default False (returns only the DataFrame,
@@ -2285,10 +2392,18 @@ def apply_thresholds_to_df(
 
     stats = {}
     minutes_by_column = cadence_minutes_by_column(cadence)
+    # A column built during the pipeline was placed on the grid, so that is the
+    # interval it reports at -- it was not delivered, so nothing measured it.
+    grid = dataset_cadence_minutes(cadence)
     for col in df.columns:
-        if col in thresholds_dict:
-            lower_bound, upper_bound = scale_bounds(
-                thresholds_dict[col], minutes_by_column.get(col)
+        # A column with no values has nothing to judge, so it needs no bound and
+        # no cadence. The model columns added during mapping are empty exactly
+        # when the supplier delivered nothing for them.
+        if col in thresholds_dict and df[col].notna().any():
+            lower_bound, upper_bound = resolve_bounds(
+                thresholds_dict[col],
+                minutes_by_column.get(col, grid),
+                col,
             )
             df, col_stats = apply_threshold_to_col(
                 df=df,
@@ -2829,9 +2944,12 @@ def _detect_frozen_spans_for_household(df, household_id, cadence=None, context="
     Returns sidecar rows. Nothing in *df* is changed; this is detection only.
     """
     ctx = (context + ": ") if context else ""
-    cadence_minutes = {}
-    if cadence is not None and not cadence.empty:
-        cadence_minutes = dict(zip(cadence["column"], cadence["cadence_minutes"]))
+    # Resolves a derived interval column through its cumulative variable, since
+    # cadence is measured on the columns as delivered and a column derived
+    # during the pipeline is not there under its own name.
+    cadence_minutes = cadence_minutes_by_column(cadence)
+    # A column built during the pipeline reports at the grid it was placed on.
+    grid = dataset_cadence_minutes(cadence)
 
     reading_dates = df.get("ReadingDate")
     rows = []
@@ -2846,13 +2964,13 @@ def _detect_frozen_spans_for_household(df, household_id, cadence=None, context="
         if not _accumulates(col):
             continue
 
-        # Interval columns are derived during the pipeline, so they do not appear
-        # in the cadence table, which was measured on the columns as delivered.
-        # An interval column inherits the cadence of its cumulative variable.
-        source = cumulative_column(col) or col
-        _, bound = scale_bounds(
-            entry,
-            cadence_minutes.get(col, cadence_minutes.get(source, pd.NA)),
+        # A column with no values has no span to find, so it needs no bound and
+        # no cadence.
+        if not df[col].notna().any():
+            continue
+
+        _, bound = resolve_bounds(
+            entry, cadence_minutes.get(col, grid), col
         )
         spans = frozen_spans(df[col], upper_bound=bound)
         rows.extend(
@@ -3037,8 +3155,12 @@ def run_standard_pipeline(
         Destination folder for the processed parquet file.
     context : str
         Optional log prefix, e.g. '{household_id_supplier}/{household_id}'.
-    cadence : pd.DataFrame, optional
+    cadence : pd.DataFrame, required
         Per-column cadence for this household, from ``detect_column_cadence``.
+        The mapper measures it, because cadence has to be read from the data as
+        delivered: ``fill_down_infrequent_devices`` leaves no row missing, which
+        removes the evidence. This pipeline runs after that, so it cannot
+        measure the cadence itself.
     treat_frozen_spans : bool
         Whether to blank detected frozen spans so imputation can spread them.
     grid_minutes : float, optional
@@ -3083,6 +3205,18 @@ def run_standard_pipeline(
                 f"[run_standard_pipeline] {ctx}{n_bad} ReadingDate value(s) could not be "
                 f"parsed. Every row must have a valid ReadingDate."
             )
+
+    # Checked here rather than where a bound is scaled, so the message names
+    # what the caller has to do instead of naming the first column that hit it.
+    # After the ReadingDate checks above, so a structural problem with the frame
+    # is still reported as itself.
+    if cadence is None or getattr(cadence, "empty", True):
+        raise ValueError(
+            f"[run_standard_pipeline] {ctx}no cadence was given, so every bound "
+            f"written per interval would be applied at an interval nobody "
+            f"resolved. Measure it with detect_column_cadence on the data as "
+            f"delivered, before any fill, and pass the result as cadence."
+        )
 
     # ------------------------------------------------------------------
     # 3. Sort by ReadingDate
@@ -3147,9 +3281,13 @@ def run_standard_pipeline(
 
     # ------------------------------------------------------------------
     # 8. Apply record-level validation flags
+    #
+    #    cadence goes in so a bound written per interval is scaled the same way
+    #    step 9 scales it. Without it the two steps disagree about the same
+    #    values on any household not reporting at the base interval.
     # ------------------------------------------------------------------
     for flag, condition in record_flag_conditions.items():
-        df[flag] = condition(df)
+        df[flag] = condition(df, cadence=cadence)
 
     # Count flag failures per category (False = failed validation)
     def _count_failures(flag_dict):

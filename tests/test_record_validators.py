@@ -19,7 +19,7 @@ def test_record_flag_conditions():
     2. CHeck whether Diff columns are there for all cumulative columns
     3. Whether special checks are present:
         - "validate_reading_date_unique"
-        - "validate_300sec"
+        - "validate_observed_spacing"
         - "validate_elektriciteitgebruik"
         - "validate_warmteproductie"
         - "validate_thresholds_combined"
@@ -37,7 +37,7 @@ def test_record_flag_conditions():
     assert all('validate_' + col in record_flag_conditions for col in columns_with_value_bounds)
     special_checks = (
         "validate_reading_date_unique",
-        "validate_300sec",
+        "validate_observed_spacing",
         "validate_elektriciteitgebruik",
         "validate_warmteproductie",
         "validate_thresholds_combined",

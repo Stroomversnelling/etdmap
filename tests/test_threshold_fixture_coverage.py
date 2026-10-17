@@ -19,10 +19,12 @@ from conftest import SYNTHETIC_DIFF_RANGES
 
 from etdmap.data_model import cumulative_columns, load_thresholds
 
-# Pinned 2026-06-19. Update DELIBERATELY (and extend the fixtures) when the
+# Pinned 2026-06-19, extended 2026-10-17 with the two upper-bound shape columns
+# the sync now writes. Update DELIBERATELY (and extend the fixtures) when the
 # thresholds data model legitimately grows -- that deliberate edit is the point.
 EXPECTED_THRESHOLD_COLUMNS = {
-    "Variabele", "ThresholdType", "Eenheid", "Min", "Max", "ThresholdToelichting",
+    "Variabele", "ThresholdType", "Eenheid", "Min", "Max",
+    "UpperThresholdSustained", "UpperThresholdExponent", "ThresholdToelichting",
 }
 EXPECTED_UNIT_TYPES = {
     "1 / uur", "A", "GJ", "V", "W", "graden C", "kW", "kWh", "liter",

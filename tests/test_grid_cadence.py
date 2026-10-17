@@ -164,8 +164,9 @@ class TestFillingStepsInTheGridItIsGiven:
             self.CUM: pd.array(values, dtype="Float64"),
         })
         cadence = pd.DataFrame({
+            "HuisIdBSV": pd.array([1], dtype="Int64"),
             "column": pd.array([self.CUM], dtype="string"),
-            "cadence_minutes": pd.array([column_minutes], dtype="Float64"),
+            "cadence_minutes": pd.array([column_minutes], dtype="Int64"),
         })
         out = fill_down_infrequent_devices(
             df, [self.CUM], cadence=cadence, grid_minutes=grid_minutes
@@ -177,9 +178,9 @@ class TestFillingStepsInTheGridItIsGiven:
         [
             (5, 15, 3, 4),
             (15, 60, 4, 3),
-            (0.5, 1, 2, 6),
+            (60, 1440, 24, 1),
         ],
-        ids=["15min column on a 5min grid", "hourly on 15min", "1min on a 30s grid"],
+        ids=["15min column on a 5min grid", "hourly on 15min", "daily on hourly"],
     )
     def test_it_fills_one_slot_per_reporting_interval(
         self, grid_minutes, column_minutes, reports_every, expected

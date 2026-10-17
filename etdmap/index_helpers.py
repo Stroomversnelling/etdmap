@@ -111,12 +111,6 @@ batch_field_dtypes = {
     "Leverancierfrequentie": pd.StringDtype(),
 }
 
-#: The grid the pipeline works on unless a caller names another. A stage that
-#: has to know what the data actually sits on reads the declared frequency
-#: instead: grid_minutes_for_household during mapping, dataset_grid_minutes
-#: afterwards.
-DEFAULT_GRID_MINUTES = 5
-
 
 def frequency_to_minutes(frequency):
     """
@@ -603,6 +597,10 @@ def update_index(
             f"{household_id} -- the household has no mapped data. {e}"
         ) from e
 
+    # The grid these validators judge against. A row count only means something
+    # against the interval the household is recorded on.
+    grid_minutes = grid_minutes_for_household(household_id)
+
     for flag, condition in dataset_flag_conditions.items():
         # Add flag column if it does not exist and ensure it's BooleanDtype
         if flag not in index_df.columns:
@@ -611,12 +609,16 @@ def update_index(
                 dtype="boolean", # "bool" is the standard non-nullable Boolean type (backed by NumPy), while "boolean" is pandas' nullable Boolean extension type (pd.BooleanDtype) that supports NA values.
                 index=index_df.index,
             )
+        # Only a data-level failure becomes pd.NA. A TypeError, AttributeError
+        # or KeyError here is a broken validator or a changed contract, and
+        # recording it as "not checked" hides it in a column of NA rather than
+        # stopping the run (ADR-012).
         try:
-            validation_result = condition(df)
+            validation_result = condition(df, grid_minutes=grid_minutes)
             index_df.loc[index_df["HuisIdBSV"] == household_id, flag] = (
                 validation_result
             )
-        except Exception as e:
+        except (ValueError, ArithmeticError) as e:
             logging.error(
                 f"Error validating with {flag} for household "
                 f"{household_id}: {e}",

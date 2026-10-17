@@ -475,9 +475,13 @@ From `mapping_helpers.py`:
    - *Unexpected zero check*: Identifies and flags unexpected zero values in cumulative readings.
    - *Data availability check*: Ensures that at least a specified percentage of values (default 90%) are not NA.
 
-## Alignment of clocks from different devices and merging data (ALPHA - example code only)
+## Alignment of clocks from different devices and merging data
 
-There are functions in `mapping_clock_helpers.py` that are setup to help align clocks from multiple devices and address situations where readings are spaced out in different intervals during the mapping process.
+`snap_readings_to_grid` in `mapping_helpers.py` aligns clocks from multiple
+devices and handles readings that arrive at different offsets within the same
+grid period. It takes the grid to snap onto, which is declared per household
+batch as `Gegevensfrequentie`. Call `ensure_intervals` afterwards to pad any
+grid slot that received no reading.
 
 ## Validators
 
@@ -561,9 +565,17 @@ _This approach may not be suitable if devices if there are underlying issues wit
 
 ## Time Series Consistency
 
-At the moment, custom logic has been used for each data source to ensure the data provided is available with a fixed interval (typically 5 minutes). _Example logic has been added to the file `mapping_clock_helpers.py`. It is alpha quality/pseudo code and should not be used at the moment. This should be tested and available to use in a subsequent release._
+Each household batch declares the interval its data is recorded on, as
+`Gegevensfrequentie` in the HuisBatch table. Read it with
+`grid_minutes_for_household()`, which raises rather than assuming an interval
+when the batch declares none. `snap_readings_to_grid()` puts readings onto that
+grid; a data source delivering at irregular offsets is handled there rather than
+by custom logic per source.
 
-After the data has fixed (5 min) interval, the `ensure_intervals()` function attempts to ensure a consistent time series by adding missing intervals and removing excess records for the same moment. This process can lead to incorrect data if the raw data does not naturally fit into the expected frequency.
+Once the data is on the declared grid, the `ensure_intervals()` function
+attempts to ensure a consistent time series by adding missing intervals and
+removing excess records for the same moment. This process can lead to incorrect
+data if the raw data does not naturally fit into the expected frequency.
 
 # Specific function notes
 

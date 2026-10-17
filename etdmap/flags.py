@@ -7,6 +7,7 @@ Flags are set where the finding is made and read downstream, so a later stage
 filters on a bit rather than repeating the test that produced it.
 """
 
+import re
 from enum import IntFlag, auto
 from math import inf
 
@@ -252,8 +253,41 @@ def bound_flags(
     )
 
 
-# The interval a "5-minute" threshold is written against.
-THRESHOLD_BASE_MINUTES = 5
+#: Units a ThresholdType may name its interval in, in minutes.
+_THRESHOLD_INTERVAL_UNITS = {
+    "second": 1 / 60,
+    "minute": 1.0,
+    "hour": 60.0,
+}
+
+_THRESHOLD_INTERVAL_PATTERN = re.compile(
+    r"^(\d+)-(" + "|".join(_THRESHOLD_INTERVAL_UNITS) + r")s?$"
+)
+
+
+def threshold_base_minutes(threshold_type):
+    """
+    The interval a threshold's bound is written against, in minutes.
+
+    A ThresholdType that names an interval states what one such interval may
+    hold: ``5-minute`` is a bound per five minutes, and the same row written
+    ``1-hour`` would be a bound per hour. The interval is read from the label so
+    that the threshold row is the only place it is recorded.
+
+    Returns pd.NA for a type that does not name an interval. ``momentaan`` is an
+    instantaneous reading, which does not accumulate over a longer interval;
+    ``cumulatief`` is a yearly total; ``algemeen`` is dimensionless, such as a
+    percentage. None of the three scales with a reporting interval.
+    """
+    if threshold_type is None or pd.isna(threshold_type):
+        return pd.NA
+
+    match = _THRESHOLD_INTERVAL_PATTERN.match(str(threshold_type).strip())
+    if match is None:
+        return pd.NA
+
+    minutes = int(match.group(1)) * _THRESHOLD_INTERVAL_UNITS[match.group(2)]
+    return minutes if minutes > 0 else pd.NA
 
 
 def scale_bound_to_cadence(bound, threshold_type, cadence_minutes):
@@ -266,17 +300,14 @@ def scale_bound_to_cadence(bound, threshold_type, cadence_minutes):
     times the declared bound. Judging it against the five-minute figure would
     reject every normal hourly reading.
 
-    Only ``5-minute`` bounds scale. A ``momentaan`` bound applies to an
-    instantaneous reading, which does not accumulate over a longer interval, so
-    a slower reporting rate does not make a larger value plausible. A
-    ``cumulatief`` bound applies to a yearly total. Both are returned unchanged,
-    as is a bound that is not set.
+    Only a bound whose type names an interval scales -- see
+    :func:`threshold_base_minutes` for which do. The rest are returned
+    unchanged, as is a bound that is not set.
     """
-    if pd.isna(bound) or pd.isna(cadence_minutes):
+    base_minutes = threshold_base_minutes(threshold_type)
+    if pd.isna(bound) or pd.isna(cadence_minutes) or pd.isna(base_minutes):
         return bound
-    if threshold_type != "5-minute":
-        return bound
-    return float(bound) * (float(cadence_minutes) / THRESHOLD_BASE_MINUTES)
+    return float(bound) * (float(cadence_minutes) / float(base_minutes))
 
 
 def contiguous_runs(mask: pd.Series) -> list[tuple[int, int]]:

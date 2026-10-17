@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 from etdmap.dataset_validators import validate_no_readingdate_gap
-from etdmap.record_validators import validate_300sec
+from etdmap.record_validators import validate_observed_spacing
 
 
 def _frame(freq, periods=12, drop=None):
@@ -32,7 +32,7 @@ def _frame(freq, periods=12, drop=None):
 class TestTheRecordValidatorFollowsTheGrid:
     @pytest.mark.parametrize("freq", ["5min", "15min", "1h", "30s"])
     def test_a_complete_series_passes_on_any_grid(self, freq):
-        result = validate_300sec(_frame(freq))
+        result = validate_observed_spacing(_frame(freq))
         # The first row has no predecessor to be spaced from.
         assert result.iloc[1:].all(), (
             f"a complete {freq} series reports rows as wrongly spaced"
@@ -40,11 +40,11 @@ class TestTheRecordValidatorFollowsTheGrid:
 
     @pytest.mark.parametrize("freq", ["5min", "15min", "1h"])
     def test_a_missing_slot_is_found_on_any_grid(self, freq):
-        result = validate_300sec(_frame(freq, drop=5))
+        result = validate_observed_spacing(_frame(freq, drop=5))
         assert not result.all(), f"the missing slot in a {freq} series was not found"
 
     def test_only_the_row_after_the_gap_is_marked(self):
-        result = validate_300sec(_frame("15min", drop=5))
+        result = validate_observed_spacing(_frame("15min", drop=5))
         # Dropping position 5 leaves the row that was position 6 twice as far
         # from its predecessor; every other spacing is unchanged.
         assert int((~result.fillna(True)).sum()) == 1

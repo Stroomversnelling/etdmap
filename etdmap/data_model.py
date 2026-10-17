@@ -116,7 +116,8 @@ def load_thresholds() -> pd.DataFrame:
     Returns
     -------
     pandas.DataFrame
-        Columns: Variabele, ThresholdType, Eenheid, Min, Max, ThresholdToelichting
+        Columns: Variabele, ThresholdType, Eenheid, Min, Max,
+        UpperThresholdSustained, UpperThresholdExponent, ThresholdToelichting
     """
     thresholds_file = files("etdmap.data").joinpath("thresholds.csv")
 
@@ -143,9 +144,9 @@ def load_thresholds_as_dict() -> dict:
     """
     Load thresholds as {variable_name: {"Min", "Max", "ThresholdType"}}.
 
-    A bound is declared against a unit of time -- "momentaan", "5-minute" or
-    "cumulatief" -- and ThresholdType names it. Min or Max may be pd.NA,
-    meaning no bound is declared on that side.
+    A bound is declared against a unit of time -- "momentaan", "5-minute",
+    "cumulatief" or "algemeen" -- and ThresholdType names it. Min or Max may be
+    pd.NA, meaning no bound is declared on that side.
     """
     thresholds_dict = {}
     for _, row in load_thresholds().iterrows():
@@ -671,6 +672,58 @@ def cadence_lookup_names(column: str) -> list[str]:
     return [column] if partner is None else [column, partner]
 
 
+def cadence_minutes_by_column(cadence) -> dict:
+    """
+    Map each column to the interval its readings cover, in minutes.
+
+    Reads the table :func:`etdmap.mapping_helpers.detect_column_cadence`
+    produces for one household. A column is found under its own name or under
+    the name of the variable it is paired with, since cadence is measured on the
+    columns as delivered and a derived column is not there under its own name.
+
+    Returns an empty dict when no cadence is available. A caller that scales a
+    bound treats a column missing from the result as unresolved rather than as
+    reporting at the interval its threshold was written against.
+    """
+    if cadence is None or getattr(cadence, "empty", True):
+        return {}
+
+    measured = {
+        row.column: row.cadence_minutes
+        for row in cadence.itertuples()
+        if pd.notna(row.cadence_minutes)
+    }
+    resolved = {}
+    for column in list(measured):
+        for name in cadence_lookup_names(column):
+            resolved.setdefault(name, measured[column])
+    return resolved
+
+
+def dataset_cadence_minutes(cadence, date_column: str = "ReadingDate"):
+    """
+    The interval the dataset itself is recorded on, from its cadence table.
+
+    :func:`etdmap.mapping_helpers.detect_column_cadence` measures the timestamp
+    column alongside the data columns and resolves it the same way, so this row
+    carries the grid the household batch declares.
+
+    This is the interval a column created during the pipeline reports at. A
+    synthesised tariff register, or an interval column derived from one, is
+    built row by row on the grid, so the grid is its cadence -- it was not
+    delivered, so there is nothing to have measured.
+
+    Returns pd.NA when there is no cadence table or no row for *date_column*.
+    """
+    if cadence is None or getattr(cadence, "empty", True):
+        return pd.NA
+
+    rows = cadence[cadence["column"] == date_column]
+    if rows.empty:
+        return pd.NA
+    return rows["cadence_minutes"].iloc[0]
+
+
 def scale_bounds(declared: dict, cadence_minutes=None) -> tuple:
     """
     Both bounds from a ``thresholds_dict`` entry, scaled to a reporting interval.
@@ -679,7 +732,7 @@ def scale_bounds(declared: dict, cadence_minutes=None) -> tuple:
     column reporting hourly is judged against twelve times that. Called without
     a cadence it returns the declared bounds, which is the unscaled pair; a
     caller judging real readings resolves the cadence first, since the declared
-    pair belongs to the base interval and to no other.
+    pair belongs to the interval it was written against and to no other.
 
     Takes the entry rather than the column name so the caller decides which
     threshold table is in force. That matters: a corrected threshold has to take
@@ -691,7 +744,7 @@ def scale_bounds(declared: dict, cadence_minutes=None) -> tuple:
         ``(lower, upper)``. ``pd.NA`` on either side means that side is not
         declared, which is unbounded rather than zero.
     """
-    from etdmap.flags import THRESHOLD_BASE_MINUTES, scale_bound_to_cadence
+    from etdmap.flags import scale_bound_to_cadence, threshold_base_minutes
 
     kind = declared.get("ThresholdType")
     lower = scale_bound_to_cadence(declared.get("Min", pd.NA), kind, cadence_minutes)
@@ -700,15 +753,55 @@ def scale_bounds(declared: dict, cadence_minutes=None) -> tuple:
     # signed floor is a rate. The upper bound takes a declared shape, because a
     # peak plausible for one interval is not plausible sustained across twelve.
     maximum = declared.get("Max", pd.NA)
-    if kind != "5-minute" or pd.isna(maximum) or pd.isna(cadence_minutes):
+    base_minutes = threshold_base_minutes(kind)
+    if pd.isna(base_minutes) or pd.isna(maximum) or pd.isna(cadence_minutes):
         return lower, maximum
 
     return lower, scale_upper_bound(
         maximum,
-        float(cadence_minutes) / THRESHOLD_BASE_MINUTES,
+        float(cadence_minutes) / float(base_minutes),
         declared.get("UpperThresholdSustained", pd.NA),
         declared.get("UpperThresholdExponent", pd.NA),
     )
+
+
+def resolve_bounds(declared: dict, cadence_minutes, column: str = "") -> tuple:
+    """
+    :func:`scale_bounds`, but an unresolved cadence is an error.
+
+    Returning the declared pair when the cadence is unknown multiplies the bound
+    by one, which is the same arithmetic as deciding the column reports at the
+    interval the bound was written against. That decision belongs to whoever
+    resolved the cadence, not to this function, and it is wrong for every
+    household recorded on anything else.
+
+    Use this when judging real readings. :func:`scale_bounds` stays lenient for
+    callers inspecting what a threshold declares rather than applying it.
+
+    A caller holding a column with no values at all has nothing to judge and no
+    need for a bound, so it skips this rather than resolving a cadence for an
+    empty column. Columns derived after the cadence was measured -- the model
+    columns added during mapping, and their interval columns -- are empty
+    exactly when their source delivered nothing.
+
+    Raises
+    ------
+    ValueError
+        When the bound is written per interval and *cadence_minutes* is unknown.
+    """
+    from etdmap.flags import threshold_base_minutes
+
+    kind = declared.get("ThresholdType")
+    unresolved = cadence_minutes is None or pd.isna(cadence_minutes)
+    if unresolved and pd.notna(threshold_base_minutes(kind)):
+        named = f"'{column}' " if column else ""
+        raise ValueError(
+            f"{named}has a '{kind}' bound, which is written per interval, but "
+            f"no cadence was resolved for it. Cadence is settled by "
+            f"detect_column_cadence and read from its table."
+        )
+
+    return scale_bounds(declared, cadence_minutes)
 
 
 # TEST-ONLY: hand-curated subset of aggregation variables that test fixtures

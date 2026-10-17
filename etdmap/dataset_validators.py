@@ -56,56 +56,49 @@ def validate_columns(df: DataFrame, columns: list, condition_func) -> bool:
     else:
         return pd.NA
 
-def validate_cumm_thesholds(df: DataFrame, col: str, thresholds:dict) -> bool:
+def validate_monitoring_data_counts(df: DataFrame, grid_minutes=None) -> bool:
     """
-    Validate cumulative thresholds for a specific column in a DataFrame.
+    Validate the number of records in a DataFrame against its grid.
 
-    Parameters
-    ----------
-    df : DataFrame
-        The input DataFrame containing the data to be validated.
-    col : str
-        The name of the column to be validated.
-    thresholds : dict
-        A dictionary containing the threshold values for the specified column.
-    Returns
-    -------
-    bool or pd.NA
-        True if the column values meet the specified thresholds, pd.NA if validation cannot be performed.
+    How many rows a complete year holds depends on the interval the household is
+    recorded on: 105,120 at five minutes, 35,040 at fifteen, 8,760 hourly. A
+    fixed row count is therefore a statement about one grid only, and marks
+    every household on any other grid invalid.
 
-    Notes
-    -----
-    This function checks if the differences between consecutive values in the specified column fall within the given thresholds.
-    """
-    min_tresh = thresholds[col]['Min']
-    max_tresh = thresholds[col]['Max']
-    def condition_func(df: pd.DataFrame) -> bool:
-        return (df[col].diff().dropna() >= min_tresh) & (
-            df[col].diff().dropna() <= max_tresh
-        )
-    return validate_columns(df, [col], condition_func)
-
-
-def validate_monitoring_data_counts(df: DataFrame) -> bool:
-    """
-    Validate the number of records in a DataFrame.
+    The expected count is derived from the grid and the span the rows cover,
+    with the same tolerance ``validate_approximately_one_year_of_records`` uses.
 
     Parameters
     ----------
     df : DataFrame
         The input DataFrame to be validated.
+    grid_minutes : float, optional
+        The interval the household is recorded on, in minutes. Declared per
+        household batch as ``Gegevensfrequentie``.
 
     Returns
     -------
     bool or pd.NA
-        True if the number of records falls within the specified range, pd.NA if the DataFrame is empty.
-
-    Notes
-    -----
-    This function checks if the number of records in the DataFrame is between 100,000 and 110,000.
+        True if the number of records matches the grid over roughly a year.
+        pd.NA if the DataFrame is empty, if it carries no ReadingDate, or if
+        the grid is unknown -- in which case nothing was checked.
     """
-    min_count, max_count = 100000, 110000
-    return pd.NA if df.empty else min_count <= len(df) <= max_count
+    if df.empty or "ReadingDate" not in df.columns:
+        return pd.NA
+
+    if grid_minutes is None or pd.isna(grid_minutes):
+        logging.warning(
+            "[dataset_validators] validate_monitoring_data_counts: no grid was "
+            "given, so the expected row count is unknown and nothing was "
+            "checked. The grid is declared per household batch as "
+            "Gegevensfrequentie."
+        )
+        return pd.NA
+
+    rows_per_day = (24 * 60) / float(grid_minutes)
+    expected_min = (365 - year_allowed_jitter) * rows_per_day
+    expected_max = (365 + year_allowed_jitter) * rows_per_day
+    return bool(expected_min <= len(df) <= expected_max)
 
 
 def validate_cumulative_variable(df: DataFrame, column: str) -> bool:
@@ -185,7 +178,7 @@ def validate_range(
         return pd.NA
 
 
-def validate_approximately_one_year_of_records(df: DataFrame) -> bool:
+def validate_approximately_one_year_of_records(df: DataFrame, grid_minutes=None) -> bool:
     """
     Validate that a DataFrame contains approximately one year of records.
 
@@ -234,7 +227,7 @@ def validate_column_exists(df: DataFrame, column_name: str) -> bool:
     return column_name in df.columns
 
 
-def validate_columns_exist(df: DataFrame) -> bool:
+def validate_columns_exist(df: DataFrame, grid_minutes=None) -> bool:
     """
     Validate that all required columns for data analysis exist in a DataFrame.
 
@@ -257,7 +250,7 @@ def validate_columns_exist(df: DataFrame) -> bool:
             )
 
 
-def validate_energiegebruik_warmteopwekker(df: DataFrame) -> bool:
+def validate_energiegebruik_warmteopwekker(df: DataFrame, grid_minutes=None) -> bool:
     """
     Validate the energy usage of the heat generator in a DataFrame.
 
@@ -275,16 +268,31 @@ def validate_energiegebruik_warmteopwekker(df: DataFrame) -> bool:
     -----
     This function calculates the total energy usage of the heat generator by summing the electricity usage
     of the heat pump, booster, and boiler tank, and then validates if this total falls within a specified range.
+
+    Returns pd.NA when any of the three columns is absent: the total cannot be
+    formed, so there is nothing to judge. The sum is built on a copy, so the
+    frame handed in keeps the columns it arrived with.
     """
-    df["EnergiegebruikWarmteopwekker"] = (
-        df["ElektriciteitsgebruikWarmtepomp"]
-        + df["ElektriciteitsgebruikBooster"]
-        + df["ElektriciteitsgebruikBoilervat"]
-    )
-    return validate_range(df, "EnergiegebruikWarmteopwekker", 100, 20000)
+    parts = [
+        "ElektriciteitsgebruikWarmtepomp",
+        "ElektriciteitsgebruikBooster",
+        "ElektriciteitsgebruikBoilervat",
+    ]
+    missing = [col for col in parts if col not in df.columns]
+    if missing:
+        logging.debug(
+            f"[dataset_validators] Cannot validate "
+            f"EnergiegebruikWarmteopwekker: {missing} not in DataFrame -- "
+            f"returning NA."
+        )
+        return pd.NA
+
+    totals = df[["ReadingDate"]].copy() if "ReadingDate" in df.columns else df.copy()
+    totals["EnergiegebruikWarmteopwekker"] = sum(df[col] for col in parts)
+    return validate_range(totals, "EnergiegebruikWarmteopwekker", 100, 20000)
 
 
-def validate_no_readingdate_gap(df: DataFrame) -> bool:
+def validate_no_readingdate_gap(df: DataFrame, grid_minutes=None) -> bool:
     """
     Validate that there are no gaps in the reading dates of a DataFrame.
 
@@ -338,7 +346,7 @@ def create_validate_func_col(col:str, tresholds) -> callable:
     low_thres = tresholds[col]['Min']
     high_thres = tresholds[col]['Max']
 
-    def validate_func(df: DataFrame) -> bool:
+    def validate_func(df: DataFrame, grid_minutes=None) -> bool:
         return validate_cumulative_variable(
             df,
             col,
@@ -365,6 +373,10 @@ def create_validate_func_outliers_neg_cum(
     Notes
     -----
     This function creates a validation function that checks if all non-null values in the 'validate_<col>Diff' column are True.
+
+    The flag column it reads is written by the record validators during mapping.
+    A frame that does not carry it yields pd.NA: the per-record verdict this
+    summarises was never recorded, so there is nothing to summarise.
     """
 
     interval_col = interval_column(col)
@@ -377,8 +389,15 @@ def create_validate_func_outliers_neg_cum(
 
     def validate_no_outliers_negative_cumulative_diff(
         df: DataFrame,
+        grid_minutes=None,
         flag_col="validate_" + interval_col,
     ) -> bool:
+        if flag_col not in df.columns:
+            logging.debug(
+                f"[dataset_validators] Cannot validate {flag_col}: not in "
+                f"DataFrame -- returning NA."
+            )
+            return pd.NA
         return all(
             df[flag_col].isna() | df[flag_col],
         )

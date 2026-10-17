@@ -807,7 +807,7 @@
                 "null_count": 0
             }
         },
-        "validate_300sec": {
+        "validate_observed_spacing": {
             "statistics": {
                 "min": "True",
                 "max": "True",

@@ -154,7 +154,14 @@ def generate_raw_dataset(output_dir):
                 household_data[col] = cumulative
 
             household_df = pd.DataFrame(household_data)
-            household_df = add_raw_data_test_case(base_date, household_df, household_id_raw=household_prefixed, project_id_raw=project_prefixed, rng=rng)
+            # The interval these rows were built at, passed rather than
+            # defaulted again: the test cases place gaps and shifts relative to
+            # it, so a second copy of the figure could silently disagree.
+            household_df = add_raw_data_test_case(
+                base_date, household_df, household_id_raw=household_prefixed,
+                project_id_raw=project_prefixed, rng=rng,
+                interval=pd.Timedelta(time_interval),
+            )
 
             file_path = os.path.join(output_dir, f"household_{household_id}_table.parquet")
             household_df.to_parquet(file_path, index=False)
@@ -179,9 +186,21 @@ def generate_raw_dataset(output_dir):
 #    mixed data types in a single column - are they reported and coerced correctly?
 #    drifting clocks - are they detected and corrected?
 #    less records than expected - are they reported?
-def add_raw_data_test_case(base_date, household_df, household_id_raw, project_id_raw, rng, interval = None):
-    if interval is None:
-        interval = pd.Timedelta(minutes=5)
+def add_raw_data_test_case(
+    base_date, household_df, household_id_raw, project_id_raw, rng, interval
+):
+    """Inject one household's deliberate fault into the generated raw data.
+
+    *interval* is the spacing the rows were generated at. It is required: the
+    cases below place gaps, shifts and duplicate readings relative to it, so a
+    default here would be a second copy of a figure the caller already holds and
+    could silently disagree with it.
+    """
+    if interval is None or pd.isna(interval):
+        raise ValueError(
+            "add_raw_data_test_case: interval was not given, so the spacing the "
+            "injected test cases are placed at is unknown."
+        )
 
     if (household_id_raw == "Huis1") and (project_id_raw == "Project1"):
         # There is a gap in data but after gap it continues (shift data down 24h)
@@ -345,7 +364,9 @@ def _list_files_data_fixture(folder_path):
     return {f[:-8]: f for f in os.listdir(folder_path) if f.endswith(".parquet") and "index" not in f}
 
 
-def _process_data_fixture_file(household_id, file_name, etd_test_fixture_path, mapped_folder_path):
+def _process_data_fixture_file(
+    household_id, file_name, etd_test_fixture_path, mapped_folder_path, grid_minutes
+):
     """Map one raw fixture file, returning its index entry and its cadence."""
     file_path = os.path.join(etd_test_fixture_path, file_name)
     new_file_path = os.path.join(
@@ -365,10 +386,14 @@ def _process_data_fixture_file(household_id, file_name, etd_test_fixture_path, m
     # Cadence is measured on the timestamps as delivered. Padding to the grid
     # first would report the grid rather than what each column sends.
     cadence = mapping.detect_column_cadence(
-        data_fixture_df, context=f"{household_id}/{file_name}"
+        data_fixture_df,
+        context=f"{household_id}/{file_name}",
+        grid_minutes=grid_minutes,
     )
 
-    data_fixture_df = mapping.ensure_intervals(data_fixture_df)
+    data_fixture_df = mapping.ensure_intervals(
+        data_fixture_df, freq=mapping.cadence_label(grid_minutes)
+    )
 
     data_fixture_df = mapping.rearrange_model_columns(
         household_df=data_fixture_df, add_columns=True, context=f"{household_id}/{file_name}"
@@ -377,13 +402,14 @@ def _process_data_fixture_file(household_id, file_name, etd_test_fixture_path, m
     data_fixture_df = mapping.fill_down_infrequent_devices(
         df=data_fixture_df,
         columns=("ElektriciteitsgebruikBoilervat", "ElektriciteitsgebruikRadiator", "ElektriciteitsgebruikBooster"),
+        grid_minutes=grid_minutes,
     )
 
     data_fixture_df = mapping.add_diff_columns(data_fixture_df, context=f"{household_id}/{file_name}")
 
     for flag, condition in record_flag_conditions.items():
         try:
-            data_fixture_df[flag] = condition(data_fixture_df)
+            data_fixture_df[flag] = condition(data_fixture_df, cadence=cadence)
         except Exception as e:
             logging.error(
                 f"Error validating with {flag} for household {household_id} / {file_name}: {e}",
@@ -476,8 +502,12 @@ def generate_mapped_dataset(
         if count >= households:
             break
         logging.info(f"Starting {file_name}")
+        # Read from the batch CSV written just above, the same way a mapper
+        # resolves it, rather than repeating the fixture's own interval here.
         new_entry, cadence = _process_data_fixture_file(
-            household_id, file_name, raw_folder, etdmap.options.mapped_folder_path
+            household_id, file_name, raw_folder,
+            etdmap.options.mapped_folder_path,
+            index_helpers.grid_minutes_for_household(household_id),
         )
         cadence_rows.extend(mapping.cadence_to_rows(household_id, cadence))
         index_df = index_helpers.update_index(

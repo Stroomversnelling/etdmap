@@ -15,7 +15,6 @@ import etdmap.index_helpers as index_helpers
 import etdmap.mapping_helpers as mapping
 from etdmap.data_model import cumulative_columns
 from etdmap.index_helpers import bsv_metadata_columns, metadata_dtypes, read_metadata
-from etdmap.record_validators import record_flag_conditions
 from etdmap.testing import (
     SYNTHETIC_DIFF_RANGES,
     generate_mapped_dataset,

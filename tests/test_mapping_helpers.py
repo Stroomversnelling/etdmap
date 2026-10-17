@@ -46,10 +46,20 @@ from etdmap.data_stats import (
     process_raw_data_file,
 )
 
+#: The grid these frames are built on and declared to sit on. Passed
+#: explicitly: there is no default grid.
+GRID = 5
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _pipeline_cadence(df, grid_minutes=GRID):
+    """The cadence table a mapper measures before calling the pipeline."""
+    from etdmap.mapping_helpers import detect_column_cadence
+    return detect_column_cadence(df, grid_minutes=grid_minutes)
+
 
 def _minimal_pipeline_df(n=3, freq="5min"):
     """Return a tiny DataFrame with ReadingDate and one cumulative column."""
@@ -127,7 +137,7 @@ class TestEnsureIntervals:
     def test_already_correct_returns_unchanged(self):
         dates = pd.date_range("2023-01-01", periods=5, freq="5min")
         df = pd.DataFrame({"ReadingDate": dates, "Value": range(5)})
-        result = ensure_intervals(df)
+        result = ensure_intervals(df, freq=f'{GRID}min')
         assert len(result) == 5
 
     def test_fills_missing_intervals(self):
@@ -135,7 +145,7 @@ class TestEnsureIntervals:
         dates = pd.date_range("2023-01-01", periods=5, freq="5min").tolist()
         dates.pop(2)  # remove one slot
         df = pd.DataFrame({"ReadingDate": dates, "Value": range(4)})
-        result = ensure_intervals(df)
+        result = ensure_intervals(df, freq=f'{GRID}min')
         # Should now have 5 rows (the missing slot added)
         assert len(result) == 5
 
@@ -143,14 +153,14 @@ class TestEnsureIntervals:
         dates = pd.date_range("2023-01-01", periods=5, freq="5min").tolist()
         dates.pop(2)
         df = pd.DataFrame({"ReadingDate": dates, "Value": [1.0, 2.0, 4.0, 5.0]})
-        result = ensure_intervals(df)
+        result = ensure_intervals(df, freq=f'{GRID}min')
         gap_row = result[result["ReadingDate"] == pd.Timestamp("2023-01-01 00:10:00")]
         assert len(gap_row) == 1
         assert pd.isna(gap_row["Value"].iloc[0])
 
     def test_single_row_unchanged(self):
         df = pd.DataFrame({"ReadingDate": [pd.Timestamp("2023-01-01")], "V": [1.0]})
-        result = ensure_intervals(df)
+        result = ensure_intervals(df, freq=f'{GRID}min')
         assert len(result) == 1
 
 
@@ -175,14 +185,18 @@ class TestFillDownInfrequentDevices:
     def test_forward_fills_gaps(self):
         col = self._FILL_COLS[0]
         df = self._make_df()
-        result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
+        result = fill_down_infrequent_devices(
+            df, columns=self._FILL_COLS, grid_minutes=GRID
+        )
         assert result[col].iloc[1] == 1.0  # ffilled
         assert result[col].iloc[2] == 1.0  # ffilled
 
     def test_backward_fills_leading_na(self):
         col = self._FILL_COLS[0]
         df = pd.DataFrame({col: pd.array([pd.NA, pd.NA, 5.0], dtype="Float64")})
-        result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
+        result = fill_down_infrequent_devices(
+            df, columns=self._FILL_COLS, grid_minutes=GRID
+        )
         assert result[col].iloc[0] == 5.0  # bfilled
 
     def test_all_na_stays_all_na(self):
@@ -194,7 +208,9 @@ class TestFillDownInfrequentDevices:
         from etdmap.flags import flag_column
         col = self._FILL_COLS[0]
         df = pd.DataFrame({col: pd.array([pd.NA] * 3, dtype="Float64")})
-        result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
+        result = fill_down_infrequent_devices(
+            df, columns=self._FILL_COLS, grid_minutes=GRID
+        )
         assert result[col].isna().all()
         assert result[col].dtype == "Float64"  # no silent downcast on fill
         # No values were written, so no findings may be recorded either.
@@ -206,13 +222,17 @@ class TestFillDownInfrequentDevices:
         df = pd.DataFrame({
             "NotAFillCol": pd.array([pd.NA, pd.NA, 3.0], dtype="Float64"),
         })
-        result = fill_down_infrequent_devices(df, columns=self._FILL_COLS)
+        result = fill_down_infrequent_devices(
+            df, columns=self._FILL_COLS, grid_minutes=GRID
+        )
         # NotAFillCol is not in the fill list -- should remain unchanged
         assert pd.isna(result["NotAFillCol"].iloc[0])
 
     def test_custom_columns_parameter(self):
         df = pd.DataFrame({"MyCol": pd.array([pd.NA, pd.NA, 7.0], dtype="Float64")})
-        result = fill_down_infrequent_devices(df, columns=("MyCol",))
+        result = fill_down_infrequent_devices(
+            df, columns=("MyCol",), grid_minutes=GRID
+        )
         assert result["MyCol"].iloc[0] == 7.0
 
 
@@ -490,17 +510,27 @@ class TestRunStandardPipeline:
     def test_raises_key_error_when_no_reading_date(self, tmp_path):
         df = pd.DataFrame({"SomeCol": [1, 2, 3]})
         with pytest.raises(KeyError, match="ReadingDate"):
-            run_standard_pipeline(df, household_id=1, household_id_supplier="HuisA", mapped_folder_path=tmp_path, grid_minutes=5)
+            run_standard_pipeline(
+                df, household_id=1, household_id_supplier="HuisA",
+                mapped_folder_path=tmp_path, grid_minutes=GRID,
+            )
 
     def test_raises_value_error_when_reading_date_unparseable(self, tmp_path):
         df = pd.DataFrame({"ReadingDate": ["bad", "also-bad"]})
         with pytest.raises((ValueError, Exception)):
-            run_standard_pipeline(df, household_id=1, household_id_supplier="HuisA", mapped_folder_path=tmp_path, grid_minutes=5)
+            run_standard_pipeline(
+                df, household_id=1, household_id_supplier="HuisA",
+                mapped_folder_path=tmp_path, grid_minutes=GRID,
+            )
 
     def test_saves_parquet_and_returns_entry(self, tmp_path):
         """End-to-end smoke test: pipeline writes a file and returns the index entry."""
         df = _minimal_pipeline_df(n=12)
-        result = run_standard_pipeline(df, household_id=42, household_id_supplier="HuisX", mapped_folder_path=tmp_path, grid_minutes=5)
+        result = run_standard_pipeline(
+            df, household_id=42, household_id_supplier="HuisX",
+            mapped_folder_path=tmp_path, grid_minutes=GRID,
+            cadence=_pipeline_cadence(df),
+        )
         result.pop("_validation_summary", None)
         assert result == {"HuisIdLeverancier": "HuisX", "HuisIdBSV": 42}
         out_file = tmp_path / "household_42_table.parquet"
@@ -510,14 +540,22 @@ class TestRunStandardPipeline:
         """Rows must be in ascending ReadingDate order in the saved file."""
         df = _minimal_pipeline_df(n=6)
         df = df.iloc[::-1].reset_index(drop=True)  # reverse the order
-        run_standard_pipeline(df, household_id=1, household_id_supplier="H", mapped_folder_path=tmp_path, grid_minutes=5)
+        run_standard_pipeline(
+            df, household_id=1, household_id_supplier="H",
+            mapped_folder_path=tmp_path, grid_minutes=GRID,
+            cadence=_pipeline_cadence(df),
+        )
         out = pd.read_parquet(tmp_path / "household_1_table.parquet", dtype_backend="numpy_nullable")
         assert (out["ReadingDate"].diff().dropna() >= pd.Timedelta(0)).all()
 
     def test_output_has_model_columns(self, tmp_path):
         """Output parquet must contain all model columns."""
         df = _minimal_pipeline_df(n=6)
-        run_standard_pipeline(df, household_id=2, household_id_supplier="H2", mapped_folder_path=tmp_path, grid_minutes=5)
+        run_standard_pipeline(
+            df, household_id=2, household_id_supplier="H2",
+            mapped_folder_path=tmp_path, grid_minutes=GRID,
+            cadence=_pipeline_cadence(df),
+        )
         out = pd.read_parquet(tmp_path / "household_2_table.parquet", dtype_backend="numpy_nullable")
         for col in model_column_order:
             assert col in out.columns, f"Model column '{col}' missing from output"
@@ -1311,7 +1349,8 @@ class TestPipelineDropsUnmappedColumns:
 
         run_standard_pipeline(
             df, household_id=77, household_id_supplier="H77",
-            mapped_folder_path=tmp_path, grid_minutes=5)
+            mapped_folder_path=tmp_path, grid_minutes=GRID,
+            cadence=_pipeline_cadence(df))
         out = pd.read_parquet(tmp_path / "household_77_table.parquet", dtype_backend="numpy_nullable")
 
         assert "alklimaHeatPump_holiday" not in out.columns
