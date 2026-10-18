@@ -1,6 +1,6 @@
 {
     "num_rows": 105120,
-    "num_columns": 212,
+    "num_columns": 230,
     "column_details": {
         "TemperatuurWaterOmgeving": {
             "statistics": {
@@ -284,9 +284,9 @@
         },
         "WarmteproductieRuimteverwarming": {
             "statistics": {
-                "min": "-0.0",
-                "max": "3029.6890136421016",
-                "null_count": 0
+                "min": null,
+                "max": null,
+                "null_count": 105120
             }
         },
         "WarmteproductieWarmTapwater": {
@@ -471,24 +471,164 @@
                 "null_count": 105120
             }
         },
-        "ElektriciteitsgebruikBoilervat_flags": {
+        "WarmteproductieRuimteverwarmingDiff": {
             "statistics": {
-                "min": "0",
-                "max": "0",
+                "min": "2.2369699186200574e-05",
+                "max": "0.15961862585595976",
+                "null_count": 96361
+            }
+        },
+        "ElektriciteitNetgebruik_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
                 "null_count": 0
             }
         },
-        "ElektriciteitsgebruikRadiator_flags": {
+        "ElektriciteitNetgebruikHoog_flags": {
             "statistics": {
-                "min": "0",
-                "max": "0",
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitNetgebruikLaag_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitTeruglevering_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitTerugleveringHoog_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitTerugleveringLaag_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "Gasgebruik_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitsgebruikWTW_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "262144",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitsgebruikWarmtepomp_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "262144",
                 "null_count": 0
             }
         },
         "ElektriciteitsgebruikBooster_flags": {
             "statistics": {
-                "min": "0",
-                "max": "4104",
+                "min": "131072",
+                "max": "135176",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitsgebruikBoilervat_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitsgebruikRadiator_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "WarmteproductieWarmtepomp_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "WatergebruikWarmTapwater_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "ZonopwekTotaal_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitsgebruikWarmtepompIntern_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "WarmteproductieWarmTapwater_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "WatergebruikWarmtepomp_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "WatergebruikRuimteverwarming_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "ZonopwekVerbruik_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "ElektriciteitsgebruikOverigGG_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "131072",
+                "null_count": 0
+            }
+        },
+        "WarmteproductieRuimteverwarmingDiff_flags": {
+            "statistics": {
+                "min": "131072",
+                "max": "524288",
                 "null_count": 0
             }
         },
@@ -654,20 +794,6 @@
             }
         },
         "WarmteproductieWarmtepompDiff_flags": {
-            "statistics": {
-                "min": "0",
-                "max": "2048",
-                "null_count": 0
-            }
-        },
-        "WarmteproductieRuimteverwarmingDiff": {
-            "statistics": {
-                "min": "-0.0",
-                "max": "0.0575996423",
-                "null_count": 0
-            }
-        },
-        "WarmteproductieRuimteverwarmingDiff_flags": {
             "statistics": {
                 "min": "0",
                 "max": "2048",
@@ -1266,7 +1392,7 @@
             "statistics": {
                 "min": "True",
                 "max": "True",
-                "null_count": 0
+                "null_count": 96361
             }
         },
         "validate_WatergebruikRuimteverwarmingDiff": {
@@ -1420,7 +1546,7 @@
             "statistics": {
                 "min": "True",
                 "max": "True",
-                "null_count": 1
+                "null_count": 96361
             }
         },
         "validate_WarmteproductieWarmTapwaterDiff_outliers": {

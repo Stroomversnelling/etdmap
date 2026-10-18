@@ -494,21 +494,24 @@ DESCRIPTIONS = {
     "FILLED_ZERO": "A zero written for a device the household does not have.",
     "FIRST_ZERO": "The zero at a household's first interval.",
     "NULLED": "A value blanked to pd.NA.",
-    "CUMULATIVE_CONSTRUCTED": "A cumulative column built from the delivered interval column.",
+    "CUMULATIVE_CONSTRUCTED": (
+        "DEPRECATED. Nothing sets this any more. A cumulative column built from "
+        "the delivered interval column. Mapping no longer builds one -- a "
+        "running total summed from intervals is not a meter reading -- and the "
+        "member is kept so data written before that still decodes."
+    ),
     "NOT_CHANGED": "A value mapping examined and left as delivered.",
     "TARIFF_COMBINED": "A tariff root written as the sum of its delivered Hoog/Laag registers.",
     "TARIFF_SIMULTANEOUS": "Both tariff registers delivered nonzero at the same reading.",
     "RAW_DELIVERED_VALUE": (
-        "RESERVED. No stage sets this yet. A value the supplier delivered in "
-        "this cell, recorded before any stage blanks one."
+        "A value the supplier delivered in this cell, recorded before any "
+        "stage blanks or replaces one."
     ),
     "OFF_CADENCE_NA": (
-        "RESERVED. No stage sets this yet. Absent because the column was not "
-        "due to report on this row."
+        "Absent because the column was not due to report on this row."
     ),
     "MISSING_VALUE": (
-        "RESERVED. No stage sets this yet. Absent on a row where the column "
-        "was due to report."
+        "Absent on a row where the column was due to report."
     ),
 }
 

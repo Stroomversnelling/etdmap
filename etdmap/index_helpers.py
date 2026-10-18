@@ -1,3 +1,4 @@
+import inspect
 import logging
 import os
 from pathlib import Path
@@ -524,6 +525,33 @@ def assign_bsv_ids(
     return result
 
 
+def supported_kwargs(condition, **kwargs) -> dict:
+    """
+    Of *kwargs*, only those *condition* declares a parameter for.
+
+    The validator registries are dispatched in a loop, so every caller offers
+    the same context to every validator. A validator that has no use for a
+    piece of it does not declare it, rather than declaring it and ignoring it:
+    the signature is then the record of what the check actually depends on, and
+    a reader does not have to look for a use that is not there.
+
+    Parameters
+    ----------
+    condition : callable
+        A validator from ``record_flag_conditions`` or
+        ``dataset_flag_conditions``.
+    **kwargs
+        The context on offer, e.g. ``cadence`` or ``grid_minutes``.
+
+    Returns
+    -------
+    dict
+        The subset to pass on.
+    """
+    accepted = inspect.signature(condition).parameters
+    return {name: value for name, value in kwargs.items() if name in accepted}
+
+
 def update_index(
     index_df: pd.DataFrame,
     new_entry: dict,
@@ -602,6 +630,7 @@ def update_index(
     grid_minutes = grid_minutes_for_household(household_id)
 
     for flag, condition in dataset_flag_conditions.items():
+        kwargs = supported_kwargs(condition, grid_minutes=grid_minutes)
         # Add flag column if it does not exist and ensure it's BooleanDtype
         if flag not in index_df.columns:
             index_df[flag] = pd.Series(
@@ -614,7 +643,7 @@ def update_index(
         # recording it as "not checked" hides it in a column of NA rather than
         # stopping the run (ADR-012).
         try:
-            validation_result = condition(df, grid_minutes=grid_minutes)
+            validation_result = condition(df, **kwargs)
             index_df.loc[index_df["HuisIdBSV"] == household_id, flag] = (
                 validation_result
             )

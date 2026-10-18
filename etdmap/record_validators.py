@@ -29,11 +29,13 @@ created that can be used to get insight in the data. The columns are:
 - 'validate_combined' (checks for each row if any value
     is outside of thresholds)
 
-Every validator takes (df, cadence=None) and returns a Series, so one loop can
-call them all. A bound written per interval has to be scaled to the interval the
+Every validator takes a DataFrame and returns a Series, so one loop can call
+them all. A bound written per interval has to be scaled to the interval the
 column reports in before it means anything, and *cadence* is where that comes
-from; validators whose check does not depend on it accept the argument and
-ignore it.
+from -- so a validator that scales a bound declares a ``cadence`` parameter and
+one that does not, does not. The caller offers the context to all of them and
+:func:`etdmap.index_helpers.supported_kwargs` passes each only what it declares,
+which leaves every signature a record of what that check depends on.
 """
 
 
@@ -44,6 +46,17 @@ def _bounds_for(col: str, cadence) -> tuple:
     Scales through the same :func:`etdmap.data_model.resolve_bounds` the mapping
     stage uses, so this check and the threshold pass agree on which values are
     out of range.
+
+    Parameters
+    ----------
+    col : str
+        The column to resolve bounds for.
+    cadence : pd.DataFrame
+        Per-column cadence for this household, from
+        :func:`etdmap.mapping_helpers.detect_column_cadence`: one row per
+        column, ``cadence_minutes`` holding the interval its readings cover. A
+        column absent from it falls back to the interval the dataset itself is
+        recorded on.
     """
     by_column = cadence_minutes_by_column(cadence)
     return resolve_bounds(
@@ -171,7 +184,7 @@ def validate_columns(df: DataFrame, columns: list, condition_func) -> Series:
         return pd.Series(pd.NA, dtype='boolean', index=df.index)
 
 
-def validate_reading_date_unique(df: DataFrame, cadence=None) -> Series:
+def validate_reading_date_unique(df: DataFrame) -> Series:
     """
     Validate that ReadingDate column has only unique values.
 
@@ -189,7 +202,7 @@ def validate_reading_date_unique(df: DataFrame, cadence=None) -> Series:
     return (~df.duplicated(subset=['ReadingDate'])).astype('boolean')
 
 
-def validate_observed_spacing(df: DataFrame, cadence=None) -> Series:
+def validate_observed_spacing(df: DataFrame) -> Series:
     """
     Validate that each row sits one grid interval after the one before it.
 
@@ -224,7 +237,7 @@ def validate_observed_spacing(df: DataFrame, cadence=None) -> Series:
     return result
 
 
-def validate_elektriciteitgebruik(df: DataFrame, cadence=None) -> Series:
+def validate_elektriciteitgebruik(df: DataFrame) -> Series:
     """
     Validate that ElektriciteitsgebruikTotaalHuishoudelijk is less than or equal to the sum of ZonopwekTotaal,
     ElektriciteitNetgebruikHoog, and ElektriciteitNetgebruikLaag.
@@ -257,7 +270,7 @@ def validate_elektriciteitgebruik(df: DataFrame, cadence=None) -> Series:
     return validate_columns(df, columns, condition_func)
 
 
-def validate_warmteproductie(df: DataFrame, cadence=None) -> Series:
+def validate_warmteproductie(df: DataFrame) -> Series:
     """
     Validate that WarmteproductieWarmtepomp is greater than or equal to WarmteproductieWarmTapwater.
 
@@ -388,7 +401,7 @@ def create_validate_cumulative(
         # cadence is accepted and ignored: an outlier here is judged against the
         # column's own distribution, which is already in its reporting interval.
         def validate_cumulative_outliers(
-            df: DataFrame, cadence=None, diff_col=interval_col
+            df: DataFrame, diff_col=interval_col
         ) -> Series:
             logging.debug(f"[record_validators] Checking {diff_col} outliers")
             try:

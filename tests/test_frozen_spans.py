@@ -16,6 +16,7 @@ import pytest
 from etdmap.flags import (
     MappingFlag,
     contiguous_runs,
+    flag_column,
     frozen_span_flags,
 )
 
@@ -391,3 +392,61 @@ class TestFlagsSurviveTheColumnFilter:
         out = rearrange_model_columns(df, add_columns=False)
         assert "nan [nan]" not in out.columns
         assert "nan [nan]_flags" not in out.columns
+
+
+class TestNullingIsBoundedToTheSpan:
+    """Treating a span blanks the interval column across it. The values that
+    belong to the span are the zeros the frozen meter reported and the catch-up
+    they arrive in -- anything else in that range is a delivered reading the
+    span has no claim on."""
+
+    CUM = "ElektriciteitNetgebruik"
+    DIFF = "ElektriciteitNetgebruikDiff"
+
+    def _frame_with_span(self, span_values):
+        n = len(span_values)
+        return pd.DataFrame({
+            "HuisIdBSV": pd.array([1] * n, dtype="Int64"),
+            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
+            self.CUM: pd.array([100.0 + i for i in range(n)], dtype="Float64"),
+            self.DIFF: pd.array(span_values, dtype="Float64"),
+        })
+
+    def _treat(self, df, start, catchup):
+        from etdmap.mapping_helpers import _treat_frozen_spans
+
+        _treat_frozen_spans(
+            df,
+            [{"column": self.DIFF, "start": start, "catchup_position": catchup}],
+        )
+        return df
+
+    def test_the_zeros_of_the_span_are_blanked(self):
+        df = self._frame_with_span([1.0, 0.0, 0.0, 0.0, 9.0, 1.0])
+        self._treat(df, start=1, catchup=4)
+        assert df[self.DIFF].iloc[1:4].isna().all()
+
+    def test_the_catch_up_is_blanked(self):
+        df = self._frame_with_span([1.0, 0.0, 0.0, 0.0, 9.0, 1.0])
+        self._treat(df, start=1, catchup=4)
+        assert pd.isna(df[self.DIFF].iloc[4])
+
+    def test_readings_outside_the_span_survive(self):
+        df = self._frame_with_span([1.0, 0.0, 0.0, 0.0, 9.0, 1.0])
+        self._treat(df, start=1, catchup=4)
+        assert float(df[self.DIFF].iloc[0]) == pytest.approx(1.0)
+        assert float(df[self.DIFF].iloc[5]) == pytest.approx(1.0)
+
+    def test_a_non_zero_reading_inside_the_span_survives(self):
+        """The detector found a flat run, so a value that is neither zero nor
+        the catch-up is a delivered reading -- blanking it would destroy data
+        the span does not account for."""
+        df = self._frame_with_span([1.0, 0.0, 0.7, 0.0, 9.0, 1.0])
+        self._treat(df, start=1, catchup=4)
+        assert float(df[self.DIFF].iloc[2]) == pytest.approx(0.7)
+
+    def test_the_blanking_is_flagged(self):
+        df = self._frame_with_span([1.0, 0.0, 0.0, 0.0, 9.0, 1.0])
+        self._treat(df, start=1, catchup=4)
+        flags = df[flag_column(self.DIFF)].fillna(0).astype("Int64")
+        assert (flags.iloc[1:5] & MappingFlag.NULLED.value).all()

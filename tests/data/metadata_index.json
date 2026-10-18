@@ -256,9 +256,9 @@
         },
         "validate_WarmteproductieRuimteverwarming": {
             "statistics": {
-                "min": "False",
-                "max": "False",
-                "null_count": 0
+                "min": null,
+                "max": null,
+                "null_count": 10
             }
         },
         "validate_WarmteproductieRuimteverwarmingDiff": {

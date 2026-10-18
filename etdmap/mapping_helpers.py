@@ -31,6 +31,7 @@ from etdmap.index_helpers import (
     get_mapped_data,
     grid_minutes_for_household,
     read_index,
+    supported_kwargs,
 )
 from etdmap.flags import (
     _SPAN_DTYPES,
@@ -567,65 +568,6 @@ def _carry_findings_to_intervals(group, col) -> None:
         set_flags(group, diff_col, on | on.shift(1, fill_value=False), flag)
 
 
-def construct_cumulative_from_interval(df, context: str = "") -> None:
-    """Build the cumulative column of any variable delivered as intervals only.
-
-    The cleaning stages read a running total: a frozen span is a total that
-    stops advancing, a catch-up is the reading it resumes in, and a gap's
-    volume is the difference across it. A supplier that sends only the interval
-    form leaves those with nothing to read, so the total is built here, before
-    any of them run.
-
-    Built where the cumulative column is absent or entirely missing and the
-    interval column holds values. One delivered reading counts as delivered:
-    overwriting a sparse column would discard what the meter did report.
-
-    Monotonicity is not required. This runs on data as delivered, ahead of
-    every correction, so refusing a column that dips would discard exactly the
-    case those corrections exist to handle.
-
-    The result is flagged CUMULATIVE_CONSTRUCTED. Its origin is arbitrary --
-    the series starts from its own first interval, not from whatever the meter
-    had totalled before -- so only differences across it carry meaning.
-    """
-    ctx = (context + ": ") if context else ""
-    for interval in list(df.columns):
-        cumulative = cumulative_column(interval)
-        if not cumulative or cumulative == interval:
-            continue
-        if df[interval].isna().all():
-            continue
-        # Only delivered values block construction. A cumulative holding
-        # nothing but invented values -- zeros written for a device the
-        # household does not have -- reports nothing the meter said, and
-        # leaving it in place would later turn into diffs of those zeros
-        # overwriting the delivered intervals. Without a findings column
-        # nothing is recorded against the values, so every one counts.
-        if cumulative in df.columns:
-            delivered = df[cumulative].notna()
-            findings = flag_column(cumulative)
-            if findings in df.columns:
-                delivered &= (
-                    df[findings].fillna(0) & MappingFlag.INVENTED.value
-                ) == 0
-            if delivered.any():
-                continue
-
-        # cumsum leaves NA where the interval is absent and resumes from what
-        # was accumulated before it, so a gap in the intervals stays a gap in
-        # the total rather than being bridged.
-        df[cumulative] = df[interval].cumsum()
-        set_flags(
-            df, cumulative,
-            pd.Series(True, index=df.index),
-            MappingFlag.CUMULATIVE_CONSTRUCTED,
-        )
-        logging.info(
-            f"{ctx}Built '{cumulative}' from the delivered '{interval}': the "
-            f"variable arrives as intervals only."
-        )
-
-
 def combine_tariff_registers(df, context: str = "") -> pd.DataFrame:
     """Combine delivered Hoog/Laag tariff registers into their root column.
 
@@ -831,22 +773,7 @@ def add_diff_columns(
             _delivered_interval = (
                 diff_col in group.columns and group[diff_col].notna().any()
             )
-            # A constructed cumulative is the cumsum of this very column, so
-            # differencing it back would replace delivered values with a round
-            # trip through their own total.
-            _constructed = bool(
-                flag_column(col) in group.columns
-                and (
-                    group[flag_column(col)].fillna(0)
-                    & MappingFlag.CUMULATIVE_CONSTRUCTED.value
-                ).any()
-            )
-            if _constructed and _delivered_interval:
-                logging.debug(
-                    f"{context_string}'{col}' was built from '{diff_col}'; "
-                    f"keeping the delivered interval values."
-                )
-            elif group[col].notna().any() or not _delivered_interval:
+            if group[col].notna().any() or not _delivered_interval:
                 logging.debug(f"{context_string}Calculating diff for {col}")
                 group[diff_col] = group[col].diff().round(10)
                 # No predecessor to difference against, so the first interval is
@@ -3090,6 +3017,153 @@ def _report_etdmap_provenance():
         logging.info(f"[etdmap] Using etdmap from {module_path} (last written {stamp}).")
 
 
+# Every data column of the model, including the interval columns. Membership is
+# performance_column_dtypes for the same reason rearrange_model_columns uses it:
+# it spans the whole model, where model_column_order carries no interval column.
+# ReadingDate is the index of the readings rather than one of them.
+_DELIVERY_MARKED_COLUMNS = frozenset(
+    column for column in performance_column_dtypes if column != "ReadingDate"
+)
+
+
+def _lattice_step(cadence_minutes, grid_minutes):
+    """
+    How many grid rows apart a column's readings fall, or None.
+
+    None where the step cannot be stated: no cadence, no grid, or a cadence that
+    is not a whole number of grid rows. A reading covering a fractional number of
+    rows has no lattice to sit on, so the caller asserts nothing about its gaps.
+    """
+    if cadence_minutes is None or pd.isna(cadence_minutes):
+        return None
+    if grid_minutes is None or pd.isna(grid_minutes) or float(grid_minutes) <= 0:
+        return None
+
+    step = float(cadence_minutes) / float(grid_minutes)
+    if step < 1 or step != int(step):
+        return None
+    return int(step)
+
+
+def mark_delivery_and_cadence(
+    df, cadence=None, grid_minutes=None, context: str = ""
+) -> None:
+    """
+    Record which values the supplier delivered, and which pd.NA was owed one.
+
+    A delivered value is marked RAW_DELIVERED_VALUE. A pd.NA is told apart by the
+    interval the column reports at: a column reporting every k grid rows is due a
+    reading every k-th row from its first one, so a pd.NA on that lattice was
+    owed a reading and is marked MISSING_VALUE, while one between ticks was never
+    due and is marked OFF_CADENCE_NA. Delivery completeness is measurable from the
+    first; the second is not a fault.
+
+    Both forms are marked. A coarsely reporting register can miss a tick as
+    easily as a delivered interval can.
+
+    No value is changed and nothing downstream reads these: they are what lets a
+    reader, and an analysis, tell an absent reading from a cadence gap.
+
+    Runs while the delivered values are still in place. ``add_diff_columns``
+    replaces a delivered interval with the register's diff and the cleaning steps
+    blank values, and findings accumulate, so marking first is what leaves a
+    blanked cell reading RAW_DELIVERED_VALUE | NULLED.
+
+    A value an earlier step wrote is not a value the supplier delivered, so a
+    cell already carrying an INVENTED finding is left out of both the delivered
+    mark and the lattice. ``fill_down_infrequent_devices`` runs in the mapper,
+    ahead of this pipeline, and leaves no row missing: without the exclusion
+    every cell it filled would read as delivered.
+
+    A column with no cadence, or one whose cadence is not a whole number of grid
+    rows, has no lattice: its delivered values are recorded and neither NA
+    signal is, since either would be a guess.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        One household's data, sorted by ReadingDate and already padded to the
+        grid by ``ensure_intervals``, so a row's position is its grid slot.
+    cadence : pd.DataFrame, optional
+        The per-column cadence table :func:`detect_column_cadence` produces for
+        this household: one row per column, with ``cadence_minutes`` holding the
+        interval that column's readings cover. Measured on the timestamps as
+        delivered, before any padding or fill.
+
+        Each column is read from **its own row**. A variable delivered in both
+        forms has a row for each, and a variable delivered as intervals only
+        still has one for its absent register carrying the grid as a fallback,
+        so resolving a column through the variable it is paired with would hand
+        it the wrong interval.
+
+        Omitted, or empty, means no column has a lattice: delivery is still
+        recorded and no absence is classified.
+    grid_minutes : float, optional
+        The interval the rows sit on, from the household batch's declared
+        ``Gegevensfrequentie``. Read from *cadence* when not given. A column's
+        readings fall every ``cadence_minutes / grid_minutes`` rows.
+    context : str
+        Optional prefix for log messages, e.g. a household identifier.
+
+    Modifies *df* in place.
+    """
+    ctx = (context + ": ") if context else ""
+    # Each column's own row, not cadence_minutes_by_column: that reader resolves
+    # a column through the variable it is paired with, for the stages that ask
+    # about a column derived later and absent from the table under its own name.
+    # The question here is what *this* delivered column reported at, and a
+    # variable delivered in both forms has a row for each -- resolving would hand
+    # the interval column the register's cadence.
+    minutes_by_column = {}
+    if cadence is not None and not getattr(cadence, "empty", True):
+        minutes_by_column = {
+            row.column: row.cadence_minutes
+            for row in cadence.itertuples()
+            if pd.notna(row.cadence_minutes)
+        }
+    grid = grid_minutes if grid_minutes is not None else dataset_cadence_minutes(cadence)
+
+    # Mapping runs per household on one frame sorted by ReadingDate, and
+    # ensure_intervals has given it one row per grid slot, so a row's position is
+    # its slot.
+    position = pd.Series(range(len(df)), index=df.index, dtype="Int64")
+    without_lattice = []
+
+    for column in df.columns:
+        if column not in _DELIVERY_MARKED_COLUMNS:
+            continue
+
+        delivered = df[column].notna()
+        findings = flag_column(column)
+        if findings in df.columns:
+            delivered &= (
+                df[findings].fillna(MappingFlag.NONE.value)
+                & MappingFlag.INVENTED.value
+            ) == 0
+        if not delivered.any():
+            continue
+        set_flags(df, column, delivered, MappingFlag.RAW_DELIVERED_VALUE)
+
+        step = _lattice_step(minutes_by_column.get(column), grid)
+        if step is None:
+            without_lattice.append(column)
+            continue
+
+        # Only an empty cell is owed a reading. A cell an earlier step wrote
+        # holds a value, whoever put it there, so neither signal applies to it.
+        absent = df[column].isna()
+        first = int(position[delivered].iloc[0])
+        on_lattice = ((position - first) % step) == 0
+        set_flags(df, column, absent & on_lattice, MappingFlag.MISSING_VALUE)
+        set_flags(df, column, absent & ~on_lattice, MappingFlag.OFF_CADENCE_NA)
+
+    if without_lattice:
+        logging.debug(
+            f"{ctx}No reading lattice for {len(without_lattice)} column(s), so "
+            f"their gaps are not classified: {sorted(without_lattice)[:10]}"
+        )
+
+
 def mark_unchanged_values(df) -> None:
     """Record NOT_CHANGED on every value no action was taken on.
 
@@ -3130,7 +3204,7 @@ def run_standard_pipeline(
       4. ensure_intervals
       5. Log model column type mismatches at DEBUG
       6. rearrange_model_columns(add_columns=True)
-      6b. construct_cumulative_from_interval
+      6b. mark_delivery_and_cadence
       7. add_diff_columns
      7b. Detect frozen spans, and blank them so imputation can spread them
       8. Apply record_flag_conditions (try/except per flag; pd.NA on error)
@@ -3259,11 +3333,13 @@ def run_standard_pipeline(
     df = rearrange_model_columns(household_df=df, add_columns=True, context=context)
 
     # ------------------------------------------------------------------
-    # 6b. Build the cumulative column of any variable delivered as intervals
-    #     only. Everything below reads a running total, so this runs before
-    #     the first stage that does.
+    # 6b. Record what the supplier delivered, per cell, while the delivered
+    #     values are still in place: step 7 replaces a delivered interval with
+    #     the register's diff, and the steps below blank values.
     # ------------------------------------------------------------------
-    construct_cumulative_from_interval(df, context=context)
+    mark_delivery_and_cadence(
+        df, cadence=cadence, grid_minutes=grid_minutes, context=context
+    )
 
     # ------------------------------------------------------------------
     # 7. Add diff columns (5-minute differences for cumulative variables)
@@ -3287,7 +3363,7 @@ def run_standard_pipeline(
     #    values on any household not reporting at the base interval.
     # ------------------------------------------------------------------
     for flag, condition in record_flag_conditions.items():
-        df[flag] = condition(df, cadence=cadence)
+        df[flag] = condition(df, **supported_kwargs(condition, cadence=cadence))
 
     # Count flag failures per category (False = failed validation)
     def _count_failures(flag_dict):

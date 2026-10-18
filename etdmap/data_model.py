@@ -681,6 +681,12 @@ def cadence_minutes_by_column(cadence) -> dict:
     the name of the variable it is paired with, since cadence is measured on the
     columns as delivered and a derived column is not there under its own name.
 
+    A column's own row wins. The pairing is a fallback for a column the table
+    has nothing for, and must not override one it does: a variable delivered as
+    intervals only still gets a row for its absent register, carrying the grid
+    as a fallback, and letting that reach the delivered interval column would
+    judge an hourly reading against a one-slot bound.
+
     Returns an empty dict when no cadence is available. A caller that scales a
     bound treats a column missing from the result as unresolved rather than as
     reporting at the interval its threshold was written against.
@@ -693,7 +699,7 @@ def cadence_minutes_by_column(cadence) -> dict:
         for row in cadence.itertuples()
         if pd.notna(row.cadence_minutes)
     }
-    resolved = {}
+    resolved = dict(measured)
     for column in list(measured):
         for name in cadence_lookup_names(column):
             resolved.setdefault(name, measured[column])

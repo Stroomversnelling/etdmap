@@ -178,7 +178,7 @@ def validate_range(
         return pd.NA
 
 
-def validate_approximately_one_year_of_records(df: DataFrame, grid_minutes=None) -> bool:
+def validate_approximately_one_year_of_records(df: DataFrame) -> bool:
     """
     Validate that a DataFrame contains approximately one year of records.
 
@@ -227,7 +227,7 @@ def validate_column_exists(df: DataFrame, column_name: str) -> bool:
     return column_name in df.columns
 
 
-def validate_columns_exist(df: DataFrame, grid_minutes=None) -> bool:
+def validate_columns_exist(df: DataFrame) -> bool:
     """
     Validate that all required columns for data analysis exist in a DataFrame.
 
@@ -250,7 +250,7 @@ def validate_columns_exist(df: DataFrame, grid_minutes=None) -> bool:
             )
 
 
-def validate_energiegebruik_warmteopwekker(df: DataFrame, grid_minutes=None) -> bool:
+def validate_energiegebruik_warmteopwekker(df: DataFrame) -> bool:
     """
     Validate the energy usage of the heat generator in a DataFrame.
 
@@ -292,7 +292,7 @@ def validate_energiegebruik_warmteopwekker(df: DataFrame, grid_minutes=None) -> 
     return validate_range(totals, "EnergiegebruikWarmteopwekker", 100, 20000)
 
 
-def validate_no_readingdate_gap(df: DataFrame, grid_minutes=None) -> bool:
+def validate_no_readingdate_gap(df: DataFrame) -> bool:
     """
     Validate that there are no gaps in the reading dates of a DataFrame.
 
@@ -346,7 +346,7 @@ def create_validate_func_col(col:str, tresholds) -> callable:
     low_thres = tresholds[col]['Min']
     high_thres = tresholds[col]['Max']
 
-    def validate_func(df: DataFrame, grid_minutes=None) -> bool:
+    def validate_func(df: DataFrame) -> bool:
         return validate_cumulative_variable(
             df,
             col,
@@ -389,7 +389,6 @@ def create_validate_func_outliers_neg_cum(
 
     def validate_no_outliers_negative_cumulative_diff(
         df: DataFrame,
-        grid_minutes=None,
         flag_col="validate_" + interval_col,
     ) -> bool:
         if flag_col not in df.columns:

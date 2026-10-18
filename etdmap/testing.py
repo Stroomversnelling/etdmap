@@ -19,7 +19,12 @@ from numpy.random import PCG64, Generator
 import etdmap
 import etdmap.index_helpers as index_helpers
 import etdmap.mapping_helpers as mapping
-from etdmap.data_model import cumulative_columns
+from etdmap.data_model import (
+    cumulative_columns,
+    interval_column,
+    scale_bounds,
+    thresholds_dict,
+)
 from etdmap.index_helpers import read_metadata
 from etdmap.record_validators import record_flag_conditions
 
@@ -264,6 +269,36 @@ def add_raw_data_test_case(
     mask_fifteen_min = (household_df['ReadingDate'].dt.minute % 15 != 0)
     household_df.loc[mask_fifteen_min, fifteen_min_var] = pd.NA
 
+    # There is a single variable the supplier delivers as intervals only: the
+    # interval column carries hourly readings and the register is never sent, so
+    # nothing downstream has a running total to read for it. One tick is dropped
+    # so an absent reading can be told apart from the gaps between them.
+    #
+    # The variable is outside every sum validator and outside the infrequent-
+    # device fill-down, so the scenario adds a delivery form without changing
+    # what any existing check or case covers.
+    interval_only_var = "WarmteproductieRuimteverwarming"
+    interval_only_col = interval_column(interval_only_var)
+    hourly_ticks = household_df["ReadingDate"].dt.minute == 0
+    tick_seed = int(
+        hashlib.md5(f"{household_id_raw}_{interval_only_col}".encode()).hexdigest(), 16
+    ) % (2**32)
+    tick_rng = Generator(PCG64(seed=tick_seed))
+    # Drawn against the column's own hourly bound rather than twelve times its
+    # 5-minute one: a '5-minute' threshold scales sub-linearly, since an hour
+    # cannot sustain a five-minute peak. Readings land below the bound, so this
+    # is a plausible coarse delivery and not a second out-of-bounds case.
+    _, hourly_max = scale_bounds(thresholds_dict[interval_only_col], 60)
+    hourly_values = tick_rng.uniform(
+        0.0, float(hourly_max) * 0.8, size=int(hourly_ticks.sum())
+    )
+    delivered = pd.Series(pd.NA, index=household_df.index, dtype="Float64")
+    delivered.loc[hourly_ticks] = hourly_values
+    missed_tick = household_df.index[hourly_ticks][24]
+    delivered.loc[missed_tick] = pd.NA
+    household_df[interval_only_col] = delivered
+    household_df[interval_only_var] = pd.NA
+
     ## There is a single variable that exceeds the upper limits
     household_df[cumulative_columns[7]] = household_df[cumulative_columns[7]]*2
 
@@ -399,6 +434,16 @@ def _process_data_fixture_file(
         household_df=data_fixture_df, add_columns=True, context=f"{household_id}/{file_name}"
     )
 
+    # Before the fill-down and before add_diff_columns, as in
+    # run_standard_pipeline: both write values, and this records which ones the
+    # supplier actually sent.
+    mapping.mark_delivery_and_cadence(
+        data_fixture_df,
+        cadence=cadence,
+        grid_minutes=grid_minutes,
+        context=f"{household_id}/{file_name}",
+    )
+
     data_fixture_df = mapping.fill_down_infrequent_devices(
         df=data_fixture_df,
         columns=("ElektriciteitsgebruikBoilervat", "ElektriciteitsgebruikRadiator", "ElektriciteitsgebruikBooster"),
@@ -409,7 +454,10 @@ def _process_data_fixture_file(
 
     for flag, condition in record_flag_conditions.items():
         try:
-            data_fixture_df[flag] = condition(data_fixture_df, cadence=cadence)
+            data_fixture_df[flag] = condition(
+                data_fixture_df,
+                **index_helpers.supported_kwargs(condition, cadence=cadence),
+            )
         except Exception as e:
             logging.error(
                 f"Error validating with {flag} for household {household_id} / {file_name}: {e}",

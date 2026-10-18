@@ -77,6 +77,28 @@ class TestCadenceLookup:
         """Empty means unresolved, not unscaled: the caller then falls back to
         the dataset's own interval, or raises."""
         assert cadence_minutes_by_column(None) == {}
+
+    def test_a_columns_own_row_beats_the_one_it_is_paired_with(self):
+        """A variable delivered as intervals only still has a row for its absent
+        register, carrying the grid as a fallback. Letting that reach the
+        delivered interval column would judge an hourly reading against a
+        one-slot bound."""
+        cadence = pd.DataFrame({
+            "HuisIdBSV": pd.array([1, 1], dtype="Int64"),
+            "column": pd.array([CUM, COL], dtype="string"),
+            "cadence_minutes": pd.array([5, 60], dtype="Int64"),
+        })
+        assert cadence_minutes_by_column(cadence)[COL] == 60
+
+    def test_the_winner_does_not_depend_on_row_order(self):
+        cadence = pd.DataFrame({
+            "HuisIdBSV": pd.array([1, 1], dtype="Int64"),
+            "column": pd.array([COL, CUM], dtype="string"),
+            "cadence_minutes": pd.array([60, 5], dtype="Int64"),
+        })
+        resolved = cadence_minutes_by_column(cadence)
+        assert resolved[COL] == 60
+        assert resolved[CUM] == 5
         assert cadence_minutes_by_column(pd.DataFrame()) == {}
 
 
