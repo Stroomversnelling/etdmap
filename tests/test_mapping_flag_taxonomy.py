@@ -22,6 +22,9 @@ SIGNALS = {
     MappingFlag.FROZEN_SPAN,
     MappingFlag.CATCHUP,
     MappingFlag.TARIFF_SIMULTANEOUS,
+    MappingFlag.RAW_DELIVERED_VALUE,
+    MappingFlag.OFF_CADENCE_NA,
+    MappingFlag.MISSING_VALUE,
 }
 ACTIONS = {
     MappingFlag.FILLED_DOWN,

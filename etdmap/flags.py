@@ -95,6 +95,18 @@ class MappingFlag(IntFlag):
     # both is a suspicious delivered pattern. Observation only.
     TARIFF_SIMULTANEOUS = auto()
 
+    # The supplier delivered a value in this cell. Set before any stage blanks
+    # a value, so a delivered-then-removed cell carries this and NULLED.
+    RAW_DELIVERED_VALUE = auto()
+
+    # pd.NA on a row the column was never due to report. The column reports
+    # every k grid rows and this row is not one of them, so nothing is absent.
+    OFF_CADENCE_NA = auto()
+
+    # pd.NA on a row where the column was due to report. A reading the column
+    # owed is absent, which is what OFF_CADENCE_NA is not.
+    MISSING_VALUE = auto()
+
     # The two categories, declared rather than left to a comment. A signal names
     # something observed about a value; an action names something the pipeline
     # did to it. Every single-bit member belongs to exactly one, which a test
@@ -110,6 +122,9 @@ class MappingFlag(IntFlag):
         | FROZEN_SPAN
         | CATCHUP
         | TARIFF_SIMULTANEOUS
+        | RAW_DELIVERED_VALUE
+        | OFF_CADENCE_NA
+        | MISSING_VALUE
     )
     ACTIONS = (
         FILLED_DOWN
@@ -483,6 +498,18 @@ DESCRIPTIONS = {
     "NOT_CHANGED": "A value mapping examined and left as delivered.",
     "TARIFF_COMBINED": "A tariff root written as the sum of its delivered Hoog/Laag registers.",
     "TARIFF_SIMULTANEOUS": "Both tariff registers delivered nonzero at the same reading.",
+    "RAW_DELIVERED_VALUE": (
+        "RESERVED. No stage sets this yet. A value the supplier delivered in "
+        "this cell, recorded before any stage blanks one."
+    ),
+    "OFF_CADENCE_NA": (
+        "RESERVED. No stage sets this yet. Absent because the column was not "
+        "due to report on this row."
+    ),
+    "MISSING_VALUE": (
+        "RESERVED. No stage sets this yet. Absent on a row where the column "
+        "was due to report."
+    ),
 }
 
 

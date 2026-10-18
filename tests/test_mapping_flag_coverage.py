@@ -40,10 +40,48 @@ def _members_mentioned_in_tests(class_name):
     return mentioned
 
 
-class TestEveryMemberIsCovered:
-    """Contract guard: a flag added to MappingFlag with no test anywhere fails."""
+# Vocabulary declared ahead of its producer: the meaning is fixed in
+# DESCRIPTIONS, but nothing writes the flag yet. A member leaves this set the
+# moment a producer test names it -- the honesty test below fails and says so.
+# The three delivery and cadence signals describe what a supplier delivered at
+# each grid row, which no mapping step records today. Each one's DESCRIPTIONS
+# entry opens with RESERVED and says what sets it, so the reason for the
+# exemption is recorded once, beside the meaning.
+UNPRODUCED = {
+    "RAW_DELIVERED_VALUE",
+    "OFF_CADENCE_NA",
+    "MISSING_VALUE",
+}
 
-    def test_every_member_was_asserted_on(self):
+
+class TestEveryMemberIsCovered:
+    """Contract guard: a flag added to MappingFlag with no test anywhere fails.
+
+    Declared-ahead vocabulary sits in UNPRODUCED instead of staying red: all
+    three tests here are green in the steady state, and each direction of
+    drift fails exactly one of them.
+    """
+
+    def test_every_member_with_a_producer_is_tested(self):
         mentioned = _members_mentioned_in_tests("MappingFlag")
-        missing = sorted(m.name for m in ALL_FLAGS if m.name not in mentioned)
+        missing = sorted(
+            m.name for m in ALL_FLAGS
+            if m.name not in mentioned and m.name not in UNPRODUCED
+        )
         assert not missing, f"MappingFlag members with no test: {missing}"
+
+    def test_the_unproduced_list_is_honest(self):
+        """A member both declared unproduced and tested is one whose producer
+        has arrived: remove it from UNPRODUCED rather than let the exception
+        outlive its reason."""
+        mentioned = _members_mentioned_in_tests("MappingFlag")
+        arrived = sorted(UNPRODUCED & mentioned)
+        assert not arrived, (
+            f"now produced and tested -- remove from UNPRODUCED: {arrived}"
+        )
+
+    def test_the_unproduced_list_names_real_members(self):
+        unknown = sorted(UNPRODUCED - {m.name for m in ALL_FLAGS})
+        assert not unknown, (
+            f"UNPRODUCED names members that do not exist: {unknown}"
+        )
