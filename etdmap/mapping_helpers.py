@@ -2869,6 +2869,22 @@ def _detect_frozen_spans_for_household(df, household_id, cadence=None, context="
     twelve five-minute intervals of consumption in one reading.
 
     Returns sidecar rows. Nothing in *df* is changed; this is detection only.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        One household's data.
+    household_id : int
+        HuisIdBSV, recorded on each sidecar row.
+    cadence : pd.DataFrame, optional
+        Per-column cadence for this household, from
+        :func:`detect_column_cadence`: one row per column, ``cadence_minutes``
+        holding the interval its readings cover. It is what each column's upper
+        bound is scaled by, and it also supplies the grid, for a column the
+        pipeline built rather than the supplier delivered. A column it does not
+        cover is judged at the grid.
+    context : str
+        Optional prefix for log messages, e.g. a household identifier.
     """
     ctx = (context + ": ") if context else ""
     # Resolves a derived interval column through its cumulative variable, since
@@ -3033,6 +3049,13 @@ def _lattice_step(cadence_minutes, grid_minutes):
     None where the step cannot be stated: no cadence, no grid, or a cadence that
     is not a whole number of grid rows. A reading covering a fractional number of
     rows has no lattice to sit on, so the caller asserts nothing about its gaps.
+
+    Parameters
+    ----------
+    cadence_minutes : int, float or pd.NA
+        The interval one of the column's readings covers.
+    grid_minutes : int, float or pd.NA
+        The interval the rows sit on.
     """
     if cadence_minutes is None or pd.isna(cadence_minutes):
         return None

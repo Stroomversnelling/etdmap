@@ -359,7 +359,13 @@ def create_validate_momentaan(
     """
     for col in columns_with_value_bounds:
         def validate_momentaan(df: DataFrame, cadence=None, col=col) -> Series:
-            # Checks thresholds, scaled to the interval the column reports in
+            """Whether each reading of *col* is inside its declared bounds.
+
+            *cadence* is the per-column table from
+            :func:`etdmap.mapping_helpers.detect_column_cadence`; the bounds are
+            scaled to the interval *col* reports in, so a column reporting
+            hourly is judged against an hour's worth rather than a slot's.
+            """
             condition_func = condition_func_threshold(col, cadence)
             result = validate_columns(df, [col], condition_func)
             return result

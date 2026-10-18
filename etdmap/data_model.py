@@ -690,6 +690,19 @@ def cadence_minutes_by_column(cadence) -> dict:
     Returns an empty dict when no cadence is available. A caller that scales a
     bound treats a column missing from the result as unresolved rather than as
     reporting at the interval its threshold was written against.
+
+    Parameters
+    ----------
+    cadence : pd.DataFrame or None
+        The table :func:`etdmap.mapping_helpers.detect_column_cadence` produces
+        for one household: one row per column, with ``cadence_minutes`` holding
+        the interval that column's readings cover, measured on the timestamps
+        as delivered. None or empty is accepted and resolves nothing.
+
+    Returns
+    -------
+    dict
+        Column name -> minutes.
     """
     if cadence is None or getattr(cadence, "empty", True):
         return {}
@@ -720,6 +733,14 @@ def dataset_cadence_minutes(cadence, date_column: str = "ReadingDate"):
     delivered, so there is nothing to have measured.
 
     Returns pd.NA when there is no cadence table or no row for *date_column*.
+
+    Parameters
+    ----------
+    cadence : pd.DataFrame or None
+        The table :func:`etdmap.mapping_helpers.detect_column_cadence` produces
+        for one household. The row for *date_column* is the one read here.
+    date_column : str
+        Name of the timestamp column, whose own row carries the grid.
     """
     if cadence is None or getattr(cadence, "empty", True):
         return pd.NA
