@@ -434,6 +434,42 @@ class TestTheCombinedRootGetsItsOwnCadence:
         )
         assert ROOT not in set(table["column"])
 
+    def test_interval_splits_delivered_directly_give_the_diff_root_a_cadence(
+        self,
+    ):
+        """The combination covers interval pairs as well as register pairs, so
+        the derivation has to. A supplier sending Hoog/Laag intervals produces a
+        Diff root nobody measured, exactly as the register case does."""
+        df = _frame(**{HOOG_DIFF: [0.5, 0.5], LAAG_DIFF: [0.25, pd.NA]})
+        combine_tariff_registers(df)
+        table = add_tariff_root_cadence(
+            df,
+            _cadence([
+                (HOOG_DIFF, 15, "declared", 15, 1.0, 2),
+                (LAAG_DIFF, 15, "declared", 15, 1.0, 1),
+            ]),
+        )
+        row = _row(table, ROOT_DIFF)
+        assert int(row["cadence_minutes"]) == 15
+        assert row["cadence_source"] == "combined"
+        assert int(row["n_readings"]) == 2
+
+    def test_a_diff_root_is_left_alone_when_its_splits_were_derived(self):
+        """The usual case: the splits' own interval columns are differenced from
+        their registers later, so nothing measured them and there is nothing to
+        derive the Diff root's cadence from."""
+        df = _frame(**{HOOG: [1.0, 2.0], LAAG: [10.0, 20.0]})
+        combine_tariff_registers(df)
+        table = add_tariff_root_cadence(
+            df,
+            _cadence([
+                (HOOG, GRID, "detected", GRID, 1.0, 2),
+                (LAAG, GRID, "detected", GRID, 1.0, 2),
+            ]),
+        )
+        assert ROOT in set(table["column"])
+        assert ROOT_DIFF not in set(table["column"])
+
     def test_the_measured_rows_are_left_alone(self):
         before = _cadence([
             (HOOG, 60, "declared", 60, 0.99, 2),
@@ -442,6 +478,38 @@ class TestTheCombinedRootGetsItsOwnCadence:
         after = self._combined([1.0, 2.0], [10.0, 20.0], before)
         for column in (HOOG, LAAG):
             assert _row(after, column).to_dict() == _row(before, column).to_dict()
+
+
+class TestTheDerivedRowReachesTheSidecar:
+    """The row is only worth deriving if it survives to the artifact, and a
+    derived row can carry pd.NA where a measured one does not -- an unstated
+    ``cadence_detected`` when the splits' measurements disagreed.
+    """
+
+    def test_it_round_trips_with_its_unstated_fields(self, tmp_path):
+        from etdmap.mapping_helpers import (
+            cadence_to_rows,
+            write_column_cadence,
+        )
+
+        df = _frame(**{HOOG: [1.0, 2.0], LAAG: [10.0, 20.0]})
+        combine_tariff_registers(df)
+        table = add_tariff_root_cadence(
+            df,
+            _cadence([
+                (HOOG, 60, "declared", 55, 0.9, 2),
+                (LAAG, 60, "declared", 65, 0.9, 2),
+            ]),
+        )
+        path = write_column_cadence(cadence_to_rows(7, table), str(tmp_path))
+        out = pd.read_parquet(path, dtype_backend="numpy_nullable")
+
+        root = out[(out["HuisIdBSV"] == 7) & (out["column"] == ROOT)].iloc[0]
+        assert int(root["cadence_minutes"]) == 60
+        assert root["cadence_source"] == "combined"
+        assert pd.isna(root["cadence_detected"])
+        assert str(out["cadence_minutes"].dtype) == "Int64"
+        assert str(out["cadence_detected"].dtype) == "Int64"
 
 
 class TestSplitsAtDifferentCadencesRaise:
@@ -475,6 +543,36 @@ class TestSplitsAtDifferentCadencesRaise:
     def test_agreeing_cadences_do_not_raise(self):
         table = self._attempt(60, 60)
         assert int(_row(table, ROOT)["cadence_minutes"]) == 60
+
+    def test_it_stops_the_mapping_run(self, tmp_path):
+        """The pipeline does not catch it. A supplier delivering its two
+        registers at different cadences has to be understood before its data is
+        mapped, not mapped on a guess and corrected later."""
+        import etdmap
+        from etdmap.mapping_helpers import run_standard_pipeline
+
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range("2024-01-01", periods=12, freq="5min"),
+            HOOG: _floats([float(i) for i in range(12)]),
+            LAAG: _floats([float(i) * 2 for i in range(12)]),
+        })
+        combine_tariff_registers(df)
+        previous = etdmap.options.mapped_output_format
+        etdmap.options.mapped_output_format = "flat"
+        try:
+            with pytest.raises(ValueError, match="different"):
+                run_standard_pipeline(
+                    df, household_id=903, household_id_supplier="H903",
+                    mapped_folder_path=tmp_path, grid_minutes=GRID,
+                    cadence=_cadence([
+                        ("ReadingDate", GRID, "detected", GRID, 1.0, 12),
+                        (HOOG, 15, "declared", 15, 1.0, 4),
+                        (LAAG, 60, "declared", 60, 1.0, 1),
+                    ]),
+                )
+        finally:
+            etdmap.options.mapped_output_format = previous
+        assert not (tmp_path / "household_903_table.parquet").exists()
 
 
 class TestThePipelineHandsTheDerivedRowBack:
@@ -538,3 +636,102 @@ class TestThePipelineHandsTheDerivedRowBack:
         )
         bits = _bits(out, ROOT)
         assert (bits & MappingFlag.RAW_DELIVERED_VALUE.value).any()
+
+    def test_a_combined_cell_is_both_delivered_and_combined(self, tmp_path):
+        """The quantity was delivered, as two registers; the value in this cell
+        was computed from them. Both are true of the same cell, and the pair is
+        what lets a reader see a root nobody sent under that name."""
+        self._run(tmp_path, self._measured())
+        out = pd.read_parquet(
+            tmp_path / "household_901_table.parquet",
+            dtype_backend="numpy_nullable",
+        )
+        bits = _bits(out, ROOT)
+        combined = (bits & MappingFlag.TARIFF_COMBINED.value) != 0
+        assert combined.any()
+        assert (
+            bits[combined] & MappingFlag.RAW_DELIVERED_VALUE.value
+        ).all()
+
+
+class TestTheDerivedRowIsWhatGivesTheRootItsLattice:
+    """The reason to derive the row before step 6b rather than after.
+
+    ``mark_delivery_and_cadence`` tells a pd.NA that was owed a reading from one
+    that was never due by the interval the column reports at -- read from that
+    column's own cadence row. With no row the step takes neither branch, so a
+    root combined from delivered splits used to carry no NA signal at all: its
+    gaps were indistinguishable from slots it never owed a reading in.
+    """
+
+    N = 36
+    K = 12  # hourly splits on a five-minute grid
+
+    def _run(self, tmp_path, split_minutes, drop_tick=None, household_id=902):
+        import etdmap
+        from etdmap.mapping_helpers import run_standard_pipeline
+
+        step = split_minutes // GRID
+        values = []
+        for row in range(self.N):
+            due = row % step == 0
+            if due and row != drop_tick:
+                values.append(float(row))
+            else:
+                values.append(pd.NA)
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range(
+                "2024-01-01", periods=self.N, freq=f"{GRID}min"
+            ),
+            HOOG: _floats(values),
+            LAAG: _floats(values),
+        })
+        combine_tariff_registers(df)
+        cadence = _cadence([
+            ("ReadingDate", GRID, "detected", GRID, 1.0, self.N),
+            (HOOG, split_minutes, "detected", split_minutes, 1.0, self.N // step),
+            (LAAG, split_minutes, "detected", split_minutes, 1.0, self.N // step),
+        ])
+        previous = etdmap.options.mapped_output_format
+        etdmap.options.mapped_output_format = "flat"
+        try:
+            run_standard_pipeline(
+                df, household_id=household_id,
+                household_id_supplier=f"H{household_id}",
+                mapped_folder_path=tmp_path, grid_minutes=GRID, cadence=cadence,
+            )
+        finally:
+            etdmap.options.mapped_output_format = previous
+        out = pd.read_parquet(
+            tmp_path / f"household_{household_id}_table.parquet",
+            dtype_backend="numpy_nullable",
+        )
+        return _bits(out, ROOT)
+
+    def test_an_hourly_root_marks_the_slots_between_ticks_off_cadence(
+        self, tmp_path
+    ):
+        bits = self._run(tmp_path, split_minutes=GRID * self.K)
+        off_cadence = (bits & MappingFlag.OFF_CADENCE_NA.value) != 0
+        # Every row but the ticks: 36 rows, a tick every 12th.
+        assert int(off_cadence.sum()) == self.N - (self.N // self.K)
+        assert not off_cadence.iloc[0]
+
+    def test_a_missed_tick_is_marked_as_owed_a_reading(self, tmp_path):
+        bits = self._run(
+            tmp_path, split_minutes=GRID * self.K, drop_tick=self.K
+        )
+        missing = (bits & MappingFlag.MISSING_VALUE.value) != 0
+        assert missing.iloc[self.K]
+        assert int(missing.sum()) == 1
+        # The dropped tick was due, so it is not also "never expected".
+        assert not (bits.iloc[self.K] & MappingFlag.OFF_CADENCE_NA.value)
+
+    def test_a_grid_cadence_root_owes_a_reading_in_every_empty_slot(
+        self, tmp_path
+    ):
+        """Splits on the grid: there is no slot the root was not due, so every
+        empty one is a missing reading rather than an off-cadence gap."""
+        bits = self._run(tmp_path, split_minutes=GRID, drop_tick=5)
+        assert bits.iloc[5] & MappingFlag.MISSING_VALUE.value
+        assert not (bits & MappingFlag.OFF_CADENCE_NA.value).any()
