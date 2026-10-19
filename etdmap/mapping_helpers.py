@@ -690,6 +690,99 @@ def combine_tariff_registers(df, context: str = "") -> pd.DataFrame:
     return df
 
 
+def add_tariff_root_cadence(df, cadence, context: str = ""):
+    """Record a cadence row for each tariff root built from delivered splits.
+
+    Cadence is measured on the columns as delivered, which is before
+    :func:`combine_tariff_registers` builds the root the two registers sum to.
+    So the sidecar describes the quantity only under the names it arrived as,
+    and the root -- the column the averaging and the fill work on, the splits
+    being excluded from both -- has no row. Every reader asking what form the
+    root was delivered in, or what interval its readings cover, then gets no
+    answer for a register holding a full year of data.
+
+    The root's cadence is its splits': it holds a value exactly where one of
+    them did. Readings are counted on the combined column itself, so the count
+    is the union of the two rather than either half.
+
+    A root the supplier delivered directly keeps its own measured row. This
+    fills in a root that has none, which is also what keeps the two cases
+    distinguishable: ``cadence_source`` reads ``combined`` only for a row
+    derived here.
+
+    Raises
+    ------
+    ValueError
+        When the two splits were measured at different cadences. The root has no
+        single cadence then, and which one governs is a question about how that
+        supplier delivers rather than something to settle by picking one here.
+
+    Call AFTER :func:`combine_tariff_registers`, so the root column holds its
+    final values, and before the pipeline, so the delivery marking sees the row
+    too. Returns a new table; *cadence* is not modified.
+    """
+    from etdmap.data_model import tariff_root_to_splits
+
+    if cadence is None or getattr(cadence, "empty", True):
+        return cadence
+
+    ctx = f"{context}: " if context else ""
+    named = set(cadence["column"].dropna())
+    rows = []
+    for root, (hoog, laag) in tariff_root_to_splits.items():
+        if root not in df.columns or root in named:
+            continue
+        split_rows = cadence[cadence["column"].isin([hoog, laag])]
+        if split_rows.empty:
+            continue
+
+        minutes = sorted(
+            {int(m) for m in split_rows["cadence_minutes"] if pd.notna(m)}
+        )
+        if len(minutes) > 1:
+            raise ValueError(
+                f"{ctx}'{hoog}' and '{laag}' were measured at different "
+                f"cadences ({', '.join(cadence_label(m) for m in minutes)}), so "
+                f"the '{root}' they combine into has no single cadence. Settle "
+                f"how this supplier delivers the two registers in the supplier "
+                f"mapping, then re-map."
+            )
+        if not minutes:
+            continue
+
+        detected = sorted(
+            {int(d) for d in split_rows["cadence_detected"] if pd.notna(d)}
+        )
+        confidences = [
+            float(c) for c in split_rows["confidence"] if pd.notna(c)
+        ]
+        rows.append({
+            "column": root,
+            "cadence_minutes": minutes[0],
+            "cadence_source": "combined",
+            # Only where the splits agree. Disagreeing measurements average to
+            # a number neither register showed.
+            "cadence_detected": detected[0] if len(detected) == 1 else pd.NA,
+            # The weaker claim governs: the root is no better measured than the
+            # less regular of the registers it came from.
+            "confidence": min(confidences) if confidences else pd.NA,
+            # Counted on the combined column, so a row either register reported
+            # in counts once.
+            "n_readings": int(df[root].notna().sum()),
+        })
+        logging.info(
+            f"{ctx}Recorded '{root}' cadence {cadence_label(minutes[0])} from "
+            f"'{hoog}'/'{laag}' ({rows[-1]['n_readings']} reading(s))."
+        )
+
+    if not rows:
+        return cadence
+    return pd.concat(
+        [cadence, pd.DataFrame(rows).astype(_CADENCE_TABLE_DTYPES)],
+        ignore_index=True,
+    )
+
+
 def add_diff_columns(
     data: pd.DataFrame,
     id_column: str = None,
@@ -3227,6 +3320,8 @@ def run_standard_pipeline(
       4. ensure_intervals
       5. Log model column type mismatches at DEBUG
       6. rearrange_model_columns(add_columns=True)
+     6a. add_tariff_root_cadence -- a root combined from delivered splits has
+         no measured row of its own
       6b. mark_delivery_and_cadence
       7. add_diff_columns
      7b. Detect frozen spans, and blank them so imputation can spread them
@@ -3356,6 +3451,13 @@ def run_standard_pipeline(
     df = rearrange_model_columns(household_df=df, add_columns=True, context=context)
 
     # ------------------------------------------------------------------
+    # 6a. Give a tariff root combined from delivered splits its own cadence
+    #     row. Before 6b, so the marking reads the root's cadence rather than
+    #     treating it as a column nothing was measured for.
+    # ------------------------------------------------------------------
+    cadence = add_tariff_root_cadence(df, cadence, context=context)
+
+    # ------------------------------------------------------------------
     # 6b. Record what the supplier delivered, per cell, while the delivered
     #     values are still in place: step 7 replaces a delivered interval with
     #     the register's diff, and the steps below blank values.
@@ -3441,6 +3543,10 @@ def run_standard_pipeline(
     return {
         "HuisIdLeverancier": household_id_supplier,
         "HuisIdBSV": household_id,
+        # The cadence the pipeline ran on, which is the measured table plus any
+        # tariff-root row step 6a derived. The sidecar is written from this, not
+        # from the mapper's own copy, or the derived rows would be dropped.
+        "_cadence": cadence,
         "_validation_summary": {
             "flags": flag_counts,
             "thresholds": threshold_counts,

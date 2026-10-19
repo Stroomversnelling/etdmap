@@ -531,7 +531,11 @@ class TestRunStandardPipeline:
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df),
         )
+        # Underscore keys are payloads the mapper pops and routes elsewhere --
+        # the summary to the report, the cadence to the sidecar. What is left is
+        # the index entry, and nothing else may reach the index.
         result.pop("_validation_summary", None)
+        result.pop("_cadence", None)
         assert result == {"HuisIdLeverancier": "HuisX", "HuisIdBSV": 42}
         out_file = tmp_path / "household_42_table.parquet"
         assert out_file.exists()

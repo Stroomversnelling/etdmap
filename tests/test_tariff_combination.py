@@ -22,7 +22,11 @@ import pandas as pd
 import pytest
 
 from etdmap.flags import MappingFlag, flag_column
-from etdmap.mapping_helpers import add_diff_columns, combine_tariff_registers
+from etdmap.mapping_helpers import (
+    add_diff_columns,
+    add_tariff_root_cadence,
+    combine_tariff_registers,
+)
 
 ROOT = "ElektriciteitNetgebruik"
 HOOG = "ElektriciteitNetgebruikHoog"
@@ -298,3 +302,239 @@ class TestTaxonomyPlacement:
         bits = _bits(df, ROOT)
         assert not (bits[0] & MappingFlag.NOT_CHANGED.value)
         assert bits[1] & MappingFlag.NOT_CHANGED.value
+
+
+GRID = 5
+
+
+def _cadence(rows):
+    """A measured cadence table: (column, cadence_minutes, source, detected,
+    confidence, n_readings) per row."""
+    return pd.DataFrame({
+        "column": pd.array([r[0] for r in rows], dtype="string"),
+        "cadence_minutes": pd.array([r[1] for r in rows], dtype="Int64"),
+        "cadence_source": pd.array([r[2] for r in rows], dtype="string"),
+        "cadence_detected": pd.array([r[3] for r in rows], dtype="Int64"),
+        "confidence": pd.array([r[4] for r in rows], dtype="Float64"),
+        "n_readings": pd.array([r[5] for r in rows], dtype="Int64"),
+    })
+
+
+def _row(table, column):
+    rows = table[table["column"] == column]
+    assert len(rows) == 1, f"expected one row for {column}, got {len(rows)}"
+    return rows.iloc[0]
+
+
+class TestTheCombinedRootGetsItsOwnCadence:
+    """Cadence is measured on the columns as delivered, so it runs before the
+    combination and the root it builds has no row. The root is the column the
+    averaging and the fill work on -- the splits are excluded from both -- so a
+    sidecar without that row cannot answer what form the register arrived in or
+    what interval its readings cover.
+
+    The root's cadence is its splits': it holds a value exactly where one of
+    them did.
+    """
+
+    def _combined(self, hoog, laag, cadence):
+        df = _frame(**{HOOG: hoog, LAAG: laag})
+        combine_tariff_registers(df)
+        return add_tariff_root_cadence(df, cadence)
+
+    def test_the_root_takes_the_cadence_of_its_splits(self):
+        table = self._combined(
+            [1.0, 2.0], [10.0, 20.0],
+            _cadence([
+                ("ReadingDate", GRID, "detected", GRID, 1.0, 2),
+                (HOOG, 60, "declared", 60, 0.99, 2),
+                (LAAG, 60, "declared", 60, 0.99, 2),
+            ]),
+        )
+        assert int(_row(table, ROOT)["cadence_minutes"]) == 60
+
+    def test_a_derived_row_says_it_was_combined(self):
+        """So a reader can tell a root the supplier sent from one mapping built."""
+        table = self._combined(
+            [1.0], [10.0],
+            _cadence([
+                (HOOG, GRID, "detected", GRID, 1.0, 1),
+                (LAAG, GRID, "detected", GRID, 1.0, 1),
+            ]),
+        )
+        assert _row(table, ROOT)["cadence_source"] == "combined"
+
+    def test_readings_are_counted_on_the_combined_column(self):
+        """Not taken from either split: the root reports wherever either did, so
+        counting one half would understate a register that alternates."""
+        table = self._combined(
+            [1.0, pd.NA, pd.NA], [pd.NA, 20.0, pd.NA],
+            _cadence([
+                (HOOG, GRID, "detected", GRID, 1.0, 1),
+                (LAAG, GRID, "detected", GRID, 1.0, 1),
+            ]),
+        )
+        assert int(_row(table, ROOT)["n_readings"]) == 2
+
+    def test_one_tariff_alone_still_gives_the_root_a_cadence(self):
+        table = self._combined(
+            [1.0, 2.0], [pd.NA, pd.NA],
+            _cadence([
+                (HOOG, 15, "detected", 15, 0.95, 2),
+            ]),
+        )
+        assert int(_row(table, ROOT)["cadence_minutes"]) == 15
+
+    def test_the_weaker_measurement_governs_the_confidence(self):
+        table = self._combined(
+            [1.0], [10.0],
+            _cadence([
+                (HOOG, GRID, "detected", GRID, 0.9, 1),
+                (LAAG, GRID, "detected", GRID, 0.6, 1),
+            ]),
+        )
+        assert float(_row(table, ROOT)["confidence"]) == pytest.approx(0.6)
+
+    def test_disagreeing_measurements_leave_detected_unstated(self):
+        """A declared cadence can govern both splits while their measurements
+        differ. Averaging those would report a number neither register showed."""
+        table = self._combined(
+            [1.0], [10.0],
+            _cadence([
+                (HOOG, 60, "declared", 55, 0.9, 1),
+                (LAAG, 60, "declared", 65, 0.9, 1),
+            ]),
+        )
+        row = _row(table, ROOT)
+        assert int(row["cadence_minutes"]) == 60
+        assert pd.isna(row["cadence_detected"])
+
+    def test_a_delivered_root_keeps_its_own_measured_row(self):
+        """It was measured on the data as delivered, which beats anything
+        derived from the splits beside it."""
+        table = self._combined(
+            [1.0], [10.0],
+            _cadence([
+                (ROOT, 15, "detected", 15, 1.0, 1),
+                (HOOG, 60, "detected", 60, 1.0, 1),
+                (LAAG, 60, "detected", 60, 1.0, 1),
+            ]),
+        )
+        row = _row(table, ROOT)
+        assert int(row["cadence_minutes"]) == 15
+        assert row["cadence_source"] == "detected"
+
+    def test_nothing_is_derived_when_the_splits_have_no_rows(self):
+        """There is no evidence to derive from, and inventing a cadence would be
+        worse than leaving the question open."""
+        df = _frame(**{HOOG: [1.0], LAAG: [10.0]})
+        combine_tariff_registers(df)
+        table = add_tariff_root_cadence(
+            df, _cadence([("ReadingDate", GRID, "detected", GRID, 1.0, 1)])
+        )
+        assert ROOT not in set(table["column"])
+
+    def test_the_measured_rows_are_left_alone(self):
+        before = _cadence([
+            (HOOG, 60, "declared", 60, 0.99, 2),
+            (LAAG, 60, "declared", 60, 0.99, 2),
+        ])
+        after = self._combined([1.0, 2.0], [10.0, 20.0], before)
+        for column in (HOOG, LAAG):
+            assert _row(after, column).to_dict() == _row(before, column).to_dict()
+
+
+class TestSplitsAtDifferentCadencesRaise:
+    """The root has no single cadence then. Which one governs is a question
+    about how that supplier delivers the two registers, so it belongs in the
+    supplier mapping rather than being settled by picking one here.
+    """
+
+    def _attempt(self, hoog_minutes, laag_minutes):
+        df = _frame(**{HOOG: [1.0, 2.0], LAAG: [10.0, 20.0]})
+        combine_tariff_registers(df)
+        return add_tariff_root_cadence(
+            df,
+            _cadence([
+                (HOOG, hoog_minutes, "declared", hoog_minutes, 1.0, 2),
+                (LAAG, laag_minutes, "declared", laag_minutes, 1.0, 2),
+            ]),
+        )
+
+    def test_it_raises(self):
+        with pytest.raises(ValueError, match="different"):
+            self._attempt(15, 60)
+
+    def test_the_message_names_both_cadences_and_the_root(self):
+        with pytest.raises(ValueError) as caught:
+            self._attempt(15, 60)
+        message = str(caught.value)
+        assert "15min" in message and "1h" in message
+        assert ROOT in message
+
+    def test_agreeing_cadences_do_not_raise(self):
+        table = self._attempt(60, 60)
+        assert int(_row(table, ROOT)["cadence_minutes"]) == 60
+
+
+class TestThePipelineHandsTheDerivedRowBack:
+    """The sidecar is written from what ``run_standard_pipeline`` returns, not
+    from the table the mapper measured. A row derived inside the pipeline is
+    lost otherwise -- which is how the root came to have no cadence and no
+    recorded delivery despite holding a full year of readings.
+    """
+
+    def _run(self, tmp_path, cadence, household_id=901):
+        import etdmap
+        from etdmap.mapping_helpers import run_standard_pipeline
+
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range("2024-01-01", periods=12, freq="5min"),
+            HOOG: _floats([float(i) for i in range(12)]),
+            LAAG: _floats([float(i) * 2 for i in range(12)]),
+        })
+        combine_tariff_registers(df)
+        previous = etdmap.options.mapped_output_format
+        etdmap.options.mapped_output_format = "flat"
+        try:
+            return run_standard_pipeline(
+                df,
+                household_id=household_id,
+                household_id_supplier=f"H{household_id}",
+                mapped_folder_path=tmp_path,
+                grid_minutes=GRID,
+                cadence=cadence,
+            )
+        finally:
+            etdmap.options.mapped_output_format = previous
+
+    def _measured(self):
+        return _cadence([
+            ("ReadingDate", GRID, "detected", GRID, 1.0, 12),
+            (HOOG, GRID, "detected", GRID, 1.0, 12),
+            (LAAG, GRID, "detected", GRID, 1.0, 12),
+        ])
+
+    def test_the_returned_cadence_carries_the_root(self, tmp_path):
+        entry = self._run(tmp_path, self._measured())
+        returned = entry["_cadence"]
+        assert ROOT in set(returned["column"])
+        assert _row(returned, ROOT)["cadence_source"] == "combined"
+
+    def test_the_table_passed_in_is_not_relied_on_to_carry_it(self, tmp_path):
+        """The caller's own table is what used to be written to the sidecar, and
+        it cannot hold the derived row."""
+        measured = self._measured()
+        self._run(tmp_path, measured)
+        assert ROOT not in set(measured["column"])
+
+    def test_the_root_is_marked_as_delivered(self, tmp_path):
+        """With a cadence row the root now has, the delivery marking reaches it
+        -- the point of deriving the row before step 6b rather than after."""
+        self._run(tmp_path, self._measured())
+        out = pd.read_parquet(
+            tmp_path / "household_901_table.parquet",
+            dtype_backend="numpy_nullable",
+        )
+        bits = _bits(out, ROOT)
+        assert (bits & MappingFlag.RAW_DELIVERED_VALUE.value).any()
