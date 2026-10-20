@@ -25,6 +25,10 @@ SIGNALS = {
     MappingFlag.RAW_DELIVERED_VALUE,
     MappingFlag.OFF_CADENCE_NA,
     MappingFlag.MISSING_VALUE,
+    MappingFlag.UNPARSEABLE_VALUE,
+    MappingFlag.SOURCES_INCOMPLETE,
+    MappingFlag.SLOT_COLLISION,
+    MappingFlag.NEGATIVE_INTERVAL,
 }
 ACTIONS = {
     MappingFlag.FILLED_DOWN,
@@ -34,6 +38,9 @@ ACTIONS = {
     MappingFlag.CUMULATIVE_CONSTRUCTED,
     MappingFlag.NOT_CHANGED,
     MappingFlag.TARIFF_COMBINED,
+    MappingFlag.COMBINED_COLUMNS,
+    MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE,
+    MappingFlag.FROZEN_DELIVERED_INTERVAL_SPREAD,
 }
 
 
@@ -68,6 +75,7 @@ class TestInventedHoldsActionsOnly:
             | MappingFlag.FILLED_ZERO
             | MappingFlag.NULLED
             | MappingFlag.FIRST_ZERO
+            | MappingFlag.FROZEN_DELIVERED_INTERVAL_SPREAD
         )
 
     def test_a_constructed_cumulative_is_not_invented(self):
@@ -79,6 +87,12 @@ class TestInventedHoldsActionsOnly:
         """Same reasoning as the constructed cumulative: the combined root
         carries what the delivered registers reported."""
         assert not (MappingFlag.TARIFF_COMBINED & MappingFlag.INVENTED)
+
+    def test_a_combined_target_is_not_invented(self):
+        """A sum or mean of delivered source columns carries what those
+        sources reported, so it is a measurement like any other."""
+        assert not (MappingFlag.COMBINED_COLUMNS & MappingFlag.INVENTED)
+        assert MappingFlag.COMBINED_COLUMNS & MappingFlag.ACTIONS_TAKEN
 
 
 class TestNotAMeasurement:
@@ -92,6 +106,7 @@ class TestNotAMeasurement:
         MappingFlag.FILLED_DOWN,
         MappingFlag.FILLED_ZERO,
         MappingFlag.FIRST_ZERO,
+        MappingFlag.FROZEN_DELIVERED_INTERVAL_SPREAD,
     ])
     def test_excluded_from_the_average(self, flag):
         assert flag & MappingFlag.NOT_A_MEASUREMENT, (
@@ -158,6 +173,24 @@ class TestValuesAreStable:
         assert MappingFlag.TARIFF_COMBINED.value == 32768
         assert MappingFlag.TARIFF_SIMULTANEOUS.value == 65536
 
+    @pytest.mark.parametrize("name,value", [
+        ("RAW_DELIVERED_VALUE", 131072),
+        ("OFF_CADENCE_NA", 262144),
+        ("MISSING_VALUE", 524288),
+        ("COMBINED_COLUMNS", 1048576),
+        ("UNPARSEABLE_VALUE", 2097152),
+        ("SOURCES_INCOMPLETE", 4194304),
+        ("SLOT_COLLISION", 8388608),
+        ("INTERVAL_FROM_DELIVERED_CUMULATIVE", 16777216),
+        ("NEGATIVE_INTERVAL", 33554432),
+        ("FROZEN_DELIVERED_INTERVAL_SPREAD", 67108864),
+    ])
+    def test_the_later_members_took_the_next_free_bits(self, name, value):
+        """Each was appended at the end of the class in this order. Pinning the
+        values is what catches an insertion, which would renumber every member
+        after it and reinterpret data already written."""
+        assert MappingFlag[name].value == value
+
 
 class TestNotChangedIsDerivable:
     """NOT_CHANGED is the absence of every other action. Defining the action
@@ -168,6 +201,8 @@ class TestNotChangedIsDerivable:
             MappingFlag.INVENTED
             | MappingFlag.CUMULATIVE_CONSTRUCTED
             | MappingFlag.TARIFF_COMBINED
+            | MappingFlag.COMBINED_COLUMNS
+            | MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE
         )
 
     def test_it_holds_every_action_except_not_changed(self):

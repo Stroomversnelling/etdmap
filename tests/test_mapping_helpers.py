@@ -128,6 +128,51 @@ class TestRearrangeModelColumns:
         assert result_order == expected_order
 
 
+class TestUnparseableValuesAreRecorded:
+    """Coercion uses errors='coerce', so a value the expected dtype cannot read
+    is replaced by pd.NA. Unflagged, that is indistinguishable from a reading
+    the supplier never sent, and the removal is unrecoverable from the artifact.
+    """
+
+    COL = "ElektriciteitNetgebruik"
+
+    def _frame(self, values):
+        return pd.DataFrame({
+            "ReadingDate": pd.date_range("2026-01-01", periods=len(values), freq="5min"),
+            self.COL: values,
+        })
+
+    def test_a_value_that_fails_coercion_is_flagged_nulled(self):
+        from etdmap.flags import MappingFlag, flag_column
+        out = rearrange_model_columns(
+            self._frame(["1.5", "not-a-number", "3.5"]), add_columns=False,
+        )
+        assert out[self.COL].isna().tolist() == [False, True, False]
+        bits = out[flag_column(self.COL)].fillna(0).astype("int64")
+        assert ((bits & MappingFlag.NULLED.value) != 0).tolist() == [
+            False, True, False,
+        ]
+
+    def test_a_value_already_absent_is_not_flagged(self):
+        """Only a cell that held a value lost one. An empty cell was not
+        delivered and nothing removed it."""
+        from etdmap.flags import MappingFlag, flag_column
+        out = rearrange_model_columns(
+            self._frame(["1.5", None, "3.5"]), add_columns=False,
+        )
+        findings = flag_column(self.COL)
+        if findings in out.columns:
+            bits = out[findings].fillna(0).astype("int64")
+            assert not ((bits & MappingFlag.NULLED.value) != 0).any()
+
+    def test_a_clean_column_gains_no_findings_column(self):
+        from etdmap.flags import flag_column
+        out = rearrange_model_columns(
+            self._frame(pd.array([1.5, 2.5], dtype="Float64")), add_columns=False,
+        )
+        assert flag_column(self.COL) not in out.columns
+
+
 # ---------------------------------------------------------------------------
 # ensure_intervals
 # ---------------------------------------------------------------------------
@@ -487,6 +532,110 @@ class TestCombineSourceColumns:
             operator="sum", target_dtype="Float64",
         )
         assert str(result["t"].dtype) == "Float64"
+
+
+class TestCombinedColumnsIsRecorded:
+    """The sources are dropped after the combine, so an unflagged target is
+    indistinguishable from one the supplier delivered whole. COMBINED_COLUMNS
+    is the record, and it is an action without being INVENTED: the value
+    carries what the delivered sources reported.
+
+    The three production targets are ElektriciteitsgebruikWarmtepomp and
+    ElektriciteitVermogenWarmtepomp (each a sum of a _binnen/_buiten pair) and
+    CO2 (a mean of CO2_1 and CO2_2), all from the Watch-E mappers.
+    """
+
+    TARGET = "ElektriciteitsgebruikWarmtepomp"
+
+    @staticmethod
+    def _df(**cols):
+        return pd.DataFrame(
+            {k: pd.array(v, dtype="Float64") for k, v in cols.items()}
+        )
+
+    def _bits(self, df, column):
+        from etdmap.flags import flag_column
+        return df[flag_column(column)].fillna(0).astype("int64")
+
+    def test_a_summed_target_is_flagged(self):
+        from etdmap.flags import MappingFlag
+        df = self._df(**{
+            f"{self.TARGET}_binnen": [1.0, 2.0],
+            f"{self.TARGET}_buiten": [10.0, 20.0],
+        })
+        combine_source_columns(
+            df, target=self.TARGET,
+            sources=(f"{self.TARGET}_binnen", f"{self.TARGET}_buiten"),
+            operator="sum",
+        )
+        assert list(df[self.TARGET]) == [11.0, 22.0]
+        bits = self._bits(df, self.TARGET)
+        assert ((bits & MappingFlag.COMBINED_COLUMNS.value) != 0).all()
+
+    def test_a_meaned_target_is_flagged(self):
+        from etdmap.flags import MappingFlag
+        df = self._df(CO2_1=[400.0, 500.0], CO2_2=[600.0, 700.0])
+        combine_source_columns(
+            df, target="CO2", sources=("CO2_1", "CO2_2"), operator="mean",
+        )
+        assert list(df["CO2"]) == [500.0, 600.0]
+        bits = self._bits(df, "CO2")
+        assert ((bits & MappingFlag.COMBINED_COLUMNS.value) != 0).all()
+
+    def test_a_cell_no_source_covered_is_not_flagged(self):
+        """The combine is NA-preserving, so a cell left empty is one nothing
+        wrote -- flagging it would claim a value that is not there."""
+        from etdmap.flags import MappingFlag
+        df = self._df(**{
+            f"{self.TARGET}_binnen": [1.0, pd.NA],
+            f"{self.TARGET}_buiten": [10.0, 20.0],
+        })
+        combine_source_columns(
+            df, target=self.TARGET,
+            sources=(f"{self.TARGET}_binnen", f"{self.TARGET}_buiten"),
+            operator="sum",
+        )
+        bits = self._bits(df, self.TARGET)
+        assert (bits & MappingFlag.COMBINED_COLUMNS.value).tolist() == [
+            MappingFlag.COMBINED_COLUMNS.value, 0,
+        ]
+
+    def test_a_delivered_target_is_not_flagged(self):
+        """State 1: the delivered target wins and nothing is combined, so
+        there is no action to record."""
+        from etdmap.flags import flag_column
+        df = self._df(**{
+            self.TARGET: [5.0, 6.0],
+            f"{self.TARGET}_binnen": [1.0, 2.0],
+        })
+        combine_source_columns(
+            df, target=self.TARGET,
+            sources=(f"{self.TARGET}_binnen", f"{self.TARGET}_buiten"),
+            operator="sum",
+        )
+        assert list(df[self.TARGET]) == [5.0, 6.0]
+        assert flag_column(self.TARGET) not in df.columns
+
+    def test_an_all_na_target_is_not_flagged(self):
+        """State 3: no source present, so the all-NA column records nothing."""
+        from etdmap.flags import flag_column
+        df = self._df(Other=[1.0, 2.0])
+        combine_source_columns(
+            df, target=self.TARGET,
+            sources=(f"{self.TARGET}_binnen", f"{self.TARGET}_buiten"),
+            operator="sum",
+        )
+        assert df[self.TARGET].isna().all()
+        assert flag_column(self.TARGET) not in df.columns
+
+    def test_it_is_an_action_that_is_still_a_measurement(self):
+        from etdmap.flags import MappingFlag
+        assert MappingFlag.COMBINED_COLUMNS & MappingFlag.ACTIONS
+        assert MappingFlag.COMBINED_COLUMNS & MappingFlag.ACTIONS_TAKEN
+        assert not (MappingFlag.COMBINED_COLUMNS & MappingFlag.INVENTED)
+        assert not (
+            MappingFlag.COMBINED_COLUMNS & MappingFlag.NOT_A_MEASUREMENT
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1220,6 +1369,652 @@ class TestThresholdStatsToRows:
         assert by_col["ElektriciteitVermogen"]["balance_removed"] == 24994.0
         # n_below of 0 on a one-sided threshold means "not checked".
         assert pd.isna(by_col["TemperatuurWoonkamer"]["lower_bound"])
+
+    def test_the_cadence_the_bound_was_scaled_to_is_carried(self):
+        """apply_thresholds_to_df records it on each column's stats, and it was
+        being dropped here -- leaving the sidecar's cadence_minutes null on
+        every row, so a removal could not be read against the interval its
+        bound was scaled to."""
+        stats = {
+            "ElektriciteitNetgebruikDiff": {
+                "n_below": 0, "n_above": 1,
+                "sum_removed_negative": 0.0, "sum_removed_positive": 9.0,
+                "balance_removed": 9.0,
+                "min_removed": 9.0, "max_removed": 9.0,
+                "lower_bound": 0.0, "upper_bound": 1.5,
+                "cadence_minutes": 60,
+            },
+        }
+        rows = threshold_stats_to_rows(7, stats)
+        assert rows[0]["cadence_minutes"] == 60
+
+    def test_a_column_with_no_measured_cadence_carries_na(self):
+        """A column the pipeline built is absent from the cadence table, so
+        there is no measured interval to report."""
+        stats = {
+            "ZonopwekBruto": {
+                "n_below": 0, "n_above": 1,
+                "sum_removed_negative": 0.0, "sum_removed_positive": 5.0,
+                "balance_removed": 5.0,
+                "min_removed": 5.0, "max_removed": 5.0,
+                "lower_bound": 0.0, "upper_bound": 1.0,
+                "cadence_minutes": pd.NA,
+            },
+        }
+        rows = threshold_stats_to_rows(7, stats)
+        assert pd.isna(rows[0]["cadence_minutes"])
+
+
+class TestARemovalRecordsItsCondition:
+    """A signal names an observed condition, an action names what the pipeline
+    did. A removal needs both: the threshold pass, the negative-diff cases and
+    frozen-span treatment all pair one with NULLED. Coercion did not, so a
+    reader saw "removed" with no reason.
+    """
+
+    COL = "ElektriciteitNetgebruik"
+
+    def _frame(self, values):
+        return pd.DataFrame({
+            "ReadingDate": pd.date_range(
+                "2026-01-01", periods=len(values), freq="5min"),
+            self.COL: values,
+        })
+
+    def test_an_unparseable_value_records_both_signal_and_action(self):
+        from etdmap.flags import MappingFlag, flag_column
+        out = rearrange_model_columns(
+            self._frame(["1.5", "not-a-number", "3.5"]), add_columns=False,
+        )
+        bits = out[flag_column(self.COL)].fillna(0).astype("int64")
+        assert ((bits & MappingFlag.UNPARSEABLE_VALUE.value) != 0).tolist() == [
+            False, True, False,
+        ]
+        assert ((bits & MappingFlag.NULLED.value) != 0).tolist() == [
+            False, True, False,
+        ]
+
+    def test_it_is_a_signal_that_makes_the_cell_unusable(self):
+        from etdmap.flags import MappingFlag
+        assert MappingFlag.UNPARSEABLE_VALUE & MappingFlag.SIGNALS
+        assert not (MappingFlag.UNPARSEABLE_VALUE & MappingFlag.ACTIONS)
+        assert MappingFlag.UNPARSEABLE_VALUE & MappingFlag.NOT_A_MEASUREMENT
+
+
+class TestAPartialCombineRecordsTheLoss:
+    """combine_source_columns preserves pd.NA, so a reading where only some
+    sources delivered yields an empty target -- and the sources are dropped
+    straight after, so a delivered value is destroyed. Without the pair the
+    cell is indistinguishable from one no source ever covered.
+    """
+
+    TARGET = "ElektriciteitsgebruikWarmtepomp"
+
+    @staticmethod
+    def _df(**cols):
+        return pd.DataFrame(
+            {k: pd.array(v, dtype="Float64") for k, v in cols.items()}
+        )
+
+    def _combine(self, binnen, buiten):
+        df = self._df(**{
+            f"{self.TARGET}_binnen": binnen,
+            f"{self.TARGET}_buiten": buiten,
+        })
+        combine_source_columns(
+            df, target=self.TARGET,
+            sources=(f"{self.TARGET}_binnen", f"{self.TARGET}_buiten"),
+            operator="sum",
+        )
+        return df
+
+    def test_a_partial_reading_records_both_signal_and_action(self):
+        from etdmap.flags import MappingFlag, flag_column
+        df = self._combine([1.0, 2.0], [10.0, pd.NA])
+        assert df[self.TARGET].isna().tolist() == [False, True]
+        bits = df[flag_column(self.TARGET)].fillna(0).astype("int64")
+        assert ((bits & MappingFlag.SOURCES_INCOMPLETE.value) != 0).tolist() == [
+            False, True,
+        ]
+        assert ((bits & MappingFlag.NULLED.value) != 0).tolist() == [
+            False, True,
+        ]
+
+    def test_a_reading_no_source_covered_records_nothing(self):
+        """Nothing was delivered and nothing was lost, so there is no removal
+        to record -- only the absence, which the delivery marking classifies."""
+        from etdmap.flags import MappingFlag, flag_column
+        df = self._combine([pd.NA, 2.0], [pd.NA, 20.0])
+        bits = df[flag_column(self.TARGET)].fillna(0).astype("int64")
+        assert not ((bits & MappingFlag.SOURCES_INCOMPLETE.value) != 0).iloc[0]
+        assert not ((bits & MappingFlag.NULLED.value) != 0).iloc[0]
+
+    def test_a_fully_covered_reading_is_combined_not_lost(self):
+        from etdmap.flags import MappingFlag, flag_column
+        df = self._combine([1.0, 2.0], [10.0, 20.0])
+        bits = df[flag_column(self.TARGET)].fillna(0).astype("int64")
+        assert ((bits & MappingFlag.COMBINED_COLUMNS.value) != 0).all()
+        assert not ((bits & MappingFlag.SOURCES_INCOMPLETE.value) != 0).any()
+
+    def test_it_is_a_signal_that_makes_the_cell_unusable(self):
+        from etdmap.flags import MappingFlag
+        assert MappingFlag.SOURCES_INCOMPLETE & MappingFlag.SIGNALS
+        assert MappingFlag.SOURCES_INCOMPLETE & MappingFlag.NOT_A_MEASUREMENT
+
+
+class TestDerivingAnIntervalIsRecorded:
+    """The interval column is written as a difference of the cumulative. Where
+    the supplier delivered an interval too, that delivered value is replaced --
+    and nothing said so, which left mark_unchanged_values stamping NOT_CHANGED
+    on a column mapping had written in full.
+    """
+
+    CUM = "ElektriciteitNetgebruik"
+    DIFF = "ElektriciteitNetgebruikDiff"
+
+    def _frame(self, cum=None, diff=None, n=4):
+        data = {
+            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
+        }
+        if cum is not None:
+            data[self.CUM] = pd.array(cum, dtype="Float64")
+        if diff is not None:
+            data[self.DIFF] = pd.array(diff, dtype="Float64")
+        return pd.DataFrame(data)
+
+    def test_a_derived_interval_says_so(self):
+        from etdmap.flags import MappingFlag, flag_column
+        from etdmap.mapping_helpers import add_diff_columns
+        out = add_diff_columns(
+            self._frame(cum=[10.0, 11.0, 12.0, 13.0]), context="t",
+        )
+        bits = out[flag_column(self.DIFF)].fillna(0).astype("int64")
+        derived = MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE.value
+        # Row 0 is the seeded zero, not a difference.
+        assert not (bits.iloc[0] & derived)
+        assert bits.iloc[0] & MappingFlag.FIRST_ZERO.value
+        assert ((bits.iloc[1:] & derived) != 0).all()
+
+    def test_an_overwritten_delivered_interval_carries_both_marks(self):
+        """The pairing that makes the replacement readable: the delivery mark
+        says the supplier sent a value here, the action says it was replaced."""
+        from etdmap.flags import MappingFlag, flag_column, set_flags
+        df = self._frame(cum=[10.0, 11.0, 12.0, 13.0], diff=[9.9, 9.9, 9.9, 9.9])
+        # mark_delivery_and_cadence runs before add_diff_columns and records
+        # what the supplier sent, which is what survives the overwrite.
+        set_flags(df, self.DIFF, df[self.DIFF].notna(),
+                  MappingFlag.RAW_DELIVERED_VALUE)
+        from etdmap.mapping_helpers import add_diff_columns
+        out = add_diff_columns(df, context="t")
+
+        # The delivered 9.9s are gone, replaced by the cumulative's difference.
+        assert out[self.DIFF].iloc[1:].tolist() == [1.0, 1.0, 1.0]
+        bits = out[flag_column(self.DIFF)].fillna(0).astype("int64")
+        assert ((bits.iloc[1:] & MappingFlag.RAW_DELIVERED_VALUE.value) != 0).all()
+        assert ((bits.iloc[1:]
+                 & MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE.value) != 0).all()
+
+    def test_a_kept_delivered_interval_is_not_marked_derived(self):
+        """Interval-only delivery: the cumulative is empty, so nothing is
+        differenced and the delivered values stand."""
+        from etdmap.flags import MappingFlag, flag_column
+        from etdmap.mapping_helpers import add_diff_columns
+        out = add_diff_columns(
+            self._frame(cum=[pd.NA] * 4, diff=[0.5, 0.5, 0.5, 0.5]), context="t",
+        )
+        assert out[self.DIFF].tolist() == [0.5, 0.5, 0.5, 0.5]
+        findings = flag_column(self.DIFF)
+        if findings in out.columns:
+            bits = out[findings].fillna(0).astype("int64")
+            assert not ((
+                bits & MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE.value
+            ) != 0).any()
+
+    def test_it_is_an_action_that_is_still_a_measurement(self):
+        from etdmap.flags import MappingFlag
+        f = MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE
+        assert f & MappingFlag.ACTIONS
+        assert f & MappingFlag.ACTIONS_TAKEN
+        assert not (f & MappingFlag.INVENTED)
+        assert not (f & MappingFlag.NOT_A_MEASUREMENT)
+
+    def test_not_changed_no_longer_claims_the_column_was_left_alone(self):
+        """The defect this flag closes. NOT_CHANGED is set exactly where
+        ACTIONS_TAKEN is absent, so before this action existed a derived
+        interval read as examined-and-unchanged."""
+        from etdmap.flags import MappingFlag, flag_column
+        from etdmap.mapping_helpers import mark_unchanged_values
+        from etdmap.mapping_helpers import add_diff_columns
+        out = add_diff_columns(
+            self._frame(cum=[10.0, 11.0, 12.0, 13.0]), context="t",
+        )
+        mark_unchanged_values(out)
+        bits = out[flag_column(self.DIFF)].fillna(0).astype("int64")
+        assert not ((bits & MappingFlag.NOT_CHANGED.value) != 0).any()
+
+
+class TestANegativeIntervalIsRecorded:
+    """A variable declared monotonic cannot decrease, so a negative interval
+    means its cumulative went backwards -- whoever produced the value.
+
+    OUT_OF_BOUNDS_LOW also catches it, but only where the interval column
+    declares a Min, which is metadata rather than a code guarantee, and it
+    states a bounds violation rather than a monotonicity one. Monotonicity is
+    declared on the cumulative and derived for the interval paired with it, so
+    this signal needs no threshold at all.
+    """
+
+    CUM = "ElektriciteitNetgebruik"
+    DIFF = "ElektriciteitNetgebruikDiff"
+    #: Momentaan: a decrease here is simply the reading.
+    FREE = "ElektriciteitVermogen"
+
+    def _frame(self, **cols):
+        n = len(next(iter(cols.values())))
+        data = {
+            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
+        }
+        for name, values in cols.items():
+            data[name] = pd.array(values, dtype="Float64")
+        return pd.DataFrame(data)
+
+    def test_a_delivered_negative_interval_is_flagged(self):
+        """Interval-only delivery: the cumulative is absent, so the supplier's
+        values are kept and the negative is the supplier's own."""
+        from etdmap.flags import MappingFlag, flag_column
+        from etdmap.mapping_helpers import add_diff_columns
+        out = add_diff_columns(
+            self._frame(**{
+                self.CUM: [pd.NA] * 5,
+                self.DIFF: [0.5, 0.5, -0.3, 0.5, 0.5],
+            }),
+            context="t",
+        )
+        assert out[self.DIFF].iloc[2] == -0.3, "the delivered value is kept"
+        bits = out[flag_column(self.DIFF)].fillna(0).astype("int64")
+        assert ((bits & MappingFlag.NEGATIVE_INTERVAL.value) != 0).tolist() == [
+            False, False, True, False, False,
+        ]
+
+    def test_it_is_set_before_the_threshold_pass_removes_the_value(self):
+        """The signal does not depend on a Min being declared: it is recorded
+        where the interval is produced, which is step 7, while the threshold
+        pass runs at step 9."""
+        from etdmap.flags import MappingFlag, flag_column
+        from etdmap.mapping_helpers import add_diff_columns
+        out = add_diff_columns(
+            self._frame(**{
+                self.CUM: [pd.NA] * 3,
+                self.DIFF: [0.5, -0.3, 0.5],
+            }),
+            context="t",
+        )
+        # Still holding the negative value, already flagged.
+        assert out[self.DIFF].iloc[1] == -0.3
+        bits = out[flag_column(self.DIFF)].fillna(0).astype("int64")
+        assert bits.iloc[1] & MappingFlag.NEGATIVE_INTERVAL.value
+
+    def test_a_variable_that_may_decrease_is_never_flagged(self):
+        """The scope. A momentaan reading falling is the reading, not a fault,
+        and such a column leaves add_diff_columns before this site."""
+        from etdmap.flags import MappingFlag, flag_column
+        from etdmap.mapping_helpers import add_diff_columns
+        out = add_diff_columns(
+            self._frame(**{self.FREE: [5.0, -2.0, 3.0]}), context="t",
+        )
+        for column in out.columns:
+            findings = flag_column(column)
+            if findings in out.columns:
+                bits = out[findings].fillna(0).astype("int64")
+                assert not (
+                    (bits & MappingFlag.NEGATIVE_INTERVAL.value) != 0
+                ).any(), f"{column} was flagged and may legitimately decrease"
+
+    def test_a_clean_monotonic_column_is_not_flagged(self):
+        from etdmap.flags import MappingFlag, flag_column
+        from etdmap.mapping_helpers import add_diff_columns
+        out = add_diff_columns(
+            self._frame(**{self.CUM: [10.0, 11.0, 12.0, 13.0]}), context="t",
+        )
+        bits = out[flag_column(self.DIFF)].fillna(0).astype("int64")
+        assert not ((bits & MappingFlag.NEGATIVE_INTERVAL.value) != 0).any()
+
+    def test_it_is_a_signal_that_makes_the_cell_unusable(self):
+        from etdmap.flags import MappingFlag
+        f = MappingFlag.NEGATIVE_INTERVAL
+        assert f & MappingFlag.SIGNALS
+        assert not (f & MappingFlag.ACTIONS)
+        assert f & MappingFlag.NOT_A_MEASUREMENT
+
+
+class TestGridCollisionsAreCounted:
+    """Two readings in one grid slot: groupby.first() keeps the one closest to
+    the column's characteristic offset and the other is dropped. The discarded
+    reading is gone and cannot carry a flag, so a count is the only record
+    available.
+    """
+
+    COL = "ElektriciteitNetgebruik"
+
+    def _frame(self, stamps, values):
+        return pd.DataFrame({
+            "ReadingDate": pd.to_datetime(stamps),
+            self.COL: pd.array(values, dtype="Float64"),
+        })
+
+    def test_a_discarded_value_is_counted(self):
+        from etdmap.mapping_helpers import snap_readings_to_grid
+        out, collisions = snap_readings_to_grid(
+            self._frame(
+                ["2026-01-01 00:00:10", "2026-01-01 00:00:50",
+                 "2026-01-01 00:05:10"],
+                [1.0, 2.0, 3.0],
+            ),
+            freq_minutes=5, context="t", return_stats=True,
+        )
+        assert len(out) == 2
+        assert collisions[self.COL]["n_discarded"] == 1
+        assert collisions[self.COL]["n_slots_contested"] == 1
+        assert collisions[self.COL]["max_per_slot"] == 2
+
+    def test_one_reading_per_slot_discards_nothing(self):
+        from etdmap.mapping_helpers import snap_readings_to_grid
+        _, collisions = snap_readings_to_grid(
+            self._frame(
+                ["2026-01-01 00:00:10", "2026-01-01 00:05:10"], [1.0, 2.0],
+            ),
+            freq_minutes=5, context="t", return_stats=True,
+        )
+        assert collisions == {}
+
+    def test_a_second_row_holding_no_value_discards_nothing(self):
+        """A slot with two rows is not a collision for a column only one of
+        them reported in -- the merge loses nothing there."""
+        from etdmap.mapping_helpers import snap_readings_to_grid
+        _, collisions = snap_readings_to_grid(
+            self._frame(
+                ["2026-01-01 00:00:10", "2026-01-01 00:00:50"],
+                [1.0, pd.NA],
+            ),
+            freq_minutes=5, context="t", return_stats=True,
+        )
+        assert collisions == {}
+
+    def test_the_default_return_is_still_one_frame(self):
+        from etdmap.mapping_helpers import snap_readings_to_grid
+        out = snap_readings_to_grid(
+            self._frame(
+                ["2026-01-01 00:00:10", "2026-01-01 00:00:50"], [1.0, 2.0],
+            ),
+            freq_minutes=5, context="t",
+        )
+        assert isinstance(out, pd.DataFrame)
+
+    def test_rows_carry_the_household_and_column(self):
+        from etdmap.mapping_helpers import grid_collisions_to_rows
+        rows = grid_collisions_to_rows(42, {
+            self.COL: {
+                "n_discarded": 3, "n_slots_contested": 2, "max_per_slot": 3,
+            },
+        })
+        assert rows[0]["HuisIdBSV"] == 42
+        assert rows[0]["column"] == self.COL
+        assert rows[0]["n_discarded"] == 3
+
+    def test_empty_or_none_yields_no_rows(self):
+        from etdmap.mapping_helpers import grid_collisions_to_rows
+        assert grid_collisions_to_rows(1, {}) == []
+        assert grid_collisions_to_rows(1, None) == []
+
+    def test_the_sidecar_is_typed(self, tmp_path):
+        from etdmap.mapping_helpers import write_grid_collisions
+        path = write_grid_collisions(
+            [{"HuisIdBSV": 1, "column": self.COL, "n_discarded": 2,
+              "n_slots_contested": 1, "max_per_slot": 3}],
+            str(tmp_path),
+        )
+        out = pd.read_parquet(path, dtype_backend="numpy_nullable")
+        assert len(out) == 1
+        assert str(out["HuisIdBSV"].dtype) == "Int64"
+        assert str(out["column"].dtype) == "string"
+        assert str(out["n_discarded"].dtype) == "Int64"
+
+    def test_an_empty_sidecar_still_has_the_schema(self, tmp_path):
+        from etdmap.mapping_helpers import write_grid_collisions
+        path = write_grid_collisions([], str(tmp_path))
+        out = pd.read_parquet(path, dtype_backend="numpy_nullable")
+        assert out.empty
+        assert "n_discarded" in out.columns
+
+    def test_the_surviving_cell_says_it_was_one_of_several(self):
+        """The count says how many readings a column lost; it cannot say which
+        cells were contested. The survivor records that for itself."""
+        from etdmap.flags import MappingFlag, flag_column
+        from etdmap.mapping_helpers import snap_readings_to_grid
+        out = snap_readings_to_grid(
+            self._frame(
+                ["2026-01-01 00:00:10", "2026-01-01 00:00:50",
+                 "2026-01-01 00:05:10"],
+                [1.0, 2.0, 3.0],
+            ),
+            freq_minutes=5, context="t",
+        )
+        bits = out[flag_column(self.COL)].fillna(0).astype("int64")
+        assert ((bits & MappingFlag.SLOT_COLLISION.value) != 0).tolist() == [
+            True, False,
+        ]
+
+    def test_an_uncontested_slot_is_not_marked(self):
+        from etdmap.flags import MappingFlag, flag_column
+        from etdmap.mapping_helpers import snap_readings_to_grid
+        out = snap_readings_to_grid(
+            self._frame(
+                ["2026-01-01 00:00:10", "2026-01-01 00:05:10"], [1.0, 2.0],
+            ),
+            freq_minutes=5, context="t",
+        )
+        findings = flag_column(self.COL)
+        if findings in out.columns:
+            bits = out[findings].fillna(0).astype("int64")
+            assert not ((bits & MappingFlag.SLOT_COLLISION.value) != 0).any()
+
+    def test_the_kept_reading_is_still_a_measurement(self):
+        """It was delivered. Putting it in NOT_A_MEASUREMENT would drop a real
+        reading out of every project average."""
+        from etdmap.flags import MappingFlag
+        assert MappingFlag.SLOT_COLLISION & MappingFlag.SIGNALS
+        assert not (MappingFlag.SLOT_COLLISION & MappingFlag.ACTIONS)
+        assert not (MappingFlag.SLOT_COLLISION & MappingFlag.NOT_A_MEASUREMENT)
+
+
+class TestSnappingKeepsAFlagWithItsValue:
+    """A findings column is not a sensor stream. Measured on a synthetic frame
+    before the fix: the value survived from the :50 row while its flag was
+    taken from the :05 row, because set_flags makes a flag column non-null on
+    every row, so it resolved to a different characteristic offset from the
+    column it describes and .first() read the two from different rows.
+    """
+
+    COL = "ElektriciteitsgebruikWarmtepomp"
+
+    def _frame(self, stamps, values, flagged):
+        from etdmap.flags import MappingFlag, set_flags
+        df = pd.DataFrame({
+            "ReadingDate": pd.to_datetime(stamps),
+            self.COL: pd.array(values, dtype="Float64"),
+        })
+        set_flags(df, self.COL, pd.Series(flagged), MappingFlag.COMBINED_COLUMNS)
+        return df
+
+    def test_the_flag_follows_the_value_that_survived(self):
+        from etdmap.flags import MappingFlag, flag_column
+        from etdmap.mapping_helpers import snap_readings_to_grid
+        # The value is delivered only on the :50 rows and flagged there.
+        out = snap_readings_to_grid(
+            self._frame(
+                ["2026-01-01 00:00:05", "2026-01-01 00:00:50",
+                 "2026-01-01 00:05:05", "2026-01-01 00:05:50"],
+                [pd.NA, 2.0, pd.NA, 4.0],
+                [False, True, False, True],
+            ),
+            freq_minutes=5, context="t",
+        )
+        assert out[self.COL].tolist() == [2.0, 4.0]
+        bits = out[flag_column(self.COL)].fillna(0).astype("int64")
+        assert ((bits & MappingFlag.COMBINED_COLUMNS.value) != 0).all(), (
+            "the surviving value kept its own flag"
+        )
+
+    def test_a_losing_rows_flag_is_not_inherited(self):
+        """OR-ing the loser's bits onto the winner would fabricate history, and
+        an inherited FILLED_DOWN would drop a delivered reading out of every
+        project average. That siblings existed is what SLOT_COLLISION says."""
+        from etdmap.flags import MappingFlag, flag_column, set_flags
+        from etdmap.mapping_helpers import snap_readings_to_grid
+        df = self._frame(
+            ["2026-01-01 00:00:05", "2026-01-01 00:00:50"],
+            [1.0, 2.0],
+            [True, False],
+        )
+        # The farther row carries an INVENTED bit; it must not reach the winner.
+        set_flags(df, self.COL, pd.Series([False, True]), MappingFlag.FILLED_DOWN)
+        out = snap_readings_to_grid(df, freq_minutes=5, context="t")
+
+        assert out[self.COL].tolist() == [1.0]
+        bits = out[flag_column(self.COL)].fillna(0).astype("int64")
+        assert bits.iloc[0] & MappingFlag.COMBINED_COLUMNS.value
+        assert not (bits.iloc[0] & MappingFlag.FILLED_DOWN.value)
+        assert not (bits.iloc[0] & MappingFlag.NOT_A_MEASUREMENT.value)
+        # and the collision itself is recorded
+        assert bits.iloc[0] & MappingFlag.SLOT_COLLISION.value
+
+
+class TestNegativeDiffMagnitudesAreRecorded:
+    """The flags on a corrected register say which readings were condemned and
+    why. They cannot say how far it went back, and a dip of 5 reads the same as
+    one of 5000 -- the magnitudes exist nowhere once the readings are blanked.
+    """
+
+    COL = "ElektriciteitNetgebruik"
+
+    def _frame(self, values, households=None):
+        data = {
+            "ReadingDate": pd.date_range(
+                "2026-01-01", periods=len(values), freq="5min",
+            ),
+            self.COL: pd.array(values, dtype="Float64"),
+        }
+        if households is not None:
+            data["HuisIdBSV"] = pd.array(households, dtype="Int64")
+        return pd.DataFrame(data)
+
+    def test_a_dip_records_its_magnitude_and_classification(self):
+        from etdmap.mapping_helpers import add_diff_columns
+        # Dips by 5 at index 3 and recovers above the previous value: a
+        # jump-back, so one reading is condemned.
+        _, stats = add_diff_columns(
+            self._frame([100.0, 110.0, 120.0, 115.0, 125.0, 135.0]),
+            context="t", return_stats=True,
+        )
+        s = stats[self.COL]
+        assert s["n_dips"] == 1
+        assert s["sum_dip_magnitude"] == -5.0
+        assert s["min_dip"] == -5.0
+        assert s["max_dip"] == -5.0
+        assert s["n_jump_back"] == 1
+        assert s["n_readings_removed"] == 1
+
+    def test_a_column_with_no_decrease_is_absent(self):
+        """Absent rather than zero-filled, so an empty dict means nothing was
+        corrected rather than nothing was looked at."""
+        from etdmap.mapping_helpers import add_diff_columns
+        _, stats = add_diff_columns(
+            self._frame([100.0, 110.0, 120.0, 130.0]),
+            context="t", return_stats=True,
+        )
+        assert self.COL not in stats
+
+    def test_the_default_return_is_still_one_frame(self):
+        """return_stats defaults to False, so every existing caller is
+        unaffected."""
+        from etdmap.mapping_helpers import add_diff_columns
+        from etdmap.mapping_helpers import add_diff_columns
+        out = add_diff_columns(
+            self._frame([100.0, 110.0, 105.0, 120.0]), context="t",
+        )
+        assert isinstance(out, pd.DataFrame)
+
+    def test_figures_accumulate_across_households(self):
+        """One call may cover many households, and a column may be corrected in
+        each. The counts add; the extremes take the outer value."""
+        from etdmap.mapping_helpers import add_diff_columns
+        _, stats = add_diff_columns(
+            self._frame(
+                [100.0, 110.0, 105.0, 120.0, 200.0, 210.0, 190.0, 230.0],
+                households=[1, 1, 1, 1, 2, 2, 2, 2],
+            ),
+            id_column="HuisIdBSV", context="t", return_stats=True,
+        )
+        s = stats[self.COL]
+        assert s["n_dips"] == 2
+        assert s["sum_dip_magnitude"] == -25.0
+        assert s["min_dip"] == -20.0
+        assert s["max_dip"] == -5.0
+
+    def test_rows_carry_the_household_and_column(self):
+        from etdmap.mapping_helpers import negative_diff_stats_to_rows
+        rows = negative_diff_stats_to_rows(42, {
+            self.COL: {
+                "n_dips": 1, "n_readings_removed": 1,
+                "sum_dip_magnitude": -5.0, "min_dip": -5.0, "max_dip": -5.0,
+                "n_jump_back": 1, "n_repeat_negative": 0, "n_meter_reset": 0,
+                "n_no_recovery": 0, "n_zero_total": 0,
+            },
+        })
+        assert rows[0]["HuisIdBSV"] == 42
+        assert rows[0]["column"] == self.COL
+        assert rows[0]["sum_dip_magnitude"] == -5.0
+
+    def test_empty_or_none_yields_no_rows(self):
+        from etdmap.mapping_helpers import negative_diff_stats_to_rows
+        assert negative_diff_stats_to_rows(1, {}) == []
+        assert negative_diff_stats_to_rows(1, None) == []
+
+    def test_the_sidecar_is_typed(self, tmp_path):
+        from etdmap.mapping_helpers import write_negative_diff_removals
+        rows = [{
+            "HuisIdBSV": 1, "column": self.COL,
+            "n_dips": 2, "n_readings_removed": 2,
+            "sum_dip_magnitude": -25.0, "min_dip": -20.0, "max_dip": -5.0,
+            "n_jump_back": 1, "n_repeat_negative": 0, "n_meter_reset": 1,
+            "n_no_recovery": 0, "n_zero_total": 0,
+        }]
+        path = write_negative_diff_removals(rows, str(tmp_path))
+        out = pd.read_parquet(path, dtype_backend="numpy_nullable")
+        assert len(out) == 1
+        assert str(out["HuisIdBSV"].dtype) == "Int64"
+        assert str(out["column"].dtype) == "string"
+        assert str(out["sum_dip_magnitude"].dtype) == "Float64"
+        assert str(out["n_dips"].dtype) == "Int64"
+
+    def test_an_empty_sidecar_still_has_the_schema(self, tmp_path):
+        from etdmap.mapping_helpers import write_negative_diff_removals
+        path = write_negative_diff_removals([], str(tmp_path))
+        out = pd.read_parquet(path, dtype_backend="numpy_nullable")
+        assert out.empty
+        assert "sum_dip_magnitude" in out.columns
+
+    def test_the_pipeline_carries_the_figures_out(self):
+        """The mappers read _validation_summary, so the figures have to arrive
+        there or they are computed and dropped."""
+        from etdmap.mapping_helpers import add_diff_columns
+        _, stats = add_diff_columns(
+            self._frame([100.0, 110.0, 105.0, 120.0]),
+            context="t", return_stats=True,
+        )
+        # The key run_standard_pipeline puts this under.
+        summary = {"negative_diff_stats": stats}
+        assert summary["negative_diff_stats"][self.COL]["n_dips"] == 1
 
 
 class TestWriteThresholdRemovals:

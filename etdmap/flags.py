@@ -107,6 +107,45 @@ class MappingFlag(IntFlag):
     # owed is absent, which is what OFF_CADENCE_NA is not.
     MISSING_VALUE = auto()
 
+    # The target was written by combining several delivered source columns.
+    # Like TARIFF_COMBINED, the value carries what the delivered sources
+    # reported, so it is neither INVENTED nor excluded from measurement. Kept
+    # separate from TARIFF_COMBINED so a tariff sum stays distinguishable from
+    # a sensor mean.
+    COMBINED_COLUMNS = auto()
+
+    # The supplier sent something the column's declared type could not read, so
+    # the coercion removed it. The condition behind the NULLED on that cell.
+    UNPARSEABLE_VALUE = auto()
+
+    # Some of a combined target's source columns delivered at this reading and
+    # some did not. The combination preserves pd.NA, so the target holds nothing
+    # and the delivered sources are dropped with it.
+    SOURCES_INCOMPLETE = auto()
+
+    # More than one reading fell in this grid slot. One was kept and the rest
+    # were discarded, so this value was selected rather than the only candidate.
+    SLOT_COLLISION = auto()
+
+    # The interval was derived by differencing the delivered cumulative column,
+    # replacing whatever the supplier sent for the interval itself. Like
+    # TARIFF_COMBINED, the value carries what the supplier reported, so it is
+    # neither INVENTED nor excluded from measurement.
+    INTERVAL_FROM_DELIVERED_CUMULATIVE = auto()
+
+    # The interval is negative on a variable that cannot decrease. Monotonicity
+    # is declared on the cumulative variable, so it is derivable for the
+    # interval paired with it; elsewhere a decrease is simply the reading, and
+    # this is never set there. Independent of the threshold pass: that only
+    # reports a negative where the interval column happens to declare a Min.
+    NEGATIVE_INTERVAL = auto()
+
+    # A frozen span on a column holding the supplier's own interval amounts,
+    # resolved by spreading the catch-up evenly over the span it covers. The
+    # catch-up's total is measured; its distribution across the span is not, so
+    # each written value is invented even though the column's total is not.
+    FROZEN_DELIVERED_INTERVAL_SPREAD = auto()
+
     # The two categories, declared rather than left to a comment. A signal names
     # something observed about a value; an action names something the pipeline
     # did to it. Every single-bit member belongs to exactly one, which a test
@@ -125,6 +164,10 @@ class MappingFlag(IntFlag):
         | RAW_DELIVERED_VALUE
         | OFF_CADENCE_NA
         | MISSING_VALUE
+        | UNPARSEABLE_VALUE
+        | SOURCES_INCOMPLETE
+        | SLOT_COLLISION
+        | NEGATIVE_INTERVAL
     )
     ACTIONS = (
         FILLED_DOWN
@@ -134,6 +177,9 @@ class MappingFlag(IntFlag):
         | CUMULATIVE_CONSTRUCTED
         | NOT_CHANGED
         | TARIFF_COMBINED
+        | COMBINED_COLUMNS
+        | INTERVAL_FROM_DELIVERED_CUMULATIVE
+        | FROZEN_DELIVERED_INTERVAL_SPREAD
     )
 
     # Faults whose affected readings run from the decrease to the recovery
@@ -144,15 +190,27 @@ class MappingFlag(IntFlag):
     # only: a signal here would exclude values that were merely observed.
     # CUMULATIVE_CONSTRUCTED is deliberately absent -- the column was built, but
     # its values carry what the delivered intervals reported.
-    INVENTED = FILLED_DOWN | FILLED_ZERO | NULLED | FIRST_ZERO
+    INVENTED = (
+        FILLED_DOWN
+        | FILLED_ZERO
+        | NULLED
+        | FIRST_ZERO
+        | FROZEN_DELIVERED_INTERVAL_SPREAD
+    )
 
     # Every action the pipeline may take on a value, except recording that it
     # took none. NOT_CHANGED is set where this is absent, so the two are
     # defined from one list rather than maintained separately.
-    # TARIFF_COMBINED is here (an action was taken) but, like
-    # CUMULATIVE_CONSTRUCTED, not in INVENTED: the written value carries what
-    # the delivered registers reported.
-    ACTIONS_TAKEN = INVENTED | CUMULATIVE_CONSTRUCTED | TARIFF_COMBINED
+    # TARIFF_COMBINED, COMBINED_COLUMNS and INTERVAL_FROM_DELIVERED_CUMULATIVE
+    # are here (an action was taken) but, like CUMULATIVE_CONSTRUCTED, not in
+    # INVENTED: the written value carries what the supplier reported.
+    ACTIONS_TAKEN = (
+        INVENTED
+        | CUMULATIVE_CONSTRUCTED
+        | TARIFF_COMBINED
+        | COMBINED_COLUMNS
+        | INTERVAL_FROM_DELIVERED_CUMULATIVE
+    )
 
     # A cumulative fault that destroys the count. No consumption can be derived
     # across these readings, whatever values they carry.
@@ -169,6 +227,9 @@ class MappingFlag(IntFlag):
     # outside what the variable may hold. The one test a project average filters
     # on. Any future finding that makes a value unusable as evidence belongs
     # here.
+    # SLOT_COLLISION is deliberately absent: the kept reading is a delivered
+    # measurement, one candidate among several, and excluding it would discard
+    # real data from a project average.
     NOT_A_MEASUREMENT = (
         INVENTED
         | FROZEN_SPAN
@@ -176,6 +237,9 @@ class MappingFlag(IntFlag):
         | CUMULATIVE_UNUSABLE
         | OUT_OF_BOUNDS_LOW
         | OUT_OF_BOUNDS_HIGH
+        | UNPARSEABLE_VALUE
+        | SOURCES_INCOMPLETE
+        | NEGATIVE_INTERVAL
     )
 
 
@@ -354,6 +418,7 @@ def contiguous_runs(mask: pd.Series) -> list[tuple[int, int]]:
 def frozen_span_flags(
     intervals: pd.Series,
     upper_bound=pd.NA,
+    missing_counts_as_frozen: bool = True,
 ) -> pd.Series:
     """
     Flag a cumulative variable that stopped advancing and then caught up.
@@ -368,9 +433,12 @@ def frozen_span_flags(
     stretch not followed by a catch-up is left alone.
 
     *intervals* is a per-interval series, that is, a Diff column rather than a
-    cumulative variable. A missing interval counts as not advancing: no
-    consumption was recorded, and a span must not be split in two by a single
-    absent reading.
+    cumulative variable. By default a missing interval counts as not advancing:
+    no consumption was recorded, and a span must not be split in two by a
+    single absent reading. On a column holding the supplier's own interval
+    amounts that reading of an absence is wrong -- pass
+    *missing_counts_as_frozen=False*, and see :func:`frozen_spans` for which
+    caller owns which reading.
 
     A negative interval is not part of a span. A cumulative variable going
     backwards is a reset, named by ``CUMULATIVE_METER_RESET``; including it here
@@ -391,7 +459,11 @@ def frozen_span_flags(
         Int64 of ``MappingFlag`` bits: FROZEN_SPAN on the readings that did not
         advance, CATCHUP on the reading their accumulation arrived in.
     """
-    spans = frozen_spans(intervals, upper_bound=upper_bound)
+    spans = frozen_spans(
+        intervals,
+        upper_bound=upper_bound,
+        missing_counts_as_frozen=missing_counts_as_frozen,
+    )
 
     frozen = pd.Series(False, index=intervals.index)
     paired = pd.Series(False, index=intervals.index)
@@ -419,6 +491,7 @@ _SPAN_DTYPES = {
 def frozen_spans(
     intervals: pd.Series,
     upper_bound=pd.NA,
+    missing_counts_as_frozen: bool = True,
 ) -> pd.DataFrame:
     """
     One row per frozen span, with the catch-up its accumulation arrived in.
@@ -426,6 +499,26 @@ def frozen_spans(
     This is the same detection that :func:`frozen_span_flags` renders as flags,
     reported span by span. See that function for what distinguishes a frozen
     span from an idle device.
+
+    Parameters
+    ----------
+    intervals : pd.Series
+        Per-interval amounts.
+    upper_bound : float or pd.NA, optional
+        The largest plausible value for one interval. pd.NA flags nothing.
+    missing_counts_as_frozen : bool, optional
+        What an absent interval means, which differs by how the column was
+        produced and is not something this function can tell:
+
+        True (default), for an interval DERIVED from a delivered cumulative
+        column -- an absence means no advance was recorded, so it belongs to
+        the span and must not split one in two.
+
+        False, for a column holding the supplier's OWN interval amounts --
+        there `pd.NA` is unknown and only `0.0` is a reported zero, so an
+        absence ends the run rather than extending it. The comparison then
+        yields `pd.NA` on absent cells and :func:`contiguous_runs` reads that
+        as not part of a run.
 
     Returns
     -------
@@ -438,9 +531,12 @@ def frozen_spans(
     """
     rows = []
     if not (pd.isna(upper_bound) or intervals.empty):
-        # A missing interval counts as not advancing. A negative one does not:
-        # testing for exactly zero excludes decreases.
-        did_not_advance = intervals.fillna(0) == 0
+        # Testing for exactly zero excludes decreases either way: a cumulative
+        # variable going backwards is a reset, named by CUMULATIVE_METER_RESET.
+        if missing_counts_as_frozen:
+            did_not_advance = intervals.fillna(0) == 0
+        else:
+            did_not_advance = intervals == 0
         catch_up = (intervals > upper_bound).fillna(False)
 
         # A run's stop position is the reading that ended it. When that reading
@@ -500,7 +596,12 @@ DESCRIPTIONS = {
         "running total summed from intervals is not a meter reading -- and the "
         "member is kept so data written before that still decodes."
     ),
-    "NOT_CHANGED": "A value mapping examined and left as delivered.",
+    "NOT_CHANGED": (
+        "A cell that holds a value and carries no recorded action. Set on "
+        "every data column, so an empty findings column means no step reached "
+        "the column rather than that it left the value alone. Never set on an "
+        "empty cell: see MISSING_VALUE and OFF_CADENCE_NA for those."
+    ),
     "TARIFF_COMBINED": "A tariff root written as the sum of its delivered Hoog/Laag registers.",
     "TARIFF_SIMULTANEOUS": "Both tariff registers delivered nonzero at the same reading.",
     "RAW_DELIVERED_VALUE": (
@@ -512,6 +613,46 @@ DESCRIPTIONS = {
     ),
     "MISSING_VALUE": (
         "Absent on a row where the column was due to report."
+    ),
+    "COMBINED_COLUMNS": (
+        "A target written by combining several delivered source columns, as a "
+        "sum or a mean. The sources are dropped after the combine, so without "
+        "this the target reads as delivered whole."
+    ),
+    "UNPARSEABLE_VALUE": (
+        "The supplier sent a value the column's declared type could not read, "
+        "so coercion removed it. The condition behind the NULLED on that cell."
+    ),
+    "SOURCES_INCOMPLETE": (
+        "Some of a combined target's source columns delivered at this reading "
+        "and some did not. The combination preserves pd.NA, so the target "
+        "holds nothing and the delivered sources were dropped with it."
+    ),
+    "SLOT_COLLISION": (
+        "More than one reading fell in this grid slot. One was kept and the "
+        "rest discarded, so this value was selected rather than the only "
+        "candidate. Still a measurement: the kept reading was delivered."
+    ),
+    "FROZEN_DELIVERED_INTERVAL_SPREAD": (
+        "A frozen span on a column holding the supplier's own interval "
+        "amounts, resolved by spreading the catch-up evenly over the span it "
+        "covers. The column's total is unchanged; each written value is "
+        "invented, because the catch-up's total is measured but its "
+        "distribution across the span is not."
+    ),
+    "NEGATIVE_INTERVAL": (
+        "The interval is negative on a variable that cannot decrease. "
+        "Monotonicity is declared on the cumulative variable and derived for "
+        "the interval paired with it, so this needs no declared threshold -- "
+        "unlike OUT_OF_BOUNDS_LOW, which reports a negative only where the "
+        "interval column declares a Min. Never set where a decrease is simply "
+        "the reading."
+    ),
+    "INTERVAL_FROM_DELIVERED_CUMULATIVE": (
+        "The interval was derived by differencing the delivered cumulative "
+        "column. Where the supplier delivered an interval too, that delivered "
+        "value was replaced; RAW_DELIVERED_VALUE beside this flag is what says "
+        "so."
     ),
 }
 

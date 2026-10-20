@@ -301,7 +301,10 @@ class TestTaxonomyPlacement:
         mark_unchanged_values(df)
         bits = _bits(df, ROOT)
         assert not (bits[0] & MappingFlag.NOT_CHANGED.value)
-        assert bits[1] & MappingFlag.NOT_CHANGED.value
+        # Row 1 is not the contrast case: neither register delivered, so the
+        # root holds nothing and an empty cell is never marked either.
+        assert bool(df[ROOT].isna().iloc[1])
+        assert not (bits[1] & MappingFlag.NOT_CHANGED.value)
 
 
 GRID = 5

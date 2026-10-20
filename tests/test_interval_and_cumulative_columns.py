@@ -101,7 +101,11 @@ class TestIntervalsInheritTheirCumulativeFindings:
         assert int(out[flag_column(CUM)].iloc[3]) == MappingFlag.NONE.value
         assert bool(carried.iloc[3])
 
-    def test_an_untouched_column_gains_no_findings(self):
+    def test_a_clean_column_gains_only_the_findings_deriving_it_creates(self):
+        """Deriving the interval is itself an action, so a clean column's
+        interval is not unflagged: every differenced cell records that it was
+        derived, and the seeded first cell records that it was invented. No
+        finding is inherited from the cumulative, which has none."""
         n = 6
         df = pd.DataFrame(
             {
@@ -112,9 +116,30 @@ class TestIntervalsInheritTheirCumulativeFindings:
         fill_down_infrequent_devices(df, [CUM], grid_minutes=GRID)
         out = add_diff_columns(df, context="clean")
 
-        # The first interval carries FIRST_ZERO: differencing has no
-        # predecessor there, so that zero is seeded rather than measured. It is
-        # the one finding a clean column always gains.
         flags = out[flag_column(DIFF)].fillna(0).astype("Int64")
+
+        # Row 0 is the seeded zero: invented, not differenced, so it carries
+        # FIRST_ZERO and NOT the derivation action.
         assert int(flags.iloc[0]) == MappingFlag.FIRST_ZERO.value
-        assert int(flags.iloc[1:].sum()) == MappingFlag.NONE.value
+
+        # Every later cell was produced by differencing the cumulative.
+        derived = MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE.value
+        assert ((flags.iloc[1:] & derived) != 0).all()
+        # And nothing else: no inherited finding, no removal.
+        assert int((flags.iloc[1:] & ~derived).sum()) == MappingFlag.NONE.value
+
+    def test_the_cumulative_itself_gains_no_findings(self):
+        """The derivation action belongs to the interval it wrote, not to the
+        readings it read."""
+        n = 6
+        df = pd.DataFrame(
+            {
+                "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
+                CUM: pd.array([10.0 + i for i in range(n)], dtype="Float64"),
+            }
+        )
+        fill_down_infrequent_devices(df, [CUM], grid_minutes=GRID)
+        out = add_diff_columns(df, context="clean")
+
+        cum_flags = out[flag_column(CUM)].fillna(0).astype("Int64")
+        assert int(cum_flags.sum()) == MappingFlag.NONE.value

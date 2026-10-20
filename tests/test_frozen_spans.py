@@ -18,6 +18,7 @@ from etdmap.flags import (
     contiguous_runs,
     flag_column,
     frozen_span_flags,
+    set_flags,
 )
 
 # A plausible 5-minute bound for a tap water variable, in litres.
@@ -251,9 +252,14 @@ class TestTreatment:
             "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
             "WatergebruikWarmTapwater": pd.array(values, dtype="Float64"),
         })
-        df["WatergebruikWarmTapwaterDiff"] = df["WatergebruikWarmTapwater"].diff().round(10)
-        df.loc[0, "WatergebruikWarmTapwaterDiff"] = 0
-        return df
+        # Through add_diff_columns rather than a hand-rolled .diff(), so the
+        # interval carries INTERVAL_FROM_DELIVERED_CUMULATIVE as production
+        # sets it. Detection and treatment read that bit to decide which form
+        # the column holds, and a frame without it is read as the supplier's
+        # own interval amounts -- a different and deliberately different
+        # treatment.
+        from etdmap.mapping_helpers import add_diff_columns
+        return add_diff_columns(df, context="frozen-span fixture")
 
     def _treated(self, df):
         from etdmap.mapping_helpers import (
@@ -338,6 +344,88 @@ class TestOnlyAccumulatingVariables:
         from etdmap.mapping_helpers import _accumulates
         assert _accumulates("WatergebruikWarmTapwaterDiff")
         assert not _accumulates("ElektriciteitVermogen")
+
+
+class TestARegisterIsNotScanned:
+    """frozen_spans reads its argument as per-interval amounts. On a register --
+    a running total -- a run of zeros means absent rather than idle, and a value
+    over the bound is a reading outside its declared range, which the threshold
+    pass already reports.
+
+    Scanning one was observed to fire: in data/mapped_g45, 3 of 993 span rows
+    were on a register (ElektriciteitNetgebruik for household 293, a 99999 meter
+    reading 109967.957 after an 80-reading absence; WarmteproductieRuimteverwarming
+    twice for household 34). Because cumulative_column(register) is None,
+    _treat_frozen_spans took its interval branch on the register and blanked that
+    reading, stamping FROZEN_SPAN and CATCHUP for a span that never happened.
+
+    13 of the 30 columns carrying a Max and accumulating are registers, so this
+    is not a corner either.
+    """
+
+    #: An absence in the register, then a reading past its declared Max. The
+    #: shape that fired in g45: fillna(0) == 0 counts NA as "did not advance".
+    def _register_frame(self, column, over_bound):
+        n = 12
+        df = pd.DataFrame({
+            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
+        })
+        df[column] = pd.array(
+            [100.0, 200.0, 300.0] + [pd.NA] * 5 + [over_bound] * 4,
+            dtype="Float64",
+        )
+        return df
+
+    def test_a_register_reports_no_span(self):
+        from etdmap.mapping_helpers import _detect_frozen_spans_for_household
+        df = self._register_frame("ElektriciteitNetgebruik", 109967.957)
+        assert _detect_frozen_spans_for_household(
+            df, 1, cadence=_measured_cadence(df)
+        ) == []
+
+    def test_the_same_shape_on_its_interval_column_still_does(self):
+        """The scan was narrowed, not disabled: an interval column DERIVED from
+        a register carries per-interval amounts and is still read, and there an
+        absence counts as not advancing -- so this frame's NA run is a span.
+
+        The derivation is asserted by the flag, because that is what detection
+        reads. Without it the same frame is the supplier's own amounts, where
+        pd.NA is unknown rather than idle and no span is reported.
+        """
+        from etdmap.mapping_helpers import _detect_frozen_spans_for_household
+        col = "ElektriciteitNetgebruikDiff"
+        df = self._register_frame(col, 9.0)
+        set_flags(
+            df, col, df[col].notna(),
+            MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE,
+        )
+        rows = _detect_frozen_spans_for_household(
+            df, 1, cadence=_measured_cadence(df)
+        )
+        assert len(rows) == 1
+        assert rows[0]["column"] == col
+        assert rows[0]["span_kind"] == "derived_interval"
+
+    def test_a_registers_over_bound_reading_survives_treatment(self):
+        """What the defect destroyed. The reading is out of bounds and the
+        threshold pass is what removes it; span treatment must not, because
+        blanking it here also claims the span that justified it."""
+        from etdmap.mapping_helpers import (
+            _detect_frozen_spans_for_household,
+            _treat_frozen_spans,
+        )
+        col = "ElektriciteitNetgebruik"
+        df = self._register_frame(col, 109967.957)
+        rows = _detect_frozen_spans_for_household(
+            df, 1, cadence=_measured_cadence(df)
+        )
+        _treat_frozen_spans(df, rows)
+        assert float(df[col].iloc[8]) == pytest.approx(109967.957)
+        flags = df.get(flag_column(col))
+        if flags is not None:
+            carried = MappingFlag(int(flags.iloc[8]))
+            assert not (carried & MappingFlag.FROZEN_SPAN)
+            assert not (carried & MappingFlag.CATCHUP)
 
 
 class TestFlagsSurviveTheColumnFilter:
