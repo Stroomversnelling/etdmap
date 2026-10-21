@@ -587,7 +587,14 @@ DESCRIPTIONS = {
     "FROZEN_SPAN": "A cumulative variable did not advance while consumption continued.",
     "CATCHUP": "The reading a frozen span's accumulated consumption arrives in.",
     "FILLED_DOWN": "A value carried forward from an earlier reading.",
-    "FILLED_ZERO": "A zero written for a device the household does not have.",
+    "FILLED_ZERO": (
+        "DEPRECATED. Nothing sets this any more. A zero written for a device "
+        "the household does not have. The only producer was "
+        "fill_zeros_for_device_not_installed, removed with the v1 Watch-E "
+        "mapper that was its last caller; absence is declared in the household "
+        "metadata and the catalog substitutes zero inside the formula instead. "
+        "The member is kept so data written before that still decodes."
+    ),
     "FIRST_ZERO": "The zero at a household's first interval.",
     "NULLED": "A value blanked to pd.NA.",
     "CUMULATIVE_CONSTRUCTED": (

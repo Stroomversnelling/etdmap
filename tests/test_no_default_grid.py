@@ -134,6 +134,42 @@ class TestAnUnresolvedCadenceIsNotAnUnscaledBound:
         declared = {"Min": 0.0, "Max": 20.0, "ThresholdType": kind}
         assert resolve_bounds(declared, None, "SomeColumn") == (0.0, 20.0)
 
+
+class TestAResolvedCadenceScalesTheBound:
+    """The other half of the above, which only had the refusal and the
+    pass-through: what a resolved cadence actually produces. Pinned at 15 and 60
+    rather than only at the base interval, because at the base interval the
+    factor is one and a function that ignored the cadence would pass.
+    """
+
+    DECLARED = {"Min": 0.0, "Max": 1.5, "ThresholdType": "5-minute"}
+
+    def test_the_base_interval_leaves_it_alone(self):
+        assert resolve_bounds(self.DECLARED, 5, "SomeColumn") == (0.0, 1.5)
+
+    @pytest.mark.parametrize("minutes,factor", [(15, 3.0), (60, 12.0)])
+    def test_a_coarser_cadence_widens_it_by_the_root_of_the_ratio(
+        self, minutes, factor
+    ):
+        """A reading covering twelve intervals is not twelve times one
+        interval's plausible maximum -- consumption over an hour averages out,
+        so the bound grows as the square root of the ratio."""
+        low, high = resolve_bounds(self.DECLARED, minutes, "SomeColumn")
+        assert low == 0.0
+        assert high == pytest.approx(1.5 * factor**0.5)
+
+    def test_a_finer_cadence_tightens_it(self):
+        low, high = resolve_bounds(self.DECLARED, 1, "SomeColumn")
+        assert low == 0.0
+        assert high == pytest.approx(1.5 * (1 / 5) ** 0.5)
+        assert high < 1.5
+
+    def test_the_lower_bound_is_not_scaled_away_from_zero(self):
+        """Zero consumption is possible over any interval, so a Min of zero
+        stays zero however long the reading covers."""
+        for minutes in (5, 15, 60, 1440):
+            assert resolve_bounds(self.DECLARED, minutes, "C")[0] == 0.0
+
     def test_the_pipeline_refuses_without_a_cadence(self, tmp_path):
         with pytest.raises(ValueError, match="no cadence was given"):
             run_standard_pipeline(

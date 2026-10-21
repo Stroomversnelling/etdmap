@@ -56,6 +56,7 @@ RESERVED: set[str] = set()
 # not implemented yet, the other is no longer implemented.
 RETIRED = {
     "CUMULATIVE_CONSTRUCTED",
+    "FILLED_ZERO",
 }
 
 # Members no test needs to name, whichever direction they are absent in.
