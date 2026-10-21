@@ -869,6 +869,15 @@ def add_diff_columns(
     correction depends on what was detected. ``validate_func`` decides whether a
     group is kept or dropped, not whether its readings are corrected.
 
+    Required of the input
+    ---------------------
+    One reading per instant per id, and every ReadingDate present. An interval
+    is the step between consecutive readings, and the correction locates the
+    reading a dip recovers at by position in the sorted series.
+
+    ``run_standard_pipeline`` raises on a duplicate or absent ReadingDate, and
+    ``snap_readings_to_grid`` collapses sub-grid readings to one row per slot.
+
     Parameters
     ----------
     data : pd.DataFrame or pd.core.groupby.DataFrameGroupBy
@@ -1058,242 +1067,6 @@ def add_diff_columns(
     if return_stats:
         return result, dip_stats
     return result
-
-
-def add_diff_columns_legacy(
-    data: pd.DataFrame,
-    id_column: str = None,
-    validate_func=validate_cumulative_variables,
-    context: str = '',
-    drop_unvalidated: bool = False,
-) -> pd.DataFrame:
-    """
-    Original loop-based implementation of add_diff_columns (kept for validation).
-
-    Uses a ``for rd in reading_dates:`` loop with per-date DataFrame filters -- O(N2)
-    for columns with many negative diffs (e.g. solar with daily resets).
-    Retained until ``add_diff_columns`` (vectorized) has been fully validated in production.
-
-    This function calculates the difference between consecutive readings for cumulative columns,
-    validates the data, and handles various inconsistencies such as negative differences and unexpected zeros.
-
-    Parameters
-    ----------
-    data : pd.DataFrame or pd.core.groupby.DataFrameGroupBy
-        The input data, either as a DataFrame or a GroupBy object.
-    id_column : str, optional
-        The name of the column to use for grouping if data is a DataFrame, by default None.
-    validate_func : callable, optional
-        A function to validate the data, by default validate_cumulative_variables.
-    context : str, optional
-        A string to prepend to log messages for context, by default ''.
-    drop_unvalidated : bool, optional
-        If True, drop groups that fail validation; if False, keep them with warnings, by default False.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame with added difference columns for cumulative variables.
-
-    Raises
-    ------
-    TypeError
-        If the input data is neither a DataFrame nor a GroupBy object.
-
-    Notes
-    -----
-    - The function uses the global variable `cumulative_columns` to determine which columns to process.
-    - It handles various data inconsistencies:
-      - Removes unexpected zeros between valid readings.
-      - Handles cases where the meter appears to have been reset.
-      - Removes data after a negative difference if no subsequent increases are found.
-    - Extensive logging is used to document the data cleaning process.
-    - If the meter has had negative dip and after that there were no subsequent increases, we choose to ignore all other values from an apparently broken meter by setting them to pd.NA
-    - If the meter has a negative dip and the meter simply jumps back up to the last value before the negative dip (or above) then we assume there is one bad value to remove. This cases does not consider time, so may miss edge cases, for example that it did not jump back up but rather so much time passed that the next reading is much higher - this may be addressed in the future but requires assumption about rate of growth.
-
-    """
-
-    if not context == '':
-        context_string = context + ': '
-    else:
-        context_string = context
-
-    data = data.sort_values('ReadingDate')
-
-    def calculate_diff(group):
-        valid_result = validate_func(group=group, context=context)
-        if not all(valid_result.values()):
-            invalid = [key for key, value in valid_result.items() if value is False]
-            if drop_unvalidated:
-                logging.error(
-                    f"{context_string}Some cumulative columns did "
-                    f"not pass validation ({invalid}). Dropping group/data.",
-                )
-                # Return empty DataFrame to drop invalid group
-                return pd.DataFrame()
-            else:
-                logging.warning(
-                    f"{context_string}Some cumulative columns did not "
-                    f"pass validation ({invalid}). Keeping group/data.",
-                )
-
-        for col in cumulative_columns:
-            if col not in group.columns:
-                logging.warning(
-                    f"{context_string}Cumulative column '{col}' not found. "
-                    'No Diff column created.',
-                )
-                continue
-
-            logging.info(f"Calculating diff for {col}")
-            group[col + 'Diff'] = group[col].diff().round(10)
-            group.loc[group.index[0], col + 'Diff'] = 0
-
-            if not valid_result['no_negative_diff']:
-                filtered_group = group[['ReadingDate', col]].dropna()
-                filtered_group[col + 'Diff_no_gap'] = (
-                    filtered_group[col].diff().round(10)
-                )
-
-                reading_dates = filtered_group[
-                    filtered_group[col + 'Diff_no_gap'] < 0
-                ]['ReadingDate']
-
-                # recalculate = False
-
-                for rd in reading_dates:
-                    gap = filtered_group[(filtered_group['ReadingDate'] == rd)][
-                        col + 'Diff_no_gap'
-                    ].to_list()[0]
-                    next_value_row = filtered_group[
-                        (filtered_group['ReadingDate'] > rd)
-                        & (filtered_group[col + 'Diff_no_gap'] != 0)
-                    ].head(1)
-
-                    # There is another meter reading after the negative dip
-                    # This code block addresses different cases
-                    if not next_value_row.empty:
-                        # We want to know what the next meter reading value and the next date is
-                        next_value = next_value_row[col + 'Diff_no_gap'].iloc[0]
-                        next_value_date = next_value_row['ReadingDate'].iloc[0]
-
-                        # If the meter simply jumps back up to the last value before the negative dip (or above) then we assume there is one bad value to remove
-                        # This cases does not consider time, so may miss edge cases, for example that it did not jump back up but rather so much time passed that the next reading is much higher - this may be fixed in the future but requires assumption about rate of growth
-                        if next_value >= -1 * gap:
-                            logging.info(
-                                f"{context_string}Removing unexpected "
-                                f"zeros from '{col}' between {rd} and "
-                                f"{next_value_date}",
-                            )
-                            group.loc[
-                                (group['ReadingDate'] >= rd)
-                                & (group['ReadingDate'] < next_value_date),
-                                col,
-                            ] = pd.NA
-                            # recalculate = True
-
-                        # After the negative dip, the meter dips down again (still broken)
-                        elif next_value < 0:
-                            logging.error(
-                                f"{context_string}Two negative diffs "
-                                f"one after the other between {rd} and "
-                                f"{next_value_date}. Will remove all "
-                                f"these values for {col}.",
-                            )
-                            group.loc[
-                                (group['ReadingDate'] >= rd)
-                                & (group['ReadingDate'] < next_value_date),
-                                col,
-                            ] = pd.NA
-                            # recalculate = True
-
-                        # The meter has values but they are non-negative and not larger than the negative dip
-                        # we consider the meter to have been reset to the value it dipped to
-                        # In this case we sacrifice one value because we cannot calculate a diff from it (it will be negative)
-
-                        # It would be better to save all 'sacrificed' value reading dates in a list and then only mark the recalculated diff as <NA>
-                        # It is only one value so leaving like this for now
-                        else:
-
-                            # In the case where we know the colDiff is NA, we actualy don't have to delete the original meter reading
-                            # This happens when there is a pause/missing data before the negative dip so it does not impact our diff calculation
-                            if (group.loc[
-                                    group['ReadingDate'] == rd,
-                                    col + 'Diff',
-                                ].isna().all()):
-                                logging.info(
-                                        f"{context_string}Negative gap jump "
-                                        f"at {rd}. Diff is NA, not "
-                                        'removing any values.',
-                                    )
-
-                            # When there are negative diffs calculated we in fact do remove the original value from the column
-                            # so that no negative diff may be calculated
-                            else:
-                                diff_belowzero = group.loc[
-                                    (group['ReadingDate'] == rd) & (group[col + 'Diff'] < 0),
-                                    col + 'Diff'
-                                ]
-                                if len(diff_belowzero) > 0:
-                                    group.loc[
-                                        group['ReadingDate'] == rd,
-                                        col,] = pd.NA
-                                    logging.info(
-                                        f"{context_string}Negative gap jump "
-                                        f"at {rd}. Removing single cumulative "
-                                        'value.',
-                                    )
-
-                                # Handling where all values are
-                                else:
-                                    logging.error(
-                                        f"{context_string}Negative gap jump "
-                                        f"at {rd}. Diff is not negative, and "
-                                        'not <NA>. Check for errors, e.g duplicate reading dates!'
-                                    )
-                    else:
-                        # The meter has had negative dip and after that there were no subsequent increases so we choose to ignore all other values from an apparently broken meter
-                        group.loc[(group['ReadingDate'] >= rd), col] = pd.NA
-                        logging.error(
-                            f"{context_string}Removing all values in "
-                            f"'{col}' after date '{rd}' as there are "
-                            f"no subsequent increases after the negative "
-                            f"diff.",
-                        )
-
-                logging.info(
-                    f"{context_string}Re-calculating diff for "
-                    f"{col} after corrections.",
-                )
-                group[col + 'Diff'] = group[col].diff().round(10)
-                group.loc[group.index[0], col + 'Diff'] = 0
-
-
-                if (group[col + 'Diff'] < 0).any(skipna=True):
-                    logging.error(
-                        f"{context_string}Removed zeros but "
-                        f"diff still has negative values! Check data and "
-                        f"consider removing.",
-                    )
-
-        return group
-
-    if isinstance(data, pd.core.groupby.DataFrameGroupBy):
-        return data.apply(calculate_diff).reset_index(drop=True)
-    elif isinstance(data, pd.DataFrame):
-        if id_column is not None:
-            return (
-                data.groupby(id_column, group_keys=False)
-                .apply(calculate_diff)
-                .reset_index(drop=True)
-            )
-        else:
-            return calculate_diff(data)
-    else:
-        raise TypeError(
-            f"{context_string}Input data must be a pandas DataFrame "
-            f"or a pandas GroupBy object.",
-        )
 
 
 # Nullable dtypes for the per-column cadence table. cadence_minutes and
@@ -3855,18 +3628,42 @@ def run_standard_pipeline(
         )
 
     # ------------------------------------------------------------------
-    # 2. Coerce ReadingDate to datetime
+    # 2. Coerce ReadingDate to datetime, and require every value
     # ------------------------------------------------------------------
     if not pd.api.types.is_datetime64_any_dtype(df["ReadingDate"]):
         logging.debug(f"[run_standard_pipeline] {ctx}Coercing 'ReadingDate' to datetime.")
         df = df.copy()
         df["ReadingDate"] = pd.to_datetime(df["ReadingDate"], errors="coerce")
-        n_bad = int(df["ReadingDate"].isna().sum())
-        if n_bad > 0:
-            raise ValueError(
-                f"[run_standard_pipeline] {ctx}{n_bad} ReadingDate value(s) could not be "
-                f"parsed. Every row must have a valid ReadingDate."
-            )
+
+    # Outside the coercion branch: a frame already typed datetime64 can still
+    # carry NaT, and NaT sorts last while astype('int64') maps it to INT64_MIN,
+    # so the row range the negative-diff correction derives would be taken from
+    # an unsorted series.
+    n_bad = int(df["ReadingDate"].isna().sum())
+    if n_bad > 0:
+        raise ValueError(
+            f"[run_standard_pipeline] {ctx}{n_bad} ReadingDate value(s) are "
+            f"missing or could not be parsed. Every row must have a valid "
+            f"ReadingDate: the interval of a cumulative column is the step "
+            f"between consecutive readings, so a row that cannot be placed in "
+            f"time cannot be differenced."
+        )
+
+    # One reading per instant. Two readings at one instant have no step between
+    # them, and the negative-diff correction locates the reading a dip recovers
+    # at by position in the sorted series.
+    duplicated = df["ReadingDate"].duplicated()
+    if bool(duplicated.any()):
+        n_dup = int(duplicated.sum())
+        first = df.loc[duplicated, "ReadingDate"].iloc[0]
+        raise ValueError(
+            f"[run_standard_pipeline] {ctx}{n_dup} duplicate ReadingDate "
+            f"value(s), first at {first}. The interval of a cumulative column "
+            f"is the step between consecutive readings, so two readings at one "
+            f"instant have no well-defined step and the negative-diff "
+            f"correction cannot locate the reading a dip recovers at. Collapse "
+            f"them to one row per slot with snap_readings_to_grid first."
+        )
 
     # Checked here rather than where a bound is scaled, so the message names
     # what the caller has to do instead of naming the first column that hit it.
