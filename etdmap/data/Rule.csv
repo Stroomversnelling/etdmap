@@ -1,6 +1,4 @@
 target,expression,rhs_vars,physical_model,not_physical
-TerugleveringTotaalNetto,ElektriciteitTerugleveringLaagDiff + ElektriciteitTerugleveringHoogDiff,"ElektriciteitTerugleveringLaagDiff, ElektriciteitTerugleveringHoogDiff","Universeel, All-Electric, Hybride",True
-ElektriciteitsgebruikTotaalNetto,ElektriciteitNetgebruikLaagDiff  + ElektriciteitNetgebruikHoogDiff,"ElektriciteitNetgebruikLaagDiff, ElektriciteitNetgebruikHoogDiff","Universeel, All-Electric, Hybride",True
 Netuitwisseling,ElektriciteitsgebruikTotaalNetto - TerugleveringTotaalNetto,"ElektriciteitsgebruikTotaalNetto, TerugleveringTotaalNetto","Universeel, All-Electric, Hybride",False
 ElektriciteitsgebruikTotaalWarmtepomp,ElektriciteitsgebruikWarmtepompDiff + ElektriciteitsgebruikBoosterDiff + ElektriciteitsgebruikBoilervatDiff,"ElektriciteitsgebruikWarmtepompDiff, ElektriciteitsgebruikBoosterDiff, ElektriciteitsgebruikBoilervatDiff","Universeel, All-Electric, Hybride",False
 ElektriciteitsgebruikTotaalGebouwgebonden,ElektriciteitsgebruikTotaalWarmtepomp + ElektriciteitsgebruikWTWDiff + ElektriciteitsgebruikRadiatorDiff,"ElektriciteitsgebruikTotaalWarmtepomp, ElektriciteitsgebruikWTWDiff, ElektriciteitsgebruikRadiatorDiff","Universeel, All-Electric, Hybride",False
