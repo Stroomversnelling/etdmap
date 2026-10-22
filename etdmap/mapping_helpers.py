@@ -37,9 +37,11 @@ from etdmap.index_helpers import (
 from etdmap.flags import (
     _SPAN_DTYPES,
     MappingFlag,
+    assert_flag_history_complete,
     bound_flags,
     frozen_spans,
     flag_column,
+    mark_undelivered_slots,
     scale_bound_to_cadence,
     set_flags,
     threshold_base_minutes,
@@ -2150,11 +2152,19 @@ def ensure_intervals(
                 f"snap_readings_to_grid before ensure_intervals to place them "
                 f"on slots, or correct the source data."
             )
-        return pd.merge(all_dates_df, df, on=date_column, how='left')
+        merged = pd.merge(all_dates_df, df, on=date_column, how='left')
+        # The grid has a slot the supplier delivered no row into, so every
+        # column already on the frame is pd.NA there -- flag columns included.
+        # That absence is a finding in its own right, and recording it also
+        # restores the invariant: left as pd.NA, every later finding on those
+        # cells would discard silently, since `pd.NA | flag` is pd.NA.
+        mark_undelivered_slots(merged)
+        return merged
 
     if expected_num_records > len(df.index):
         logging.info(f"Adding {freq} intervals.")
         merged_df = pd.merge(all_dates_df, df, on=date_column, how='outer')
+        mark_undelivered_slots(merged_df)
         if len(merged_df.index) > expected_num_records:
             logging.error(
                 f"There are more records than possible if {freq} "
@@ -3798,6 +3808,13 @@ def run_standard_pipeline(
     # Every value now carries whatever findings apply to it, so the ones no
     # action touched can be marked as such.
     mark_unchanged_values(df)
+
+    # One scan over every flag column before anything reaches disk. set_flags
+    # refuses a write onto a missing history, but only sees the rows it is
+    # asked to write, so a column no later step writes to would carry the
+    # damage out silently -- which is how 52 columns reached the 2026-10-21
+    # artifact while only 4 of them ever saw a write that could complain.
+    assert_flag_history_complete(df, context=context or "")
 
     # ------------------------------------------------------------------
     # 10. Save via the single format-aware primitive (sharded default; flat is

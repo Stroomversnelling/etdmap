@@ -146,6 +146,9 @@ class MappingFlag(IntFlag):
     # each written value is invented even though the column's total is not.
     FROZEN_DELIVERED_INTERVAL_SPREAD = auto()
 
+    # The grid holds a slot here and the source frame delivered.
+    SLOT_NOT_DELIVERED = auto()
+
     # The two categories, declared rather than left to a comment. A signal names
     # something observed about a value; an action names something the pipeline
     # did to it. Every single-bit member belongs to exactly one, which a test
@@ -168,6 +171,7 @@ class MappingFlag(IntFlag):
         | SOURCES_INCOMPLETE
         | SLOT_COLLISION
         | NEGATIVE_INTERVAL
+        | SLOT_NOT_DELIVERED
     )
     ACTIONS = (
         FILLED_DOWN
@@ -243,9 +247,14 @@ class MappingFlag(IntFlag):
     )
 
 
+#: Suffix marking a column as carrying findings rather than data. Defined once
+#: so the naming rule and any scan over flag columns cannot drift apart.
+FLAG_SUFFIX = "_flags"
+
+
 def flag_column(column: str) -> str:
     """The name of the column carrying findings about *column*."""
-    return f"{column}_flags"
+    return f"{column}{FLAG_SUFFIX}"
 
 
 def set_flags(df, column, mask, flag) -> None:
@@ -267,7 +276,120 @@ def set_flags(df, column, mask, flag) -> None:
     mask = mask.fillna(False) if hasattr(mask, "fillna") else mask
     if not bool(mask.any()):
         return
-    df.loc[mask, name] = df.loc[mask, name] | flag.value
+
+    # A missing history is not a value to interpret, it is a broken invariant.
+    # This column is created as NONE on every row and only ever has bits OR-ed
+    # in, so pd.NA can only arrive from a step that added rows to a frame
+    # already carrying it without initialising them. Refusing matters because
+    # `pd.NA | flag` is pd.NA: the write below would be swallowed in silence,
+    # leaving no error and no record.
+    #
+    # Scoped to the rows being written, not the whole column, so the cost is
+    # proportional to the mask rather than the frame -- this runs on every
+    # flag write. Completeness is not owed here:
+    # :func:`assert_flag_history_complete` scans every column once at the end
+    # of the pipeline, which is what catches damage no later write touches. The
+    # check here is to localise the failure to the write that would have lost
+    # the bit.
+    target = df.loc[mask, name]
+    if bool(target.isna().any()):
+        missing = int(target.isna().sum())
+        raise ValueError(
+            f"{name} holds no recorded history on {missing} of the "
+            f"{int(mask.sum())} row(s) being flagged, so OR-ing {flag.name} in "
+            f"would be discarded (pd.NA | flag is pd.NA). A flag column is "
+            f"created as NONE on every row and only accumulates bits, so this "
+            f"means a step added rows without initialising them -- initialise "
+            f"the new rows to MappingFlag.NONE where they are added."
+        )
+
+    df.loc[mask, name] = target | flag.value
+
+
+def mark_undelivered_slots(df) -> None:
+    """Record ``SLOT_NOT_DELIVERED`` on the flag cells a completed grid left bare.
+
+    For the steps that bring a frame onto its full set of slots -- padding a
+    household onto its grid, merging source frames that cover different
+    periods. Those slots arrive with pd.NA in every column no row delivered
+    into them, flag columns included.
+
+    Recording the signal rather than writing ``NONE`` is the point. ``NONE``
+    says nothing happened here; what happened is that the grid has a slot and
+    the source delivered nothing into it, which is a fact about the cell and
+    says why its value is absent. Setting a bit also replaces the pd.NA, so
+    recording the signal is what restores the invariant that makes every LATER
+    finding on those cells recordable -- ``pd.NA | flag`` is pd.NA, so without
+    this the next write is discarded in silence.
+
+    Call it where the grid is completed, not before a write. By the time
+    :func:`set_flags` runs the cell must already carry a history; pd.NA there
+    means a step skipped this, and is refused rather than repaired.
+
+    Assigns directly rather than going through :func:`set_flags`, which refuses
+    a missing history by design. This is the one sanctioned exception, and it
+    lives here beside the only other writer so that flag manipulation stays in
+    one module.
+
+    Modifies *df* in place.
+    """
+    for name in df.columns:
+        if not str(name).endswith(FLAG_SUFFIX):
+            continue
+        missing = df[name].isna()
+        if bool(missing.any()):
+            df[name] = (
+                df[name]
+                .where(~missing, MappingFlag.SLOT_NOT_DELIVERED.value)
+                .astype("Int64")
+            )
+
+
+def assert_flag_history_complete(df, context: str = "") -> None:
+    """Refuse a frame where any flag column holds no recorded history.
+
+    One scan over every ``<column>_flags`` column, reported per column. A flag
+    column is created as ``NONE`` on every row and only ever accumulates bits,
+    so pd.NA in one means a step added rows to a frame already carrying it
+    without initialising them -- and ``pd.NA | flag`` is pd.NA, so every
+    subsequent finding on those cells is discarded in silence.
+
+    The completeness half of the guard. :func:`set_flags` refuses a write onto
+    a missing history, but only sees the rows it is asked to write: a column
+    that no later step writes to carries the damage to disk with nothing to
+    trip over. Measured on the 2026-10-21 estate mapping, 52 flag columns held
+    pd.NA and only 4 of them ever saw a later write.
+
+    Reported per column rather than as a total because which columns are
+    damaged identifies the step that did it -- on that run the damaged set was
+    exactly the columns flagged before the grid padding.
+
+    Missingness in a DATA column is untouched by this: there it is a
+    first-class value, and only the flag columns carry the no-pd.NA invariant.
+
+    Raises ``ValueError`` naming each damaged column and its count.
+    """
+    damaged = []
+    for name in df.columns:
+        if not str(name).endswith(FLAG_SUFFIX):
+            continue
+        missing = int(df[name].isna().sum())
+        if missing:
+            damaged.append((str(name), missing))
+
+    if not damaged:
+        return
+
+    where = f"{context}: " if context else ""
+    detail = ", ".join(f"{name} on {count} row(s)" for name, count in damaged)
+    raise ValueError(
+        f"{where}{len(damaged)} flag column(s) hold no recorded history, so "
+        f"any finding written to those cells would be discarded "
+        f"(pd.NA | flag is pd.NA): {detail}. Of {len(df.index)} row(s) total. "
+        f"A flag column is created as NONE on every row and only accumulates "
+        f"bits, so a step added rows without initialising them -- initialise "
+        f"the new rows to MappingFlag.NONE where they are added."
+    )
 
 
 def _as_limit(bound, unbounded, index):
@@ -619,6 +741,9 @@ DESCRIPTIONS = {
     ),
     "MISSING_VALUE": (
         "Absent on a row where the column was due to report."
+    ),
+    "SLOT_NOT_DELIVERED": (
+        "The grid holds a slot here and the source delivered no row into it."
     ),
     "COMBINED_COLUMNS": (
         "A target written by combining several delivered source columns, as a "

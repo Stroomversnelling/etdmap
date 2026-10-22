@@ -155,19 +155,98 @@ def _household_batch_table():
     return pd.read_csv(str(path), dtype_backend="numpy_nullable")
 
 
-def grid_minutes_for_household(household_id):
+def _batch_table_for_grid(context):
     """
-    The grid a household's batch is recorded on, in minutes.
+    The synced HuisBatch table, with the two columns a grid lookup needs
+    present. *context* names the subject of the error message.
+    """
+    table = _household_batch_table()
+    if table is None:
+        raise ValueError(
+            f"{context}: no household batch table is configured or present, so "
+            f"the grid it is recorded on is unknown. Check the data model: set "
+            f"etdmap.options.household_batch_csv_path and sync HuisBatch."
+        )
+    for column in ("HuisBatchIdBSV", "Gegevensfrequentie"):
+        if column not in table.columns:
+            raise ValueError(
+                f"{context}: the household batch table carries no {column}, so "
+                f"the grid it is recorded on is unknown. Check the data model."
+            )
+    return table
+
+
+def grid_minutes_for_household_batch(household_batch_id):
+    """
+    The grid a dataset is recorded on, in minutes.
 
     The grid is declared per household batch as ``Gegevensfrequentie``: it is
     the interval the mapped data sits on, not the interval any one column
     reports at. It is what ``ensure_intervals`` pads to, and what every later
     stage reads back off the index to scale a threshold with.
 
+    ``HuisBatchIdBSV`` is the key. One ``HuisIdBSV`` may have several datasets
+    and each declares its own frequency, so the household does not identify a
+    grid.
+
     An undeclared grid is an error rather than a default. Padding to the wrong
     grid changes the row count of the whole dataset and leaves the index
     declaring a spacing the rows are not on, which every threshold downstream
     is then scaled against.
+
+    Parameters
+    ----------
+    household_batch_id : int
+        HuisBatchIdBSV.
+
+    Returns
+    -------
+    float
+        Grid interval in minutes.
+
+    Raises
+    ------
+    ValueError
+        When the batch table is absent or unconfigured, carries neither
+        required column, does not hold this batch, holds it more than once, or
+        declares no readable frequency for it.
+    """
+    context = f"HuisBatchIdBSV {household_batch_id}"
+    table = _batch_table_for_grid(context)
+
+    rows = table[table["HuisBatchIdBSV"] == household_batch_id]
+    if rows.empty:
+        raise ValueError(
+            f"{context} is not in the household batch table, so the grid it is "
+            f"recorded on is unknown. Check the data model: sync HuisBatch "
+            f"before mapping it."
+        )
+    if len(rows) > 1:
+        raise ValueError(
+            f"{context} has {len(rows)} rows in the household batch table. A "
+            f"batch identifies one dataset, so its grid is ambiguous. Check the "
+            f"data model."
+        )
+
+    declared = rows["Gegevensfrequentie"].iloc[0]
+    minutes = frequency_to_minutes(declared)
+    if pd.isna(minutes):
+        raise ValueError(
+            f"{context} declares Gegevensfrequentie '{declared}', which is not "
+            f"a readable duration, so the grid it is recorded on is unknown. "
+            f"Check the data model."
+        )
+    return float(minutes)
+
+
+def grid_minutes_for_household(household_id):
+    """
+    The grid a household's single dataset is recorded on, in minutes.
+
+    Resolves the household's ``HuisBatchIdBSV`` from the batch table and
+    delegates to :func:`grid_minutes_for_household_batch`, which is the
+    model-keyed form. Callers that know which dataset they are processing
+    should use that one directly.
 
     Parameters
     ----------
@@ -181,42 +260,45 @@ def grid_minutes_for_household(household_id):
 
     Raises
     ------
+    HouseBatchOverlapError
+        When the household has more than one batch. The grid is a property of
+        the dataset, so there is no household-wide answer to return.
     ValueError
-        When the batch table is absent or unconfigured, does not hold this
-        household, or declares no readable frequency for it.
+        As :func:`grid_minutes_for_household_batch`, plus when the household is
+        not in the batch table.
     """
-    table = _household_batch_table()
-    if table is None:
-        raise ValueError(
-            f"Household {household_id}: no household batch table is configured "
-            f"or present, so the grid it is recorded on is unknown. Check the "
-            f"data model: set etdmap.options.household_batch_csv_path and sync "
-            f"HuisBatch."
-        )
-    if "Gegevensfrequentie" not in table.columns:
-        raise ValueError(
-            f"Household {household_id}: the household batch table carries no "
-            f"Gegevensfrequentie, so the grid it is recorded on is unknown. "
-            f"Check the data model."
-        )
+    context = f"Household {household_id}"
+    table = _batch_table_for_grid(context)
 
     rows = table[table["HuisIdBSV"] == household_id]
     if rows.empty:
         raise ValueError(
-            f"Household {household_id} is not in the household batch table, so "
-            f"the grid it is recorded on is unknown. Check the data model: sync "
-            f"HuisBatch before mapping it."
+            f"{context} is not in the household batch table, so the grid it is "
+            f"recorded on is unknown. Check the data model: sync HuisBatch "
+            f"before mapping it."
         )
 
-    declared = rows["Gegevensfrequentie"].iloc[0]
-    minutes = frequency_to_minutes(declared)
-    if pd.isna(minutes):
-        raise ValueError(
-            f"Household {household_id} declares Gegevensfrequentie "
-            f"'{declared}', which is not a readable duration, so the grid it is "
-            f"recorded on is unknown. Check the data model."
+    batch_ids = sorted(
+        int(b) for b in rows["HuisBatchIdBSV"].dropna().unique()
+    )
+    if len(batch_ids) > 1:
+        raise HouseBatchOverlapError(
+            f"{context} has data in more than one household batch "
+            f"(HuisBatchIdBSV {batch_ids}), and each batch declares its own "
+            f"Gegevensfrequentie. Resolve the grid per dataset with "
+            f"grid_minutes_for_household_batch."
         )
-    return float(minutes)
+    if not batch_ids:
+        raise ValueError(
+            f"{context} has a household batch row carrying no HuisBatchIdBSV, "
+            f"so the dataset its grid belongs to is unknown. Check the data "
+            f"model."
+        )
+
+    try:
+        return grid_minutes_for_household_batch(batch_ids[0])
+    except ValueError as e:
+        raise ValueError(f"{context}: {e}") from e
 
 
 def _parse_synced_datetime(series: pd.Series) -> pd.Series:

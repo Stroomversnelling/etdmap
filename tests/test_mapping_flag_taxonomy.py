@@ -29,6 +29,7 @@ SIGNALS = {
     MappingFlag.SOURCES_INCOMPLETE,
     MappingFlag.SLOT_COLLISION,
     MappingFlag.NEGATIVE_INTERVAL,
+    MappingFlag.SLOT_NOT_DELIVERED,
 }
 ACTIONS = {
     MappingFlag.FILLED_DOWN,
@@ -184,6 +185,7 @@ class TestValuesAreStable:
         ("INTERVAL_FROM_DELIVERED_CUMULATIVE", 16777216),
         ("NEGATIVE_INTERVAL", 33554432),
         ("FROZEN_DELIVERED_INTERVAL_SPREAD", 67108864),
+        ("SLOT_NOT_DELIVERED", 134217728),
     ])
     def test_the_later_members_took_the_next_free_bits(self, name, value):
         """Each was appended at the end of the class in this order. Pinning the

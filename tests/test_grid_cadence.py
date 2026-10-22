@@ -13,8 +13,10 @@ import pytest
 
 import etdmap
 from etdmap.index_helpers import (
+    HouseBatchOverlapError,
     frequency_to_minutes,
     grid_minutes_for_household,
+    grid_minutes_for_household_batch,
 )
 from etdmap.mapping_helpers import (
     cadence_label,
@@ -97,6 +99,115 @@ class TestGridMinutesForHousehold:
         change."""
         with pytest.raises(ValueError, match="data model"):
             grid_minutes_for_household(99)
+
+
+class TestTheGridIsKeyedOnTheBatch:
+    """``Gegevensfrequentie`` is declared per ``HuisBatchIdBSV``, so the lookup
+    is keyed on the batch. One ``HuisIdBSV`` may have several datasets, each
+    declaring its own grid, and filtering on the household cannot tell them
+    apart.
+    """
+
+    @pytest.fixture
+    def two_batches(self, tmp_path):
+        """Household 7 has two datasets at different grids; household 8 has one."""
+        path = tmp_path / "huisbatch_multi.csv"
+        pd.DataFrame({
+            "HuisIdBSV": pd.array([7, 7, 8], dtype="Int64"),
+            "HuisBatchIdBSV": pd.array([7, 70, 8], dtype="Int64"),
+            "Gegevensfrequentie": pd.array(
+                ["5min", "15min", "1h"], dtype="string"
+            ),
+        }).to_csv(path, index=False)
+
+        previous = etdmap.options.household_batch_csv_path
+        etdmap.options.household_batch_csv_path = str(path)
+        yield path
+        etdmap.options.household_batch_csv_path = previous
+
+    def test_each_batch_resolves_its_own_grid(self, two_batches):
+        assert grid_minutes_for_household_batch(7) == 5.0
+        assert grid_minutes_for_household_batch(70) == 15.0
+        assert grid_minutes_for_household_batch(8) == 60.0
+
+    def test_a_household_with_two_batches_refuses_to_answer(self, two_batches):
+        """The grid is a property of the dataset. Returning the first listed
+        batch's frequency pads the other dataset to a grid nobody declared for
+        it."""
+        with pytest.raises(HouseBatchOverlapError) as excinfo:
+            grid_minutes_for_household(7)
+
+        message = str(excinfo.value)
+        assert "7" in message
+        assert "70" in message
+
+    def test_a_household_with_one_batch_still_resolves(self, two_batches):
+        assert grid_minutes_for_household(8) == 60.0
+
+    def test_a_batch_not_in_the_table_raises(self, two_batches):
+        with pytest.raises(ValueError, match="999"):
+            grid_minutes_for_household_batch(999)
+
+    def test_the_message_names_the_batch_and_the_data_model(self, two_batches):
+        with pytest.raises(ValueError) as excinfo:
+            grid_minutes_for_household_batch(999)
+
+        message = str(excinfo.value)
+        assert "HuisBatchIdBSV 999" in message
+        assert "data model" in message
+
+    def test_a_batch_with_no_declared_grid_raises(self, tmp_path):
+        path = tmp_path / "huisbatch_blank.csv"
+        pd.DataFrame({
+            "HuisIdBSV": pd.array([5], dtype="Int64"),
+            "HuisBatchIdBSV": pd.array([50], dtype="Int64"),
+            "Gegevensfrequentie": pd.array([None], dtype="string"),
+        }).to_csv(path, index=False)
+
+        previous = etdmap.options.household_batch_csv_path
+        etdmap.options.household_batch_csv_path = str(path)
+        try:
+            with pytest.raises(ValueError, match="Gegevensfrequentie"):
+                grid_minutes_for_household_batch(50)
+        finally:
+            etdmap.options.household_batch_csv_path = previous
+
+    def test_a_table_with_no_batch_column_raises(self, tmp_path):
+        """An older synced table has no HuisBatchIdBSV. Resolving the grid off
+        HuisIdBSV instead would answer for a key the data model does not use."""
+        path = tmp_path / "huisbatch_legacy.csv"
+        pd.DataFrame({
+            "HuisIdBSV": pd.array([1], dtype="Int64"),
+            "Gegevensfrequentie": pd.array(["5min"], dtype="string"),
+        }).to_csv(path, index=False)
+
+        previous = etdmap.options.household_batch_csv_path
+        etdmap.options.household_batch_csv_path = str(path)
+        try:
+            with pytest.raises(ValueError, match="HuisBatchIdBSV"):
+                grid_minutes_for_household_batch(1)
+            with pytest.raises(ValueError, match="HuisBatchIdBSV"):
+                grid_minutes_for_household(1)
+        finally:
+            etdmap.options.household_batch_csv_path = previous
+
+    def test_a_duplicated_batch_row_raises(self, tmp_path):
+        """A batch id names one dataset, so two rows for it is a metadata
+        fault rather than a choice to make."""
+        path = tmp_path / "huisbatch_dup.csv"
+        pd.DataFrame({
+            "HuisIdBSV": pd.array([3, 3], dtype="Int64"),
+            "HuisBatchIdBSV": pd.array([30, 30], dtype="Int64"),
+            "Gegevensfrequentie": pd.array(["5min", "15min"], dtype="string"),
+        }).to_csv(path, index=False)
+
+        previous = etdmap.options.household_batch_csv_path
+        etdmap.options.household_batch_csv_path = str(path)
+        try:
+            with pytest.raises(ValueError, match="2 rows"):
+                grid_minutes_for_household_batch(30)
+        finally:
+            etdmap.options.household_batch_csv_path = previous
 
 
 class TestEnsureIntervalsUsesTheGridItIsGiven:
