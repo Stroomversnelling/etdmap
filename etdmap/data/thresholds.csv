@@ -53,7 +53,7 @@ WatergebruikWarmTapwaterDiff,5-minute,liter,0.0,100.0,,,regendouche = 20 liter p
 TerugleveringTotaalNetto,5-minute,kWh,0.0,,,,
 ElektriciteitsgebruikTotaalNetto,5-minute,kWh,0.0,,,,
 Netuitwisseling,5-minute,kWh,-2.01,2.01,,,Max power during 5 minutes using 3x35A connection
-ElektriciteitsgebruikTotaalWarmtepomp,5-minute,kWh,0.0,0.0054,0.0,0.87,As measured during Eteck project analyssi - we estimated based on non-Eteck datasets
+ElektriciteitsgebruikTotaalWarmtepomp,5-minute,kWh,0.0,1.4375,0.0,0.89,As measured during Eteck project analysis - we estimated based on non-Eteck datasets
 ElektriciteitsgebruikTotaalGebouwgebonden,5-minute,kWh,-2.01,2.01,,,Max power during 5 minutes using 3x35A connection
 ZonopwekBruto,5-minute,kWh,0.0,0.96,,,"bij aansluiting op 3 fase, 16A zekering"
 ElektriciteitsgebruikTotaalHuishoudelijk,5-minute,kWh,-2.01,2.01,,,Max power during 5 minutes using 3x35A connection
@@ -82,7 +82,7 @@ ElektriciteitVermogenNetgebruik,momentaan,kW,-999999.0,999999.0,,,
 TemperatuurWarmtepompAanvoer,momentaan,graden C,1.0,100.0,,,
 TemperatuurWarmtepompRetour,momentaan,graden C,1.0,100.0,,,
 ElektriciteitsgebruikOverigGGDiff,5-minute,kWh,0.0,,,,
-WarmteproductieRuimteverwarmingDiff,5-minute,GJ,0.0,1.4375,0.0,0.89,"bij COP = 10, wp+boiler+booster - and as measured during analysis of projects 1 - 10 (those with data)"
+WarmteproductieRuimteverwarmingDiff,5-minute,GJ,0.0,0.0054,0.0,0.87,"bij COP = 10, wp+boiler+booster - and as measured during analysis of projects 1 - 10 (those with data)"
 WatergebruikRuimteverwarmingDiff,5-minute,liter / uur,0.0,,,,
 WatergebruikWarmtepompDiff,5-minute,liter / uur,0.0,,,,
 ZonopwekVerbruikDiff,5-minute,kWh,0.0,,,,
