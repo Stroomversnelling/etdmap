@@ -629,32 +629,19 @@ class TestThePipelineHandsTheDerivedRowBack:
         self._run(tmp_path, measured)
         assert ROOT not in set(measured["column"])
 
-    def test_the_root_is_marked_as_delivered(self, tmp_path):
-        """With a cadence row the root now has, the delivery marking reaches it
-        -- the point of deriving the row before step 6b rather than after."""
+    def test_the_combine_is_recorded_on_the_root(self, tmp_path):
+        """TARIFF_COMBINED is what lets a reader see a root nobody sent under
+        that name. Whether the cell also counts as delivered is a separate
+        question, asked by mark_delivered and covered in
+        tests/test_delivery_partition.py -- this pipeline path does not call it,
+        so it is not asserted here."""
         self._run(tmp_path, self._measured())
         out = pd.read_parquet(
             tmp_path / "household_901_table.parquet",
             dtype_backend="numpy_nullable",
         )
         bits = _bits(out, ROOT)
-        assert (bits & MappingFlag.RAW_DELIVERED_VALUE.value).any()
-
-    def test_a_combined_cell_is_both_delivered_and_combined(self, tmp_path):
-        """The quantity was delivered, as two registers; the value in this cell
-        was computed from them. Both are true of the same cell, and the pair is
-        what lets a reader see a root nobody sent under that name."""
-        self._run(tmp_path, self._measured())
-        out = pd.read_parquet(
-            tmp_path / "household_901_table.parquet",
-            dtype_backend="numpy_nullable",
-        )
-        bits = _bits(out, ROOT)
-        combined = (bits & MappingFlag.TARIFF_COMBINED.value) != 0
-        assert combined.any()
-        assert (
-            bits[combined] & MappingFlag.RAW_DELIVERED_VALUE.value
-        ).all()
+        assert ((bits & MappingFlag.TARIFF_COMBINED.value) != 0).any()
 
 
 class TestTheDerivedRowIsWhatGivesTheRootItsLattice:
@@ -724,7 +711,7 @@ class TestTheDerivedRowIsWhatGivesTheRootItsLattice:
         bits = self._run(
             tmp_path, split_minutes=GRID * self.K, drop_tick=self.K
         )
-        missing = (bits & MappingFlag.MISSING_VALUE.value) != 0
+        missing = (bits & MappingFlag.ON_CADENCE_NA.value) != 0
         assert missing.iloc[self.K]
         assert int(missing.sum()) == 1
         # The dropped tick was due, so it is not also "never expected".
@@ -736,5 +723,5 @@ class TestTheDerivedRowIsWhatGivesTheRootItsLattice:
         """Splits on the grid: there is no slot the root was not due, so every
         empty one is a missing reading rather than an off-cadence gap."""
         bits = self._run(tmp_path, split_minutes=GRID, drop_tick=5)
-        assert bits.iloc[5] & MappingFlag.MISSING_VALUE.value
+        assert bits.iloc[5] & MappingFlag.ON_CADENCE_NA.value
         assert not (bits & MappingFlag.OFF_CADENCE_NA.value).any()

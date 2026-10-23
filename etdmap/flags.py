@@ -103,9 +103,11 @@ class MappingFlag(IntFlag):
     # every k grid rows and this row is not one of them, so nothing is absent.
     OFF_CADENCE_NA = auto()
 
-    # pd.NA on a row where the column was due to report. A reading the column
-    # owed is absent, which is what OFF_CADENCE_NA is not.
-    MISSING_VALUE = auto()
+    # pd.NA on a row the column's cadence says a reading was due on. The pair
+    # of OFF_CADENCE_NA, and read from the same place: the reporting lattice
+    # alone. Neither says anything about whether a source row arrived -- see
+    # SLOT_NOT_DELIVERED for the row that never came.
+    ON_CADENCE_NA = auto()
 
     # The target was written by combining several delivered source columns.
     # Like TARIFF_COMBINED, the value carries what the delivered sources
@@ -127,11 +129,15 @@ class MappingFlag(IntFlag):
     # were discarded, so this value was selected rather than the only candidate.
     SLOT_COLLISION = auto()
 
-    # The interval was derived by differencing the delivered cumulative column,
-    # replacing whatever the supplier sent for the interval itself. Like
-    # TARIFF_COMBINED, the value carries what the supplier reported, so it is
-    # neither INVENTED nor excluded from measurement.
-    INTERVAL_FROM_DELIVERED_CUMULATIVE = auto()
+    # The differencing reached this cell and produced a VALUE, replacing
+    # whatever the supplier sent for the interval itself. Like TARIFF_COMBINED,
+    # the value carries what the supplier reported, so it is neither INVENTED
+    # nor excluded from measurement.
+    #
+    # The name says nothing about delivery on purpose: the derivation also runs
+    # on an all-NA cumulative column, where a claim of delivery would be false.
+    # RAW_DELIVERED_VALUE on the cumulative is what says what the supplier sent.
+    VALUE_DERIVED_FROM_CUMULATIVE = auto()
 
     # The interval is negative on a variable that cannot decrease. Monotonicity
     # is declared on the cumulative variable, so it is derivable for the
@@ -148,6 +154,20 @@ class MappingFlag(IntFlag):
 
     # The grid holds a slot here and the source frame delivered.
     SLOT_NOT_DELIVERED = auto()
+
+    # A row arrived at this slot and carried no value for this column. The
+    # third answer to the question RAW_DELIVERED_VALUE and SLOT_NOT_DELIVERED
+    # answer between them: a value came, nothing came for this column, or no
+    # row came at all. Exactly one holds of every cell.
+    DELIVERED_NA = auto()
+
+    # The differencing reached this cell and produced NOTHING. The other half
+    # of VALUE_DERIVED_FROM_CUMULATIVE, so every cell the derivation wrote
+    # records one of the two and none is silent. Without it an empty cell in a
+    # derived column could not be told from one in a column no step reached --
+    # and on a tariff split interval, which no supplier delivers, that was
+    # every cell.
+    NULL_DERIVED_FROM_CUMULATIVE = auto()
 
     # The two categories, declared rather than left to a comment. A signal names
     # something observed about a value; an action names something the pipeline
@@ -166,12 +186,13 @@ class MappingFlag(IntFlag):
         | TARIFF_SIMULTANEOUS
         | RAW_DELIVERED_VALUE
         | OFF_CADENCE_NA
-        | MISSING_VALUE
+        | ON_CADENCE_NA
         | UNPARSEABLE_VALUE
         | SOURCES_INCOMPLETE
         | SLOT_COLLISION
         | NEGATIVE_INTERVAL
         | SLOT_NOT_DELIVERED
+        | DELIVERED_NA
     )
     ACTIONS = (
         FILLED_DOWN
@@ -182,7 +203,8 @@ class MappingFlag(IntFlag):
         | NOT_CHANGED
         | TARIFF_COMBINED
         | COMBINED_COLUMNS
-        | INTERVAL_FROM_DELIVERED_CUMULATIVE
+        | VALUE_DERIVED_FROM_CUMULATIVE
+        | NULL_DERIVED_FROM_CUMULATIVE
         | FROZEN_DELIVERED_INTERVAL_SPREAD
     )
 
@@ -202,10 +224,19 @@ class MappingFlag(IntFlag):
         | FROZEN_DELIVERED_INTERVAL_SPREAD
     )
 
+    # The derivation reached this cell, whatever came out of it. The two
+    # members partition the cells add_diff_columns wrote, so a caller asking
+    # "was this column derived?" must test the pair: the value member alone
+    # reads a column that produced only nulls as never derived, which is the
+    # case the split exists for.
+    INTERVAL_DERIVED_FROM_CUMULATIVE = (
+        VALUE_DERIVED_FROM_CUMULATIVE | NULL_DERIVED_FROM_CUMULATIVE
+    )
+
     # Every action the pipeline may take on a value, except recording that it
     # took none. NOT_CHANGED is set where this is absent, so the two are
     # defined from one list rather than maintained separately.
-    # TARIFF_COMBINED, COMBINED_COLUMNS and INTERVAL_FROM_DELIVERED_CUMULATIVE
+    # TARIFF_COMBINED, COMBINED_COLUMNS and the two derivation members
     # are here (an action was taken) but, like CUMULATIVE_CONSTRUCTED, not in
     # INVENTED: the written value carries what the supplier reported.
     ACTIONS_TAKEN = (
@@ -213,7 +244,7 @@ class MappingFlag(IntFlag):
         | CUMULATIVE_CONSTRUCTED
         | TARIFF_COMBINED
         | COMBINED_COLUMNS
-        | INTERVAL_FROM_DELIVERED_CUMULATIVE
+        | INTERVAL_DERIVED_FROM_CUMULATIVE
     )
 
     # A cumulative fault that destroys the count. No consumption can be derived
@@ -306,21 +337,100 @@ def set_flags(df, column, mask, flag) -> None:
     df.loc[mask, name] = target | flag.value
 
 
-def mark_undelivered_slots(df) -> None:
-    """Record ``SLOT_NOT_DELIVERED`` on the flag cells a completed grid left bare.
+def _markable_columns(df):
+    """The columns a slot-level finding applies to.
+
+    Everything but the flag columns themselves and the timestamps. Decided by
+    dtype rather than by name so a frame carrying its date column under any
+    name is handled, and so this does not need the data model to answer a
+    question about the frame in hand.
+    """
+    return [
+        name
+        for name in df.columns
+        if not str(name).endswith(FLAG_SUFFIX)
+        and not pd.api.types.is_datetime64_any_dtype(df[name])
+    ]
+
+
+def _ensure_history(df, name):
+    """A flag column for *name*, with every cell holding a readable history.
+
+    Creates it as ``NONE`` where it is absent, and replaces ``pd.NA`` where a
+    row-adding merge left one. Both are the same need: a bit cannot be OR-ed
+    into pd.NA, so a cell must carry a history before a finding can be written
+    to it.
+    """
+    flags = flag_column(name)
+    if flags not in df.columns:
+        df[flags] = pd.Series(
+            MappingFlag.NONE.value, index=df.index, dtype="Int64"
+        )
+    return df[flags].fillna(MappingFlag.NONE.value).astype("Int64")
+
+
+def record_delivery(df, columns) -> None:
+    """Write the two delivery answers knowable on a frame as delivered.
+
+    ``RAW_DELIVERED_VALUE`` where the cell holds a value, ``DELIVERED_NA`` where
+    it does not. The caller decides which columns are data columns, because that
+    is a question about the model rather than about findings -- see
+    ``mark_delivered`` in ``mapping_helpers``, which is the one mappers call.
+
+    Initialises a missing or pd.NA history rather than refusing it, so a frame
+    straight out of a row-adding merge can be marked without a separate repair:
+    the rows such a merge adds are rows that arrived with this column empty,
+    which is ``DELIVERED_NA``, so recording the answer *is* the repair.
+
+    Assigns directly rather than going through :func:`set_flags`, which refuses
+    a missing history by design. Flag manipulation stays in this module.
+
+    Modifies *df* in place.
+    """
+    for name in columns:
+        history = _ensure_history(df, name)
+        df[flag_column(name)] = history | (
+            df[name]
+            .notna()
+            .map({
+                True: MappingFlag.RAW_DELIVERED_VALUE.value,
+                False: MappingFlag.DELIVERED_NA.value,
+            })
+            .astype("Int64")
+        )
+
+
+def mark_undelivered_slots(df, created=None, columns=None) -> None:
+    """Record ``SLOT_NOT_DELIVERED`` on the slots a completed grid added.
 
     For the steps that bring a frame onto its full set of slots -- padding a
     household onto its grid, merging source frames that cover different
-    periods. Those slots arrive with pd.NA in every column no row delivered
-    into them, flag columns included.
+    periods. A slot the source delivered no row into exists because the grid
+    says it should and nothing arrived in it.
 
-    Recording the signal rather than writing ``NONE`` is the point. ``NONE``
-    says nothing happened here; what happened is that the grid has a slot and
-    the source delivered nothing into it, which is a fact about the cell and
-    says why its value is absent. Setting a bit also replaces the pd.NA, so
-    recording the signal is what restores the invariant that makes every LATER
-    finding on those cells recordable -- ``pd.NA | flag`` is pd.NA, so without
-    this the next write is discarded in silence.
+    That is a fact about the ROW. It holds for every column at once, because no
+    row arrived at all, so *created* -- the mask of rows the step added, which
+    that step knows exactly -- is the input. Every markable column records the
+    signal, its flag column created if it has none.
+
+    Recording it per row rather than per bare cell is the whole point. A flag
+    cell can only arrive holding pd.NA if its column already existed before the
+    merge, so inferring the rows from pd.NA would only ever reach the columns
+    some earlier step happened to flag -- and the same physical gap would be
+    recorded for one column and not another, decided by something neither
+    column controls.
+
+    Without *created* the mask is unknown and the function falls back to what it
+    can see: flag cells holding pd.NA, which is a broken invariant whatever
+    produced it. That path is for a frame assembled outside the padding step; it
+    repairs the damage without claiming to describe the grid.
+
+    Recording the signal rather than writing ``NONE`` matters either way.
+    ``NONE`` says nothing happened here; what happened is that the grid has a
+    slot and the source delivered nothing into it. Setting a bit also replaces
+    the pd.NA, so recording the signal is what restores the invariant that makes
+    every LATER finding on those cells recordable -- ``pd.NA | flag`` is pd.NA,
+    so without this the next write is discarded in silence.
 
     Call it where the grid is completed, not before a write. By the time
     :func:`set_flags` runs the cell must already carry a history; pd.NA there
@@ -333,16 +443,24 @@ def mark_undelivered_slots(df) -> None:
 
     Modifies *df* in place.
     """
+    bit = MappingFlag.SLOT_NOT_DELIVERED.value
+
+    if created is not None:
+        created = created.fillna(False).astype(bool)
+        if bool(created.any()):
+            marked = _markable_columns(df) if columns is None else columns
+            for name in marked:
+                if name not in df.columns:
+                    continue
+                history = _ensure_history(df, name)
+                df[flag_column(name)] = history.where(~created, history | bit)
+
     for name in df.columns:
         if not str(name).endswith(FLAG_SUFFIX):
             continue
         missing = df[name].isna()
         if bool(missing.any()):
-            df[name] = (
-                df[name]
-                .where(~missing, MappingFlag.SLOT_NOT_DELIVERED.value)
-                .astype("Int64")
-            )
+            df[name] = df[name].where(~missing, bit).astype("Int64")
 
 
 def assert_flag_history_complete(df, context: str = "") -> None:
@@ -657,6 +775,20 @@ def frozen_spans(
         # variable going backwards is a reset, named by CUMULATIVE_METER_RESET.
         if missing_counts_as_frozen:
             did_not_advance = intervals.fillna(0) == 0
+            # The first interval of a DERIVED column is the seed
+            # add_diff_columns writes because differencing has no predecessor
+            # there. It is structural, not a register standing still, so it
+            # cannot begin a span. Left in, any column whose first real
+            # interval exceeds the bound reads as a one-row span with that
+            # interval as its catch-up -- and the treatment then blanks row 0
+            # of the register, which the supplier delivered.
+            #
+            # Gated on this branch because it is the derived case:
+            # missing_counts_as_frozen is False exactly when the column holds
+            # the supplier's own interval amounts, where row 0 is a reported
+            # value and a reported zero is a real non-advance.
+            if len(did_not_advance):
+                did_not_advance.iloc[0] = False
         else:
             did_not_advance = intervals == 0
         catch_up = (intervals > upper_bound).fillna(False)
@@ -728,7 +860,7 @@ DESCRIPTIONS = {
         "A cell that holds a value and carries no recorded action. Set on "
         "every data column, so an empty findings column means no step reached "
         "the column rather than that it left the value alone. Never set on an "
-        "empty cell: see MISSING_VALUE and OFF_CADENCE_NA for those."
+        "empty cell: see ON_CADENCE_NA and OFF_CADENCE_NA for those."
     ),
     "TARIFF_COMBINED": "A tariff root written as the sum of its delivered Hoog/Laag registers.",
     "TARIFF_SIMULTANEOUS": "Both tariff registers delivered nonzero at the same reading.",
@@ -737,13 +869,27 @@ DESCRIPTIONS = {
         "stage blanks or replaces one."
     ),
     "OFF_CADENCE_NA": (
-        "Absent because the column was not due to report on this row."
+        "Absent on a row the column's cadence says no reading was due on, so "
+        "nothing is missing. Read from the reporting lattice alone, and says "
+        "nothing about whether a source row arrived."
     ),
-    "MISSING_VALUE": (
-        "Absent on a row where the column was due to report."
+    "ON_CADENCE_NA": (
+        "Absent on a row the column's cadence says a reading was due on. The "
+        "pair of OFF_CADENCE_NA, read from the same lattice, and equally "
+        "silent about whether a source row arrived -- SLOT_NOT_DELIVERED is "
+        "what says the row never came."
     ),
     "SLOT_NOT_DELIVERED": (
-        "The grid holds a slot here and the source delivered no row into it."
+        "The grid holds a slot here and the source delivered no row into it. "
+        "One of the three answers to what the supplier delivered into a cell, "
+        "with RAW_DELIVERED_VALUE and DELIVERED_NA; exactly one holds of every "
+        "cell that was present when delivery was marked."
+    ),
+    "DELIVERED_NA": (
+        "A row arrived at this slot and carried no value for this column. "
+        "Distinguishes a field the supplier left empty from a slot no row "
+        "arrived in, which read alike before. This is what delivery "
+        "completeness is measured from."
     ),
     "COMBINED_COLUMNS": (
         "A target written by combining several delivered source columns, as a "
@@ -779,11 +925,18 @@ DESCRIPTIONS = {
         "interval column declares a Min. Never set where a decrease is simply "
         "the reading."
     ),
-    "INTERVAL_FROM_DELIVERED_CUMULATIVE": (
-        "The interval was derived by differencing the delivered cumulative "
-        "column. Where the supplier delivered an interval too, that delivered "
-        "value was replaced; RAW_DELIVERED_VALUE beside this flag is what says "
-        "so."
+    "VALUE_DERIVED_FROM_CUMULATIVE": (
+        "The differencing of the cumulative column reached this cell and "
+        "produced a value. Where the supplier delivered an interval too, that "
+        "delivered value was replaced; RAW_DELIVERED_VALUE beside this flag is "
+        "what says so. Says nothing about delivery itself: the derivation also "
+        "runs on an all-NA register, where a claim of delivery would be false."
+    ),
+    "NULL_DERIVED_FROM_CUMULATIVE": (
+        "The differencing reached this cell and produced nothing. The other "
+        "half of VALUE_DERIVED_FROM_CUMULATIVE, so every cell the derivation "
+        "wrote records one of the two. Without it an empty cell in a derived "
+        "column could not be told from one in a column no step reached."
     ),
 }
 

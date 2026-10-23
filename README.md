@@ -344,12 +344,12 @@ the rationale.
 
 | Variable | Entity scope | Purpose |
 |---|---|---|
-| `cumulative_columns` | `Prestatiedata` (via `Cumulatief=="ja"`) | Columns representing cumulative meter readings. Used to compute Diff columns during mapping. |
+| `cumulative_columns` | any `Entiteit`, via `Cumulatief=="ja"` and `Type variabele != "date"` | Columns representing cumulative meter readings. Used to compute Diff columns during mapping. |
 | `model_column_order` | `Prestatiedata` only, sorted by `Volgorde` | Canonical column order for provider-supplied raw files. Use this to validate and reorder incoming mapped parquet files. |
 | `model_column_type` | `Prestatiedata` only | Pandas dtype for each provider-supplied column. |
 | `data_analysis_columns` | `Prestatiedata` only (currently alias of `model_column_order`) | Columns validated by dataset validators. Will narrow to `Vereist=="ja"` when that column is fully populated. |
 | `allowed_supplier_metadata_columns` | `Metadata` where `Wie vult?=="Dataleverancier"` | Metadata columns suppliers are permitted to include in their files. |
-| `all_performance_data_columns` | `Prestatiedata` **and** `PrestatiedataBerekend` | Full set of performance columns expected after the complete pipeline runs (provider-supplied + ETD-derived). Use this — not `model_column_order` — when defining derivation targets. |
+| `all_performance_data_columns` | `Prestatiedata` **and** `PrestatiedataBerekend` | Every column that may be present at any point in the pipeline, however it got there. Use this — not `model_column_order` — when defining derivation targets. |
 | `required_performance_data_columns` | Subset of above, `Vereist=="ja"` | Columns that must be present at end of pipeline. Missing any is a data quality error. |
 
 ```python

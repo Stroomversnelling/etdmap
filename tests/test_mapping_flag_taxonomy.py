@@ -24,12 +24,13 @@ SIGNALS = {
     MappingFlag.TARIFF_SIMULTANEOUS,
     MappingFlag.RAW_DELIVERED_VALUE,
     MappingFlag.OFF_CADENCE_NA,
-    MappingFlag.MISSING_VALUE,
+    MappingFlag.ON_CADENCE_NA,
     MappingFlag.UNPARSEABLE_VALUE,
     MappingFlag.SOURCES_INCOMPLETE,
     MappingFlag.SLOT_COLLISION,
     MappingFlag.NEGATIVE_INTERVAL,
     MappingFlag.SLOT_NOT_DELIVERED,
+    MappingFlag.DELIVERED_NA,
 }
 ACTIONS = {
     MappingFlag.FILLED_DOWN,
@@ -40,7 +41,8 @@ ACTIONS = {
     MappingFlag.NOT_CHANGED,
     MappingFlag.TARIFF_COMBINED,
     MappingFlag.COMBINED_COLUMNS,
-    MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE,
+    MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE,
+    MappingFlag.NULL_DERIVED_FROM_CUMULATIVE,
     MappingFlag.FROZEN_DELIVERED_INTERVAL_SPREAD,
 }
 
@@ -177,15 +179,17 @@ class TestValuesAreStable:
     @pytest.mark.parametrize("name,value", [
         ("RAW_DELIVERED_VALUE", 131072),
         ("OFF_CADENCE_NA", 262144),
-        ("MISSING_VALUE", 524288),
+        ("ON_CADENCE_NA", 524288),
         ("COMBINED_COLUMNS", 1048576),
         ("UNPARSEABLE_VALUE", 2097152),
         ("SOURCES_INCOMPLETE", 4194304),
         ("SLOT_COLLISION", 8388608),
-        ("INTERVAL_FROM_DELIVERED_CUMULATIVE", 16777216),
+        ("VALUE_DERIVED_FROM_CUMULATIVE", 16777216),
         ("NEGATIVE_INTERVAL", 33554432),
         ("FROZEN_DELIVERED_INTERVAL_SPREAD", 67108864),
         ("SLOT_NOT_DELIVERED", 134217728),
+        ("DELIVERED_NA", 268435456),
+        ("NULL_DERIVED_FROM_CUMULATIVE", 536870912),
     ])
     def test_the_later_members_took_the_next_free_bits(self, name, value):
         """Each was appended at the end of the class in this order. Pinning the
@@ -199,12 +203,15 @@ class TestNotChangedIsDerivable:
     set once keeps the two from drifting apart as flags are added."""
 
     def test_the_action_set_is_named_once(self):
+        """The derivation enters as its composite, not as one outcome: a cell
+        the differencing wrote and produced nothing in is still a cell mapping
+        acted on, so NOT_CHANGED must not be stamped on it."""
         assert MappingFlag.ACTIONS_TAKEN == (
             MappingFlag.INVENTED
             | MappingFlag.CUMULATIVE_CONSTRUCTED
             | MappingFlag.TARIFF_COMBINED
             | MappingFlag.COMBINED_COLUMNS
-            | MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE
+            | MappingFlag.INTERVAL_DERIVED_FROM_CUMULATIVE
         )
 
     def test_it_holds_every_action_except_not_changed(self):

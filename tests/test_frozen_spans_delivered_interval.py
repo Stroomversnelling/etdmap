@@ -14,7 +14,7 @@ measurement and cannot be read with the same semantics:
   energy back to, so blanking destroys it outright.
 
 Which form a column holds is read from
-`MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE`, set per cell by
+`MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE`, set per cell by
 `add_diff_columns`. The branch is per household per column, so these frames are
 built through `add_diff_columns` rather than hand-rolling a `.diff()` -- the flag
 is what the code reads, so a fixture that skips it tests the other side.
@@ -277,7 +277,7 @@ class TestTheFlagDecidesTheReading:
         derivation and the other does not."""
         derived = self._frame(cum=self.CUM_VALUES)
         delivered = self._frame(diff=A_SPAN)
-        bit = MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE.value
+        bit = MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE.value
         assert (
             (derived[flag_column(DIFF)].fillna(0).astype("Int64") & bit) != 0
         ).any()

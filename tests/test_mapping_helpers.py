@@ -1484,7 +1484,7 @@ class TestDerivingAnIntervalIsRecorded:
             self._frame(cum=[10.0, 11.0, 12.0, 13.0]), context="t",
         )
         bits = out[flag_column(self.DIFF)].fillna(0).astype("int64")
-        derived = MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE.value
+        derived = MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE.value
         # Row 0 is the seeded zero, not a difference.
         assert not (bits.iloc[0] & derived)
         assert bits.iloc[0] & MappingFlag.FIRST_ZERO.value
@@ -1507,7 +1507,7 @@ class TestDerivingAnIntervalIsRecorded:
         bits = out[flag_column(self.DIFF)].fillna(0).astype("int64")
         assert ((bits.iloc[1:] & MappingFlag.RAW_DELIVERED_VALUE.value) != 0).all()
         assert ((bits.iloc[1:]
-                 & MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE.value) != 0).all()
+                 & MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE.value) != 0).all()
 
     def test_a_kept_delivered_interval_is_not_marked_derived(self):
         """Interval-only delivery: the cumulative is empty, so nothing is
@@ -1522,12 +1522,12 @@ class TestDerivingAnIntervalIsRecorded:
         if findings in out.columns:
             bits = out[findings].fillna(0).astype("int64")
             assert not ((
-                bits & MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE.value
+                bits & MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE.value
             ) != 0).any()
 
     def test_it_is_an_action_that_is_still_a_measurement(self):
         from etdmap.flags import MappingFlag
-        f = MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE
+        f = MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE
         assert f & MappingFlag.ACTIONS
         assert f & MappingFlag.ACTIONS_TAKEN
         assert not (f & MappingFlag.INVENTED)

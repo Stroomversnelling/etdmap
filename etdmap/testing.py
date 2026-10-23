@@ -11,7 +11,9 @@ Install with the ``testing`` extra to use this module.
 import hashlib
 import logging
 import os
+import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import pandas as pd
 from numpy.random import PCG64, Generator
@@ -30,10 +32,125 @@ from etdmap.record_validators import record_flag_conditions
 
 __all__ = [
     "SYNTHETIC_DIFF_RANGES",
+    "SyntheticModel",
+    "declare_synthetic_model",
     "generate_mapped_dataset",
     "generate_raw_dataset",
     "installed_fingerprint",
+    "synthetic_model",
 ]
+
+
+class SyntheticModel(NamedTuple):
+    """The column names and relations a test declares for itself.
+
+    Built by :func:`synthetic_model`, installed by
+    :func:`declare_synthetic_model`.
+    """
+
+    complements: dict
+    tariff_splits: dict
+    device: str
+    device_complement: str
+    high: str
+    low: str
+    high_complement: str
+    low_complement: str
+    plain: str
+    plain_complement: str
+
+
+def synthetic_model(stem: str = "A", plain: str = "B") -> SyntheticModel:
+    """Build a two-device model that names nothing the real model names.
+
+    The live model is derived from Grist and its names change, so a
+    behavioural test reaching for a real variable is pinned to today's
+    metadata rather than to the behaviour it means to check. This builds the
+    same *shape* from names nothing else uses:
+
+    - *stem* is a tariff device -- a combined variable, its complement, and
+      the two registers (each with its own complement) that mapping sums
+      into it;
+    - *plain* is an ordinary device, with a complement and no registers.
+      Having one in the model is what keeps a test honest about a device
+      family being the declared one rather than every column on the frame.
+
+    The relations are the two the model declares: a symmetric complement map
+    and root-to-registers. Pass the result to :func:`declare_synthetic_model`.
+    """
+    device, device_complement = stem, f"{stem}_Complement"
+    high, low = f"{stem}_High", f"{stem}_Low"
+    high_complement, low_complement = f"{high}_Complement", f"{low}_Complement"
+    plain_complement = f"{plain}_Complement"
+
+    complements: dict = {}
+    for one, other in (
+        (device, device_complement),
+        (high, high_complement),
+        (low, low_complement),
+        (plain, plain_complement),
+    ):
+        complements[one] = other
+        complements[other] = one
+
+    return SyntheticModel(
+        complements=complements,
+        tariff_splits={
+            device: (high, low),
+            device_complement: (high_complement, low_complement),
+        },
+        device=device,
+        device_complement=device_complement,
+        high=high,
+        low=low,
+        high_complement=high_complement,
+        low_complement=low_complement,
+        plain=plain,
+        plain_complement=plain_complement,
+    )
+
+
+def declare_synthetic_model(monkeypatch, model: SyntheticModel = None):
+    """Install *model* as the model every loaded etdmap module reads.
+
+    Consumers bind the relations with ``from etdmap.data_model import ...``,
+    which copies the object into their own namespace, so patching
+    ``data_model`` alone would leave them reading the real model. The
+    declaration is therefore applied to every loaded etdmap module holding
+    either name -- which also means a module that starts consuming them
+    later is covered without this helper being updated.
+
+    Scope is the two relations that say which columns belong to one device:
+    ``complement_column`` and ``tariff_root_to_splits``. Nothing else about
+    the model is replaced.
+
+    Returns the model, so a test can read its column names from it.
+    """
+    model = model if model is not None else synthetic_model()
+
+    def _complement(column):
+        return model.complements.get(column)
+
+    patched = 0
+    for module in list(sys.modules.values()):
+        if not getattr(module, "__name__", "").startswith("etdmap"):
+            continue
+        if callable(getattr(module, "complement_column", None)):
+            monkeypatch.setattr(module, "complement_column", _complement)
+            patched += 1
+        if isinstance(getattr(module, "tariff_root_to_splits", None), dict):
+            monkeypatch.setattr(
+                module, "tariff_root_to_splits", model.tariff_splits
+            )
+            patched += 1
+    if not patched:
+        raise ValueError(
+            "[declare_synthetic_model] no loaded etdmap module exposes "
+            "complement_column or tariff_root_to_splits, so the declared "
+            "model would not be read by anything. Import the module under "
+            "test before calling this."
+        )
+    return model
 
 
 def installed_fingerprint(*extra_files) -> str:
@@ -426,6 +543,12 @@ def _process_data_fixture_file(
         grid_minutes=grid_minutes,
     )
 
+    # What the supplier delivered, recorded on the frame as delivered: every row
+    # here is a row that arrived, so an empty cell is a field the supplier left
+    # empty rather than a slot no row came for. The padding below answers the
+    # third case. Must precede the fill, or a filled cell reads as delivered.
+    mapping.mark_delivered(data_fixture_df)
+
     data_fixture_df = mapping.ensure_intervals(
         data_fixture_df, freq=mapping.cadence_label(grid_minutes)
     )
@@ -435,9 +558,9 @@ def _process_data_fixture_file(
     )
 
     # Before the fill-down and before add_diff_columns, as in
-    # run_standard_pipeline: both write values, and this records which ones the
-    # supplier actually sent.
-    mapping.mark_delivery_and_cadence(
+    # run_standard_pipeline: both write values, and the cadence lattice is
+    # anchored on the delivery record taken above.
+    mapping.mark_cadence(
         data_fixture_df,
         cadence=cadence,
         grid_minutes=grid_minutes,

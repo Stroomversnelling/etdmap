@@ -118,12 +118,16 @@ class TestIntervalsInheritTheirCumulativeFindings:
 
         flags = out[flag_column(DIFF)].fillna(0).astype("Int64")
 
-        # Row 0 is the seeded zero: invented, not differenced, so it carries
-        # FIRST_ZERO and NOT the derivation action.
-        assert int(flags.iloc[0]) == MappingFlag.FIRST_ZERO.value
+        # Row 0 is the seeded zero, and two things are true of it: the
+        # differencing reached it and produced nothing (no predecessor), and
+        # the seed then wrote a zero over that. Both are recorded.
+        assert int(flags.iloc[0]) == (
+            MappingFlag.FIRST_ZERO.value
+            | MappingFlag.NULL_DERIVED_FROM_CUMULATIVE.value
+        )
 
         # Every later cell was produced by differencing the cumulative.
-        derived = MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE.value
+        derived = MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE.value
         assert ((flags.iloc[1:] & derived) != 0).all()
         # And nothing else: no inherited finding, no removal.
         assert int((flags.iloc[1:] & ~derived).sum()) == MappingFlag.NONE.value

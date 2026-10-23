@@ -97,6 +97,43 @@ class TestFiresOnARealFrozenSpan:
         assert sum(out["frozen"][0]) == 10
 
 
+class TestTheSeededFirstIntervalIsNotAFrozenSpan:
+    """``add_diff_columns`` seeds the first interval of a derived column with
+    zero, because differencing has no predecessor there. That zero is
+    structural, not a measurement of a register standing still, so it must not
+    start a span.
+
+    Left in, any column whose FIRST real interval exceeds the bound reads as a
+    one-row frozen span with that interval as its catch-up -- and the treatment
+    then blanks row 0 of the register, which the supplier delivered. A clean,
+    monotonically rising register lost its first reading to this.
+    """
+
+    def test_the_seed_alone_is_not_a_span(self):
+        # Row 0 seeded, row 1 over the bound: nothing stood still.
+        out = _flagged([0.0, MAX_PER_INTERVAL + 1, 1.0, 1.0])
+        assert not out["any"]
+
+    def test_a_real_span_starting_after_the_seed_still_fires(self):
+        """The seed is excluded; everything after it is not."""
+        out = _flagged([0.0, 1.0, 0.0, 0.0, MAX_PER_INTERVAL + 1])
+        assert out["frozen"][0] == [False, False, True, True, False]
+        assert out["catchup"] == [False, False, False, False, True]
+
+    def test_a_delivered_interval_column_may_report_zero_at_row_zero(self):
+        """The other reading of the same cell. On a column holding the
+        supplier's OWN interval amounts there is no seed -- row 0 is a reported
+        value, and a reported zero is a real non-advance that may begin a
+        span."""
+        flags = frozen_span_flags(
+            _intervals([0.0, 0.0, MAX_PER_INTERVAL + 1]),
+            upper_bound=MAX_PER_INTERVAL,
+            missing_counts_as_frozen=False,
+        )
+        frozen = (flags & MappingFlag.FROZEN_SPAN.value != 0).tolist()
+        assert frozen == [True, True, False]
+
+
 class TestDoesNotFireWithoutACatchUp:
     """A device that is not running is not a fault."""
 
@@ -253,7 +290,7 @@ class TestTreatment:
             "WatergebruikWarmTapwater": pd.array(values, dtype="Float64"),
         })
         # Through add_diff_columns rather than a hand-rolled .diff(), so the
-        # interval carries INTERVAL_FROM_DELIVERED_CUMULATIVE as production
+        # interval carries VALUE_DERIVED_FROM_CUMULATIVE as production
         # sets it. Detection and treatment read that bit to decide which form
         # the column holds, and a frame without it is read as the supplier's
         # own interval amounts -- a different and deliberately different
@@ -397,7 +434,7 @@ class TestARegisterIsNotScanned:
         df = self._register_frame(col, 9.0)
         set_flags(
             df, col, df[col].notna(),
-            MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE,
+            MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE,
         )
         rows = _detect_frozen_spans_for_household(
             df, 1, cadence=_measured_cadence(df)

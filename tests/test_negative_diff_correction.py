@@ -915,7 +915,7 @@ class TestTheIntervalColumnRecordsItsOwnProvenance:
         flags = _bits(out, DIFF_FLAGS)
         for i in range(1, len(flags)):
             assert _has(
-                flags[i], MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE
+                flags[i], MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE
             ), i
 
     def test_row_zero_is_seeded_not_derived(self):
@@ -925,7 +925,7 @@ class TestTheIntervalColumnRecordsItsOwnProvenance:
         first = _bits(out, DIFF_FLAGS)[0]
         assert _has(first, MappingFlag.FIRST_ZERO)
         assert not _has(
-            first, MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE
+            first, MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE
         )
 
     def test_a_blanked_interval_keeps_the_history_of_being_derived(self):
@@ -937,7 +937,7 @@ class TestTheIntervalColumnRecordsItsOwnProvenance:
             assert pd.isna(out[DIFF].iloc[row])
             assert _has(flags[row], MappingFlag.NULLED)
             assert _has(
-                flags[row], MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE
+                flags[row], MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE
             )
 
     @pytest.mark.parametrize("name", sorted(NAMED_CASES))
@@ -1006,107 +1006,125 @@ class TestAnUntouchedColumnIsNotFlagged:
 FLAG_STORY = {
     "clean_monotonic": [
         # delivered  register  register flags  interval  interval flags
-        (10.0, 10.0, (), 0.0, ("FIRST_ZERO",)),
-        (11.0, 11.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
-        (12.0, 12.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
-        (13.0, 13.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+        (10.0, 10.0, (), 0.0, ("FIRST_ZERO", "NULL_DERIVED_FROM_CUMULATIVE")),
+        (11.0, 11.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
+        (12.0, 12.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
+        (13.0, 13.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
     ],
     # The meter dips to zero and comes back above where it was. The zero is
     # impossible, so it goes; the recovery reading is real and stays.
     "isolated_zero_dip": [
-        (10.0, 10.0, (), 0.0, ("FIRST_ZERO",)),
-        (11.0, 11.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+        (10.0, 10.0, (), 0.0, ("FIRST_ZERO", "NULL_DERIVED_FROM_CUMULATIVE")),
+        (11.0, 11.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
         (0.0, None,
          ("CUMULATIVE_JUMP_BACK", "CUMULATIVE_ZERO_TOTAL", "NULLED"),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
         (12.0, 12.0, (), None,
-         ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
-        (13.0, 13.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+         ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
+        (13.0, 13.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
     ],
     # The same shape without reaching zero: one fewer signal, same action.
     "non_zero_negative_dip": [
-        (10.0, 10.0, (), 0.0, ("FIRST_ZERO",)),
-        (11.0, 11.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+        (10.0, 10.0, (), 0.0, ("FIRST_ZERO", "NULL_DERIVED_FROM_CUMULATIVE")),
+        (11.0, 11.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
         (9.0, None, ("CUMULATIVE_JUMP_BACK", "NULLED"),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
         (12.0, 12.0, (), None,
-         ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
-        (13.0, 13.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+         ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
+        (13.0, 13.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
     ],
     # Two decreases running: the first is a repeat, the last is classified by
     # how the series recovers from it.
     "consecutive_negatives": [
-        (10.0, 10.0, (), 0.0, ("FIRST_ZERO",)),
-        (11.0, 11.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+        (10.0, 10.0, (), 0.0, ("FIRST_ZERO", "NULL_DERIVED_FROM_CUMULATIVE")),
+        (11.0, 11.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
         (9.0, None, ("CUMULATIVE_REPEAT_NEGATIVE", "NULLED"),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
         (7.0, None, ("CUMULATIVE_JUMP_BACK", "NULLED"),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
         (12.0, 12.0, (), None,
-         ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
-        (13.0, 13.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+         ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
+        (13.0, 13.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
     ],
     "three_consecutive_negatives": [
-        (20.0, 20.0, (), 0.0, ("FIRST_ZERO",)),
+        (20.0, 20.0, (), 0.0, ("FIRST_ZERO", "NULL_DERIVED_FROM_CUMULATIVE")),
         (19.0, None, ("CUMULATIVE_REPEAT_NEGATIVE", "NULLED"),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
         (18.0, None, ("CUMULATIVE_REPEAT_NEGATIVE", "NULLED"),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
         (17.0, None, ("CUMULATIVE_JUMP_BACK", "NULLED"),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
         (25.0, 25.0, (), None,
-         ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
     ],
     # The register restarted from zero. The zero itself is condemned; the
     # count-up after it is kept and is a new baseline.
     "meter_reset_to_zero": [
-        (10.0, 10.0, (), 0.0, ("FIRST_ZERO",)),
-        (11.0, 11.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
-        (12.0, 12.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+        (10.0, 10.0, (), 0.0, ("FIRST_ZERO", "NULL_DERIVED_FROM_CUMULATIVE")),
+        (11.0, 11.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
+        (12.0, 12.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
         (0.0, None,
          ("CUMULATIVE_METER_RESET", "CUMULATIVE_ZERO_TOTAL", "NULLED"),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
         (1.0, 1.0, (), None,
-         ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
-        (2.0, 2.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
-        (3.0, 3.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+         ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
+        (2.0, 2.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
+        (3.0, 3.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
     ],
     # A reset whose first reading is NOT zero: nothing is impossible here, so
     # the reading is KEPT and only the observation is recorded. This is the row
     # that shows a signal is not a verdict. Its interval carries no flags --
     # the reading before it never arrived, so there was nothing to difference.
     "meter_reset_with_na_before_dip": [
-        (100.0, 100.0, (), 0.0, ("FIRST_ZERO",)),
-        (101.0, 101.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
-        (None, None, (), None, ()),
-        (5.0, 5.0, ("CUMULATIVE_METER_RESET",), None, ()),
-        (6.0, 6.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
-        (7.0, 7.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+        (100.0, 100.0, (), 0.0, ("FIRST_ZERO", "NULL_DERIVED_FROM_CUMULATIVE")),
+        (101.0, 101.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
+        (None, None, (), None, ("NULL_DERIVED_FROM_CUMULATIVE",)),
+        (5.0, 5.0, ("CUMULATIVE_METER_RESET",), None, ("NULL_DERIVED_FROM_CUMULATIVE",)),
+        (6.0, 6.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
+        (7.0, 7.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
     ],
     # The series drops and never comes back. The drop is the fault; the frozen
     # readings after it are removed as part of the same span and carry the
     # action without a second classification.
     "dip_then_frozen": [
-        (10.0, 10.0, (), 0.0, ("FIRST_ZERO",)),
-        (11.0, 11.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
-        (12.0, 12.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+        (10.0, 10.0, (), 0.0, ("FIRST_ZERO", "NULL_DERIVED_FROM_CUMULATIVE")),
+        (11.0, 11.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
+        (12.0, 12.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
         (5.0, None, ("CUMULATIVE_NO_RECOVERY", "NULLED"),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
         (5.0, None, ("NULLED",),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
         (5.0, None, ("NULLED",),
-         None, ("NULLED", "INTERVAL_FROM_DELIVERED_CUMULATIVE")),
+         None, ("NULLED", "VALUE_DERIVED_FROM_CUMULATIVE",
+          "NULL_DERIVED_FROM_CUMULATIVE")),
     ],
     # Nothing is wrong here, so nothing is flagged on the register. Row 0 still
     # gets its seeded zero -- FIRST_ZERO is unconditional, even where no
-    # reading arrived -- and rows whose predecessor is absent get no interval
-    # and no flags.
+    # reading arrived -- and rows whose predecessor is absent get no interval.
+    # They are not unflagged, though: the differencing reached them and
+    # produced nothing, which NULL_DERIVED_FROM_CUMULATIVE records. An empty
+    # cell in a derived column is not an untouched cell.
     "leading_na": [
-        (None, None, (), 0.0, ("FIRST_ZERO",)),
-        (None, None, (), None, ()),
-        (3.0, 3.0, (), None, ()),
-        (4.0, 4.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
-        (5.0, 5.0, (), 1.0, ("INTERVAL_FROM_DELIVERED_CUMULATIVE",)),
+        (None, None, (), 0.0, ("FIRST_ZERO", "NULL_DERIVED_FROM_CUMULATIVE")),
+        (None, None, (), None, ("NULL_DERIVED_FROM_CUMULATIVE",)),
+        (3.0, 3.0, (), None, ("NULL_DERIVED_FROM_CUMULATIVE",)),
+        (4.0, 4.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
+        (5.0, 5.0, (), 1.0, ("VALUE_DERIVED_FROM_CUMULATIVE",)),
     ],
 }
 

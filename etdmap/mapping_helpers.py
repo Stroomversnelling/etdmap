@@ -26,6 +26,7 @@ from etdmap.data_model import (
     monotonic_columns,
     performance_column_dtypes,
     required_performance_data_columns,
+    tariff_root_to_splits,
     thresholds_dict,
 )
 from etdmap.index_helpers import (
@@ -42,6 +43,7 @@ from etdmap.flags import (
     frozen_spans,
     flag_column,
     mark_undelivered_slots,
+    record_delivery,
     scale_bound_to_cadence,
     set_flags,
     threshold_base_minutes,
@@ -694,6 +696,14 @@ def combine_tariff_registers(df, context: str = "") -> pd.DataFrame:
 
         if root not in df.columns:
             df[root] = pd.Series(pd.NA, index=df.index, dtype="Float64")
+            # The supplier sent nothing under this name, so every cell of it
+            # answers DELIVERED_NA. Recorded here because this is where the
+            # column comes into being: mark_delivered ran on the delivered
+            # frame, which had no such column to answer for, and a column with
+            # no delivery answer is indistinguishable from one no step reached.
+            # Before the combine writes into it, so the answer describes what
+            # the supplier sent rather than what this function wrote.
+            record_delivery(df, [root])
         delivered = df[root].notna()
         write = either & ~delivered
         if bool(write.any()):
@@ -960,25 +970,37 @@ def add_diff_columns(
             )
             if group[col].notna().any() or not _delivered_interval:
                 logging.debug(f"{context_string}Calculating diff for {col}")
-                group[diff_col] = group[col].diff().round(10)
+                _derived = group[col].diff().round(10)
+                # Taken BEFORE the seed, or row 0 holds a value and the column
+                # can no longer say the difference was null there. Row 0 always
+                # falls in this mask: .diff() has no predecessor for it.
+                _null_from_derivation = _derived.isna()
+                group[diff_col] = _derived
                 # No predecessor to difference against, so the first interval is
                 # seeded rather than measured.
                 group.loc[group.index[0], diff_col] = 0
                 _seed = pd.Series(False, index=group.index)
                 _seed.iloc[0] = True
                 set_flags(group, diff_col, _seed, MappingFlag.FIRST_ZERO)
-                # Records that these values were derived rather than delivered.
+                # Every cell of the column was written by the assignment above,
+                # so every one records what the differencing produced there --
+                # a value, or nothing. Row 0 records the null outcome AND the
+                # seed: both happened to it, and recording only the seed left
+                # the derivation's visit unrecorded.
+                #
                 # Where the supplier delivered the interval too, this cell held
                 # that value a moment ago and now holds the difference; the
                 # RAW_DELIVERED_VALUE already on it is what makes the
                 # replacement readable. Without an action here
                 # mark_unchanged_values stamps NOT_CHANGED on the whole column,
                 # claiming mapping left values it wrote in full.
-                # The seeded row is excluded: it was invented, not differenced,
-                # which is what FIRST_ZERO beside it already says.
                 set_flags(
-                    group, diff_col, group[diff_col].notna() & ~_seed,
-                    MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE,
+                    group, diff_col, ~_null_from_derivation,
+                    MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE,
+                )
+                set_flags(
+                    group, diff_col, _null_from_derivation,
+                    MappingFlag.NULL_DERIVED_FROM_CUMULATIVE,
                 )
             else:
                 logging.info(
@@ -1014,17 +1036,35 @@ def add_diff_columns(
                 logging.debug(
                     f"{context_string}Re-calculating diff for {col} after corrections."
                 )
-                group[diff_col] = group[col].diff().round(10)
+                _derived = group[col].diff().round(10)
+                # As in the first pass: the null mask is taken before the seed
+                # writes over row 0.
+                _null_from_derivation = _derived.isna()
+                group[diff_col] = _derived
                 group.loc[group.index[0], diff_col] = 0
                 _seed = pd.Series(False, index=group.index)
                 _seed.iloc[0] = True
                 set_flags(group, diff_col, _seed, MappingFlag.FIRST_ZERO)
-                # The recompute rewrites the column, so the cells it produces
-                # are derived for the same reason as the first pass. Re-setting
-                # the bit is a no-op where it is already on.
+                # The recompute ADDS its outcome; it does not replace the first
+                # pass's. Bits only ever accumulate, because each one records
+                # something that happened: a cell differenced to a value,
+                # blanked by the corrections, then re-differenced to nothing
+                # carries all three of VALUE_DERIVED, NULLED and NULL_DERIVED,
+                # and that sequence is the history. NULLED is what says the
+                # cell is empty by removal rather than because the derivation
+                # produced nothing, so the two null cases stay distinguishable
+                # without either member having to be withdrawn.
+                #
+                # So the partition -- exactly one derivation outcome per cell --
+                # holds for a SINGLE pass, which is the only case
+                # add_diff_columns runs without corrections.
                 set_flags(
-                    group, diff_col, group[diff_col].notna() & ~_seed,
-                    MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE,
+                    group, diff_col, ~_null_from_derivation,
+                    MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE,
+                )
+                set_flags(
+                    group, diff_col, _null_from_derivation,
+                    MappingFlag.NULL_DERIVED_FROM_CUMULATIVE,
                 )
 
                 if (group[diff_col] < 0).any(skipna=True):
@@ -1534,10 +1574,92 @@ def fill_down_infrequent_devices(
     return df
 
 
+def _declared_absent_family(variable: str) -> set[str]:
+    """Every column the declared device can report through.
+
+    A declaration names a physical device, so whether the data falsifies it
+    is a question about the device and not about one column name. Two
+    declared relations say which columns belong to the same device, and the
+    closure over both is taken so the answer is the same whichever member is
+    named:
+
+    - ``ComplementVariabele`` links a cumulative variable to its interval
+      form;
+    - the tariff split links a combined variable to the Hoog/Laag registers
+      that mapping sums into it. The guard runs before that sum, so on a
+      tariff device the registers are where the readings are -- a register is
+      a family member exactly as a complement is.
+    """
+    family = {variable}
+    while True:
+        grown = set(family)
+        for member in family:
+            complement = complement_column(member)
+            if complement:
+                grown.add(complement)
+            for root, splits in tariff_root_to_splits.items():
+                if member == root or member in splits:
+                    grown.add(root)
+                    grown.update(splits)
+        if grown == family:
+            return family
+        family = grown
+
+
+def _declaration_owner(household_id) -> str:
+    """Name whose declaration is at fault, for the error message.
+
+    A declaration is corrected in Grist, found by supplier and project, and
+    it belongs to one household's dataset -- ``HuisBatchIdBSV``, not the
+    delivery batch. ``index.parquet`` is the registry carrying all three
+    beside ``HuisIdBSV``.
+
+    Returns an empty string when the household cannot be resolved. These
+    identifiers only decorate a message, so failing to find them must never
+    swallow the contradiction the caller is about to raise.
+    """
+    if household_id is None:
+        return ""
+    try:
+        index_df, _ = read_index()
+        rows = index_df[index_df["HuisIdBSV"] == int(household_id)]
+    # Broad on purpose: an unreadable, absent or older index must cost the
+    # caller nothing more than a less specific message.
+    except Exception as exc:
+        logging.debug(
+            f"[assert_no_delivered_in_declared_absent] no index identifiers "
+            f"for HuisIdBSV {household_id}: {exc}"
+        )
+        return ""
+    if rows.empty:
+        return ""
+
+    def _named(column: str, label: str) -> str | None:
+        if column not in rows.columns:
+            return None
+        values = rows[column].dropna().unique().tolist()
+        if not values:
+            return None
+        try:
+            values = sorted(values)
+        except TypeError:
+            values = sorted(str(v) for v in values)
+        return f"{label} {', '.join(str(v) for v in values)}"
+
+    named = [
+        _named("Dataleverancier", "supplier"),
+        _named("ProjectIdBSV", "ProjectIdBSV"),
+        _named("HuisBatchIdBSV", "HuisBatchIdBSV"),
+    ]
+    named = [n for n in named if n]
+    return (" -- " + ", ".join(named)) if named else ""
+
+
 def assert_no_delivered_in_declared_absent(
     df: pd.DataFrame,
     declared_absent,
     context: str = "",
+    household_id=None,
 ) -> None:
     """Raise when the data falsifies a device-absence declaration.
 
@@ -1554,12 +1676,13 @@ def assert_no_delivered_in_declared_absent(
     guard exists for FUTURE drift: a device installed later that starts
     reporting raises here until the declaration is removed.
 
-    Checked per declared variable: the column itself AND its linked pair
-    (the interval form of a cumulative, or the cumulative form of an
-    interval) -- a reading on either is the device reporting. Delivered
-    means a non-NA value whose findings carry no INVENTED bit; values the
-    pipeline itself wrote (e.g. legacy zero-prefill) do not count against
-    the declaration.
+    Checked per declared variable over the whole family of columns the
+    device reports through -- see ``_declared_absent_family``: the variable
+    itself, its declared complement, and the tariff registers and their
+    complements. A reading on any of them is the device reporting.
+    Delivered means a non-NA value whose findings carry no INVENTED bit;
+    values the pipeline itself wrote (e.g. legacy zero-prefill) do not count
+    against the declaration.
 
     Parameters
     ----------
@@ -1570,6 +1693,10 @@ def assert_no_delivered_in_declared_absent(
         the ``ApparaatOntbrekend`` metadata column).
     context : str
         Household/file label for the error message.
+    household_id : optional
+        HuisIdBSV. When given, the raise also names the supplier, project and
+        household batch the declaration belongs to, read from the index --
+        the identifiers needed to find and correct it in Grist.
 
     Raises
     ------
@@ -1581,8 +1708,7 @@ def assert_no_delivered_in_declared_absent(
     ctx = (context + ": ") if context else ""
     violations = []
     for variable in sorted({str(v).strip() for v in declared_absent} - {""}):
-        pair = complement_column(variable)
-        candidates = [c for c in (variable, pair) if c and c in df.columns]
+        candidates = sorted(_declared_absent_family(variable) & set(df.columns))
         for col in candidates:
             delivered = df[col].notna()
             findings = flag_column(col)
@@ -1604,8 +1730,11 @@ def assert_no_delivered_in_declared_absent(
                 f"{n_delivered} delivered reading(s){span}"
             )
     if violations:
+        # Resolved only now, so the normal path never reads the index and the
+        # identifiers are current at the moment they are reported.
         raise ValueError(
-            f"{ctx}device-absence declaration falsified by delivered data: "
+            f"{ctx}device-absence declaration falsified by delivered data"
+            f"{_declaration_owner(household_id)}: "
             + "; ".join(violations)
             + ". Correct the metadata (ApparaatOntbrekend / "
             "GegevensOntbrekend in the household table) -- the data is the "
@@ -2134,6 +2263,13 @@ def ensure_intervals(
         {date_column: pd.date_range(start=earliest, end=latest, freq=freq)},
     )
 
+    # Which slots the source delivered a row into, read before any merge. The
+    # complement of this is what the padding creates, and recording the signal
+    # per created row rather than per bare flag cell is what makes
+    # SLOT_NOT_DELIVERED a fact about the slot instead of a fact about which
+    # columns an earlier step happened to flag.
+    delivered_slots = set(df[date_column])
+
     def merge_left(df):
         """Keep only the readings that land on the grid.
 
@@ -2153,18 +2289,25 @@ def ensure_intervals(
                 f"on slots, or correct the source data."
             )
         merged = pd.merge(all_dates_df, df, on=date_column, how='left')
-        # The grid has a slot the supplier delivered no row into, so every
-        # column already on the frame is pd.NA there -- flag columns included.
-        # That absence is a finding in its own right, and recording it also
-        # restores the invariant: left as pd.NA, every later finding on those
-        # cells would discard silently, since `pd.NA | flag` is pd.NA.
-        mark_undelivered_slots(merged)
+        # The grid has a slot the supplier delivered no row into. That absence
+        # is a finding in its own right, and recording it also restores the
+        # invariant: left as pd.NA, every later finding on those cells would
+        # discard silently, since `pd.NA | flag` is pd.NA.
+        mark_undelivered_slots(
+            merged,
+            created=~merged[date_column].isin(delivered_slots),
+            columns=_DELIVERY_MARKED_COLUMNS,
+        )
         return merged
 
     if expected_num_records > len(df.index):
         logging.info(f"Adding {freq} intervals.")
         merged_df = pd.merge(all_dates_df, df, on=date_column, how='outer')
-        mark_undelivered_slots(merged_df)
+        mark_undelivered_slots(
+            merged_df,
+            created=~merged_df[date_column].isin(delivered_slots),
+            columns=_DELIVERY_MARKED_COLUMNS,
+        )
         if len(merged_df.index) > expected_num_records:
             logging.error(
                 f"There are more records than possible if {freq} "
@@ -3086,18 +3229,23 @@ def _detect_frozen_spans_for_household(df, household_id, cadence=None, context="
             continue
 
         # Which form the column holds, read from the cell findings rather than
-        # re-derived: add_diff_columns sets INTERVAL_FROM_DELIVERED_CUMULATIVE
-        # on every cell it differences, and the branch is per household per
-        # column -- the same column is derived for one household and delivered
-        # by the next -- so no column-level rule can replace the bit. Later
-        # steps mutate the frame and a second source would drift from it.
+        # re-derived: add_diff_columns records an outcome on every cell it
+        # wrote, and the branch is per household per column -- the same column
+        # is derived for one household and delivered by the next -- so no
+        # column-level rule can replace it. Later steps mutate the frame and a
+        # second source would drift from it.
+        #
+        # Tested as the COMPOSITE, not the value member: a column the
+        # derivation wrote but which produced only nulls was still derived, and
+        # testing one outcome would read it as delivered and take the wrong
+        # treatment.
         _findings = df.get(flag_column(col))
         derived = bool(
             _findings is not None
             and (
                 (
                     _findings.fillna(MappingFlag.NONE.value)
-                    & MappingFlag.INTERVAL_FROM_DELIVERED_CUMULATIVE.value
+                    & MappingFlag.INTERVAL_DERIVED_FROM_CUMULATIVE.value
                 )
                 != 0
             ).any()
@@ -3397,18 +3545,62 @@ def _lattice_step(cadence_minutes, grid_minutes):
     return int(step)
 
 
-def mark_delivery_and_cadence(
+def mark_delivered(df) -> None:
+    """Record what the supplier delivered into each cell of a delivered frame.
+
+    One question with a three-way answer, not three findings:
+
+    ======================== ===============================================
+    ``RAW_DELIVERED_VALUE``  a row arrived at this slot and carried a value
+    ``DELIVERED_NA``         a row arrived and carried nothing for this column
+    ``SLOT_NOT_DELIVERED``   no row arrived at this slot
+    ======================== ===============================================
+
+    Exactly one holds of every cell. This writes the first two; the third is
+    written by ``ensure_intervals`` when it completes the grid, because those
+    cells do not exist until the padding creates them. That is a physical
+    necessity, not a division of the question.
+
+    **Call this on the frame as the supplier delivered it** -- after the readings
+    are snapped onto the grid and after any merge that brings the columns
+    together, but before the grid is padded and before anything is filled. Every
+    row is then a row that arrived, which is what makes the two answers here
+    distinguishable at all.
+
+    Order matters in one direction only, and it is the one that bites: run this
+    after a fill and a filled cell reads as delivered. The previous version
+    marked delivery at pipeline step 6b, after
+    ``fill_down_infrequent_devices``, and had to subtract ``INVENTED`` to undo
+    its own lateness. Marking before any fill is what removes the need for that
+    correction.
+
+    A column the supplier never populated is answered too -- ``DELIVERED_NA``
+    throughout -- rather than left with an empty findings column, which is
+    indistinguishable from a column no step ever reached.
+
+    Only the model's data columns are marked. An identifier the pipeline
+    attaches was not delivered into a slot, so the question does not apply
+    to it.
+
+    Modifies *df* in place.
+    """
+    record_delivery(
+        df, [c for c in df.columns if c in _DELIVERY_MARKED_COLUMNS]
+    )
+
+
+def mark_cadence(
     df, cadence=None, grid_minutes=None, context: str = ""
 ) -> None:
     """
-    Record which values the supplier delivered, and which pd.NA was owed one.
+    Record, for each empty cell, whether a reading was due there.
 
-    A delivered value is marked RAW_DELIVERED_VALUE. A pd.NA is told apart by the
-    interval the column reports at: a column reporting every k grid rows is due a
-    reading every k-th row from its first one, so a pd.NA on that lattice was
-    owed a reading and is marked MISSING_VALUE, while one between ticks was never
-    due and is marked OFF_CADENCE_NA. Delivery completeness is measurable from the
-    first; the second is not a fault.
+    One question, with two answers, read from the column's reporting lattice
+    alone: a column reporting every k grid rows is due a reading every k-th row
+    from its first one, so a pd.NA on that lattice is marked ON_CADENCE_NA, and
+    one between ticks OFF_CADENCE_NA. Neither is a fault on its own, and neither
+    says whether a source row arrived -- :func:`etdmap.flags.mark_delivered` and
+    ``SLOT_NOT_DELIVERED`` answer that, separately.
 
     Both forms are marked. A coarsely reporting register can miss a tick as
     easily as a delivered interval can.
@@ -3416,16 +3608,21 @@ def mark_delivery_and_cadence(
     No value is changed and nothing downstream reads these: they are what lets a
     reader, and an analysis, tell an absent reading from a cadence gap.
 
-    Runs while the delivered values are still in place. ``add_diff_columns``
-    replaces a delivered interval with the register's diff and the cleaning steps
-    blank values, and findings accumulate, so marking first is what leaves a
-    blanked cell reading RAW_DELIVERED_VALUE | NULLED.
+    **Reads the delivery record rather than recomputing it.** The lattice is
+    anchored on the first row the column reported in, and that is already
+    recorded as ``RAW_DELIVERED_VALUE`` by :func:`etdmap.flags.mark_delivered`,
+    which runs in the mapper on the frame as delivered. Deriving it from the data
+    again here would be wrong: ``fill_down_infrequent_devices`` has since put
+    values into the gaps, so ``notna()`` no longer means delivered, and the old
+    version had to subtract ``INVENTED`` to undo that. A finding is set where it
+    is made and read downstream, which is what makes the correction unnecessary
+    rather than merely cheaper.
 
-    A value an earlier step wrote is not a value the supplier delivered, so a
-    cell already carrying an INVENTED finding is left out of both the delivered
-    mark and the lattice. ``fill_down_infrequent_devices`` runs in the mapper,
-    ahead of this pipeline, and leaves no row missing: without the exclusion
-    every cell it filled would read as delivered.
+    A column carrying no delivery record is skipped. That is a column created
+    after delivery was marked -- the all-NA placeholders
+    ``rearrange_model_columns`` adds for model columns the dataset does not have
+    -- so there is no first reading to anchor on and nothing to say about its
+    gaps.
 
     A column with no cadence, or one whose cadence is not a whole number of grid
     rows, has no lattice: its delivered values are recorded and neither NA
@@ -3485,16 +3682,23 @@ def mark_delivery_and_cadence(
         if column not in _DELIVERY_MARKED_COLUMNS:
             continue
 
-        delivered = df[column].notna()
+        # Where this column's own readings start, which is what sets the phase
+        # of its lattice. Not the same population as RAW_DELIVERED_VALUE: a
+        # combined tariff root and a derived interval hold what the supplier
+        # reported without the supplier having delivered that cell, and they
+        # anchor a lattice like any other reading. What must be excluded is a
+        # value the pipeline INVENTED -- fill_down_infrequent_devices runs
+        # ahead of this and leaves no row missing, so anchoring on a filled row
+        # would shift the whole lattice.
+        anchored = df[column].notna()
         findings = flag_column(column)
         if findings in df.columns:
-            delivered &= (
+            anchored &= (
                 df[findings].fillna(MappingFlag.NONE.value)
                 & MappingFlag.INVENTED.value
             ) == 0
-        if not delivered.any():
+        if not anchored.any():
             continue
-        set_flags(df, column, delivered, MappingFlag.RAW_DELIVERED_VALUE)
 
         step = _lattice_step(minutes_by_column.get(column), grid)
         if step is None:
@@ -3504,9 +3708,9 @@ def mark_delivery_and_cadence(
         # Only an empty cell is owed a reading. A cell an earlier step wrote
         # holds a value, whoever put it there, so neither signal applies to it.
         absent = df[column].isna()
-        first = int(position[delivered].iloc[0])
+        first = int(position[anchored].iloc[0])
         on_lattice = ((position - first) % step) == 0
-        set_flags(df, column, absent & on_lattice, MappingFlag.MISSING_VALUE)
+        set_flags(df, column, absent & on_lattice, MappingFlag.ON_CADENCE_NA)
         set_flags(df, column, absent & ~on_lattice, MappingFlag.OFF_CADENCE_NA)
 
     if without_lattice:
@@ -3529,7 +3733,7 @@ def mark_unchanged_values(df) -> None:
     did not report in, and a column reporting more slowly than the grid is
     empty between its ticks, so stamping those would claim an inspection of
     cells that hold nothing. The two absences are told apart by
-    ``mark_delivery_and_cadence``, as MISSING_VALUE and OFF_CADENCE_NA.
+    ``mark_cadence``, as ON_CADENCE_NA and OFF_CADENCE_NA.
 
     Every data column of the model is marked, not only those that already carry
     a findings column, or a column no step made a finding about would be the one
@@ -3575,7 +3779,7 @@ def run_standard_pipeline(
       6. rearrange_model_columns(add_columns=True)
      6a. add_tariff_root_cadence -- a root combined from delivered splits has
          no measured row of its own
-      6b. mark_delivery_and_cadence
+      6b. mark_cadence
       7. add_diff_columns
      7b. Detect frozen spans, and blank them so imputation can spread them
       8. Apply record_flag_conditions (try/except per flag; pd.NA on error)
@@ -3739,7 +3943,7 @@ def run_standard_pipeline(
     #     values are still in place: step 7 replaces a delivered interval with
     #     the register's diff, and the steps below blank values.
     # ------------------------------------------------------------------
-    mark_delivery_and_cadence(
+    mark_cadence(
         df, cadence=cadence, grid_minutes=grid_minutes, context=context
     )
 

@@ -6,7 +6,7 @@ mapping left alone, or as a column no step reached.
 It is set over the same population ``mark_delivery_and_cadence`` marks: every
 data column of the model. An empty cell is never marked, because there is no
 value in it to leave alone; which kind of absence it is comes from
-MISSING_VALUE and OFF_CADENCE_NA instead.
+ON_CADENCE_NA and OFF_CADENCE_NA instead.
 """
 
 import pandas as pd

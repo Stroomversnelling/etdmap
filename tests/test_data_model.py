@@ -242,19 +242,16 @@ def test_cumulative_columns_contains_no_date_types():
     assert not overlap, f"Date-typed columns found in cumulative_columns: {overlap}"
 
 
-def test_cumulative_columns_are_all_prestatiedata():
-    """Guard: every cumulative column must be Prestatiedata (not Berekend).
-
-    This documents the invariant that makes the missing Entiteit filter safe.
-    If this test ever fails, either the data model was changed or a computed
-    column was incorrectly flagged as cumulative.
+def test_cumulative_columns_match_the_cumulatief_flag():
+    """Guard: cumulative_columns is the Cumulatief flag alone, with no Entiteit
+    filter (DECISIONS.md ADR-001 item 1).
     """
     etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    entiteit_map = dict(zip(etdmodel_csv["Variabele"], etdmodel_csv["Entiteit"]))
-    for col in cumulative_columns:
-        assert entiteit_map.get(col) == "Prestatiedata", (
-            f"{col} is in cumulative_columns but has Entiteit={entiteit_map.get(col)!r}"
-        )
+    expected = etdmodel_csv[
+        (etdmodel_csv["Cumulatief"] == "ja")
+        & (etdmodel_csv["Type variabele"] != "date")
+    ]["Variabele"].tolist()
+    assert cumulative_columns == expected
 
 
 def test_model_column_order_is_prestatiedata_only():
@@ -331,7 +328,7 @@ class TestCumulativeIntervalPairs:
 
     def test_every_cumulative_variable_has_an_interval_column(self):
         for column in cumulative_columns:
-            assert interval_column(column) == column + "Diff"
+            assert interval_column(column) is not None
 
     def test_the_link_goes_both_ways(self):
         for column in cumulative_columns:

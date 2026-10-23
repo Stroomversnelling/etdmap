@@ -1,7 +1,7 @@
 """What the supplier delivered, recorded per cell before anything changes it.
 
 Three signals come out of one pass: RAW_DELIVERED_VALUE on a value that arrived,
-and on each pd.NA either MISSING_VALUE, where the column was due to report, or
+and on each pd.NA either ON_CADENCE_NA, where the column was due to report, or
 OFF_CADENCE_NA, where it was not. Telling those apart is what makes delivery
 completeness measurable, and it needs the cadence the column reports at.
 
@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 
 from etdmap.flags import MappingFlag, flag_column
-from etdmap.mapping_helpers import mark_delivery_and_cadence
+from etdmap.mapping_helpers import mark_cadence, mark_delivered
 
 GRID = 5
 CUM = "ElektriciteitNetgebruik"
@@ -40,6 +40,15 @@ def _frame(values, column=CUM, n=None):
     })
 
 
+def _mark(df, **kwargs):
+    """Delivery first, then cadence, which is the order the pipeline runs them
+    in and the order the cadence pass depends on: it anchors its lattice on the
+    delivery record rather than re-deriving it from values a later step may have
+    written."""
+    mark_delivered(df)
+    mark_cadence(df, **kwargs)
+
+
 def _flags(df, column):
     name = flag_column(column)
     if name not in df.columns:
@@ -64,23 +73,29 @@ def _every_third(n, first=2, missing=()):
 class TestADeliveredValueIsRecorded:
     def test_every_delivered_cell_is_marked(self):
         df = _frame([1.0, 2.0, pd.NA, 4.0])
-        mark_delivery_and_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
+        _mark(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
         assert _has(df, CUM, MappingFlag.RAW_DELIVERED_VALUE) == [
             True, True, False, True
         ]
 
     def test_an_absent_cell_is_not_marked_as_delivered(self):
         df = _frame([pd.NA, 2.0])
-        mark_delivery_and_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
+        _mark(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
         assert _has(df, CUM, MappingFlag.RAW_DELIVERED_VALUE) == [False, True]
 
-    def test_a_column_that_delivered_nothing_gets_no_findings(self):
-        """A model column materialised for a device the household does not have
-        reports nothing, so there is no delivery to record and no lattice to
-        anchor -- marking its every row MISSING_VALUE would invent a claim."""
+    def test_a_column_that_delivered_nothing_gets_no_cadence_findings(self):
+        """It has no first reading, so there is no lattice to anchor and
+        nothing to say about which of its gaps were due -- marking its every row
+        ON_CADENCE_NA would invent a claim.
+
+        It is not silent, though: ``mark_delivered`` answers every cell
+        DELIVERED_NA, which is what distinguishes a column the supplier never
+        populated from a column no step reached."""
         df = _frame([pd.NA, pd.NA, pd.NA])
-        mark_delivery_and_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
-        assert flag_column(CUM) not in df.columns
+        _mark(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
+        assert not any(_has(df, CUM, MappingFlag.ON_CADENCE_NA))
+        assert not any(_has(df, CUM, MappingFlag.OFF_CADENCE_NA))
+        assert all(_has(df, CUM, MappingFlag.DELIVERED_NA))
 
 
 class TestTheTwoKindsOfAbsence:
@@ -88,28 +103,28 @@ class TestTheTwoKindsOfAbsence:
         """Reporting every row means every row was due, so each pd.NA is a
         reading that did not arrive."""
         df = _frame([1.0, pd.NA, 3.0, pd.NA])
-        mark_delivery_and_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
-        assert _has(df, CUM, MappingFlag.MISSING_VALUE) == [False, True, False, True]
+        _mark(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
+        assert _has(df, CUM, MappingFlag.ON_CADENCE_NA) == [False, True, False, True]
         assert not any(_has(df, CUM, MappingFlag.OFF_CADENCE_NA))
 
     def test_a_coarse_column_marks_the_rows_between_ticks(self):
         df = _frame(_every_third(9))
-        mark_delivery_and_cadence(
+        _mark(
             df, cadence=_cadence({CUM: GRID * 3}), grid_minutes=GRID
         )
         assert _has(df, CUM, MappingFlag.OFF_CADENCE_NA) == [
             True, True, False, True, True, False, True, True, False
         ]
-        assert not any(_has(df, CUM, MappingFlag.MISSING_VALUE))
+        assert not any(_has(df, CUM, MappingFlag.ON_CADENCE_NA))
 
     def test_a_coarse_column_marks_a_tick_that_did_not_arrive(self):
         """The one case the two signals exist to separate: row 5 was due a
         reading and row 4 was not, and both are pd.NA."""
         df = _frame(_every_third(9, missing=(5,)))
-        mark_delivery_and_cadence(
+        _mark(
             df, cadence=_cadence({CUM: GRID * 3}), grid_minutes=GRID
         )
-        assert _has(df, CUM, MappingFlag.MISSING_VALUE) == [
+        assert _has(df, CUM, MappingFlag.ON_CADENCE_NA) == [
             False, False, False, False, False, True, False, False, False
         ]
         assert _has(df, CUM, MappingFlag.OFF_CADENCE_NA)[4] is True
@@ -118,20 +133,20 @@ class TestTheTwoKindsOfAbsence:
         """A column whose first reading lands on row 1 reports on 1, 4, 7 --
         anchoring on row 0 instead would call every tick a missed reading."""
         df = _frame(_every_third(9, first=1))
-        mark_delivery_and_cadence(
+        _mark(
             df, cadence=_cadence({CUM: GRID * 3}), grid_minutes=GRID
         )
-        assert not any(_has(df, CUM, MappingFlag.MISSING_VALUE))
+        assert not any(_has(df, CUM, MappingFlag.ON_CADENCE_NA))
 
     def test_no_cell_carries_both_kinds_of_absence(self):
         df = _frame(_every_third(12, missing=(5,)))
-        mark_delivery_and_cadence(
+        _mark(
             df, cadence=_cadence({CUM: GRID * 3}), grid_minutes=GRID
         )
         both = [
             missing and off
             for missing, off in zip(
-                _has(df, CUM, MappingFlag.MISSING_VALUE),
+                _has(df, CUM, MappingFlag.ON_CADENCE_NA),
                 _has(df, CUM, MappingFlag.OFF_CADENCE_NA),
             )
         ]
@@ -144,16 +159,16 @@ class TestWithoutALattice:
 
     def test_an_unrecorded_cadence_classifies_no_gap(self):
         df = _frame([1.0, pd.NA, 3.0])
-        mark_delivery_and_cadence(df, cadence=_cadence({}), grid_minutes=GRID)
+        _mark(df, cadence=_cadence({}), grid_minutes=GRID)
         assert _has(df, CUM, MappingFlag.RAW_DELIVERED_VALUE) == [True, False, True]
-        assert not any(_has(df, CUM, MappingFlag.MISSING_VALUE))
+        assert not any(_has(df, CUM, MappingFlag.ON_CADENCE_NA))
         assert not any(_has(df, CUM, MappingFlag.OFF_CADENCE_NA))
 
     def test_a_cadence_that_does_not_divide_the_grid_classifies_no_gap(self):
         df = _frame([1.0, pd.NA, 3.0])
-        mark_delivery_and_cadence(df, cadence=_cadence({CUM: 7}), grid_minutes=GRID)
+        _mark(df, cadence=_cadence({CUM: 7}), grid_minutes=GRID)
         assert _has(df, CUM, MappingFlag.RAW_DELIVERED_VALUE) == [True, False, True]
-        assert not any(_has(df, CUM, MappingFlag.MISSING_VALUE))
+        assert not any(_has(df, CUM, MappingFlag.ON_CADENCE_NA))
         assert not any(_has(df, CUM, MappingFlag.OFF_CADENCE_NA))
 
 
@@ -164,7 +179,7 @@ class TestBothFormsAreMarked:
     def test_a_delivered_interval_column_is_marked(self):
         df = _frame([pd.NA] * 9)
         df[DIFF] = pd.array(_every_third(9), dtype="Float64")
-        mark_delivery_and_cadence(
+        _mark(
             df, cadence=_cadence({DIFF: GRID * 3}), grid_minutes=GRID
         )
         assert _has(df, DIFF, MappingFlag.RAW_DELIVERED_VALUE)[2] is True
@@ -175,13 +190,13 @@ class TestBothFormsAreMarked:
         the same row is off-cadence for one and a missed reading for the other."""
         df = _frame(_every_third(9))
         df[DIFF] = pd.array([1.0, pd.NA] + [1.0] * 7, dtype="Float64")
-        mark_delivery_and_cadence(
+        _mark(
             df,
             cadence=_cadence({CUM: GRID * 3, DIFF: GRID}),
             grid_minutes=GRID,
         )
         assert _has(df, CUM, MappingFlag.OFF_CADENCE_NA)[1] is True
-        assert _has(df, DIFF, MappingFlag.MISSING_VALUE)[1] is True
+        assert _has(df, DIFF, MappingFlag.ON_CADENCE_NA)[1] is True
 
 
 class TestFindingsAccumulate:
@@ -191,7 +206,7 @@ class TestFindingsAccumulate:
         from etdmap.flags import set_flags
 
         df = _frame([1.0, 2.0, 3.0])
-        mark_delivery_and_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
+        _mark(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
 
         blanked = pd.Series([False, True, False], index=df.index)
         set_flags(df, CUM, blanked, MappingFlag.NULLED)
@@ -203,60 +218,81 @@ class TestFindingsAccumulate:
     def test_nothing_in_the_frame_is_changed(self):
         df = _frame(_every_third(9, missing=(5,)))
         before = df[CUM].astype("Float64").copy()
-        mark_delivery_and_cadence(
+        _mark(
             df, cadence=_cadence({CUM: GRID * 3}), grid_minutes=GRID
         )
         pd.testing.assert_series_equal(df[CUM], before)
 
 
-class TestAValueThePipelineWroteIsNotDelivered:
-    """fill_down_infrequent_devices runs in the mapper, ahead of this pipeline,
-    and leaves no row missing. Without excluding what it wrote, every cell it
-    filled would read as delivered."""
+class TestAFillCannotBeMistakenForADelivery:
+    """Delivery is recorded on the frame as delivered, before anything fills it,
+    so a filled cell cannot read as delivered.
 
-    def _filled_down(self, values, filled):
+    The previous version marked delivery at pipeline step 6b -- after
+    ``fill_down_infrequent_devices`` had run in the mapper -- and subtracted
+    ``INVENTED`` to undo its own lateness. These tests pin the ordering that
+    makes the subtraction unnecessary, so they fail if the mark moves back
+    behind the fill.
+    """
+
+    def _fill(self, df, filled, value):
+        """What ``fill_down_infrequent_devices`` does, after delivery was
+        recorded: writes a value and records that it wrote one."""
         from etdmap.flags import set_flags
 
-        df = _frame(values)
         mask = pd.Series(filled, index=df.index)
         set_flags(df, CUM, mask, MappingFlag.FILLED_DOWN)
+        df.loc[mask, CUM] = value
         return df
 
-    def test_a_filled_down_cell_is_not_marked_as_delivered(self):
-        df = self._filled_down([1.0, 1.0, 1.0], [False, True, True])
-        mark_delivery_and_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
-        assert _has(df, CUM, MappingFlag.RAW_DELIVERED_VALUE) == [True, False, False]
+    def test_a_cell_filled_after_the_mark_reads_as_not_delivered(self):
+        df = _frame([1.0, pd.NA, pd.NA])
+        mark_delivered(df)
+        self._fill(df, [False, True, True], 1.0)
+        mark_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
 
-    def test_a_filled_down_cell_is_not_owed_a_reading_either(self):
-        """It holds a value, whoever wrote it, so neither absence signal
-        applies."""
-        df = self._filled_down([1.0, 1.0, 1.0], [False, True, True])
-        mark_delivery_and_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
-        assert not any(_has(df, CUM, MappingFlag.MISSING_VALUE))
+        assert _has(df, CUM, MappingFlag.RAW_DELIVERED_VALUE) == [
+            True, False, False
+        ]
+        assert _has(df, CUM, MappingFlag.DELIVERED_NA) == [False, True, True]
+        # Both facts on the cell: the supplier sent nothing, and we filled it.
+        assert _has(df, CUM, MappingFlag.FILLED_DOWN) == [False, True, True]
+
+    def test_a_filled_cell_is_not_owed_a_reading_either(self):
+        """It holds a value by cadence time, whoever wrote it, so neither
+        absence signal applies."""
+        df = _frame([1.0, pd.NA, pd.NA])
+        mark_delivered(df)
+        self._fill(df, [False, True, True], 1.0)
+        mark_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
+        assert not any(_has(df, CUM, MappingFlag.ON_CADENCE_NA))
         assert not any(_has(df, CUM, MappingFlag.OFF_CADENCE_NA))
 
-    def test_a_column_of_nothing_but_written_values_records_no_delivery(self):
-        """Zeros written for a device the household does not have report nothing
-        the meter said."""
-        df = self._filled_down([0.0, 0.0, 0.0], [True, True, True])
-        mark_delivery_and_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
+    def test_a_column_of_nothing_but_filled_values_records_no_delivery(self):
+        """A column the supplier never populated reports nothing the meter
+        said, however many values the pipeline later writes into it."""
+        df = _frame([pd.NA, pd.NA, pd.NA])
+        mark_delivered(df)
+        self._fill(df, [True, True, True], 0.0)
+        mark_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
         assert not any(_has(df, CUM, MappingFlag.RAW_DELIVERED_VALUE))
+        assert all(_has(df, CUM, MappingFlag.DELIVERED_NA))
 
-    def test_the_lattice_is_anchored_on_a_delivered_reading(self):
-        """Row 0 was written, so the first reading is row 2 and the column is due
-        on 2, 5, 8 -- anchoring on the written row would shift the whole
-        lattice."""
-        values = [0.0] + _every_third(9, first=2)[1:]
-        df = self._filled_down(values, [True] + [False] * 8)
-        mark_delivery_and_cadence(
-            df, cadence=_cadence({CUM: GRID * 3}), grid_minutes=GRID
-        )
-        assert not any(_has(df, CUM, MappingFlag.MISSING_VALUE))
+    def test_the_lattice_is_anchored_on_the_delivery_record(self):
+        """Row 0 is empty when delivery is recorded and filled afterwards, so
+        the first reading is row 2 and the column is due on 2, 5, 8. Taking the
+        anchor from whatever holds a value at cadence time would put it on row 0
+        and shift the whole lattice to 0, 3, 6."""
+        df = _frame(_every_third(9, first=2))
+        mark_delivered(df)
+        self._fill(df, [True] + [False] * 8, 0.0)
+        mark_cadence(df, cadence=_cadence({CUM: GRID * 3}), grid_minutes=GRID)
+        assert not any(_has(df, CUM, MappingFlag.ON_CADENCE_NA))
 
 
 class TestOnlyModelDataColumns:
     def test_an_identifier_column_is_not_marked(self):
         df = _frame([1.0, 2.0])
-        mark_delivery_and_cadence(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
+        _mark(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
         assert flag_column("HuisIdBSV") not in df.columns
         assert flag_column("ReadingDate") not in df.columns
