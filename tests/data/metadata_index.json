@@ -1,6 +1,6 @@
 {
     "num_rows": 10,
-    "num_columns": 86,
+    "num_columns": 88,
     "column_details": {
         "HuisIdLeverancier": {
             "statistics": {
@@ -388,6 +388,20 @@
             }
         },
         "validate_ElektriciteitsgebruikOverigGGDiff": {
+            "statistics": {
+                "min": "True",
+                "max": "True",
+                "null_count": 0
+            }
+        },
+        "validate_ElektriciteitsgebruikTotaalWarmtepompCumulatief": {
+            "statistics": {
+                "min": null,
+                "max": null,
+                "null_count": 10
+            }
+        },
+        "validate_ElektriciteitsgebruikTotaalWarmtepomp": {
             "statistics": {
                 "min": "True",
                 "max": "True",

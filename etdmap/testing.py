@@ -42,14 +42,19 @@ __all__ = [
 
 
 class SyntheticModel(NamedTuple):
-    """The column names and relations a test declares for itself.
+    """The column names, relations and thresholds a test declares for itself.
 
     Built by :func:`synthetic_model`, installed by
     :func:`declare_synthetic_model`.
+
+    ``device`` is the cumulative variable and ``device_complement`` its
+    interval form, so a test wanting the ordinary pair reads those two.
     """
 
     complements: dict
     tariff_splits: dict
+    thresholds: dict
+    monotonic_intervals: list
     device: str
     device_complement: str
     high: str
@@ -60,7 +65,13 @@ class SyntheticModel(NamedTuple):
     plain_complement: str
 
 
-def synthetic_model(stem: str = "A", plain: str = "B") -> SyntheticModel:
+def synthetic_model(
+    stem: str = "A",
+    plain: str = "B",
+    maximum: float = 1.0,
+    minimum: float = 0.0,
+    threshold_type: str = "5-minute",
+) -> SyntheticModel:
     """Build a two-device model that names nothing the real model names.
 
     The live model is derived from Grist and its names change, so a
@@ -75,23 +86,37 @@ def synthetic_model(stem: str = "A", plain: str = "B") -> SyntheticModel:
       Having one in the model is what keeps a test honest about a device
       family being the declared one rather than every column on the frame.
 
-    The relations are the two the model declares: a symmetric complement map
-    and root-to-registers. Pass the result to :func:`declare_synthetic_model`.
+    Every interval column is declared monotonic, and every column gets the
+    same threshold entry -- *minimum*, *maximum*, *threshold_type*, with no
+    sustained level or exponent, so a bound scales by a plain multiply. A
+    test whose subject is a bound states the *maximum* it needs rather than
+    inheriting whatever the metadata happens to declare this week.
+
+    Pass the result to :func:`declare_synthetic_model`.
     """
     device, device_complement = stem, f"{stem}_Complement"
     high, low = f"{stem}_High", f"{stem}_Low"
     high_complement, low_complement = f"{high}_Complement", f"{low}_Complement"
     plain_complement = f"{plain}_Complement"
 
-    complements: dict = {}
-    for one, other in (
+    pairs = (
         (device, device_complement),
         (high, high_complement),
         (low, low_complement),
         (plain, plain_complement),
-    ):
-        complements[one] = other
-        complements[other] = one
+    )
+    complements: dict = {}
+    for cumulative, interval in pairs:
+        complements[cumulative] = interval
+        complements[interval] = cumulative
+
+    entry = {
+        "Min": minimum,
+        "Max": maximum,
+        "ThresholdType": threshold_type,
+        "UpperThresholdSustained": pd.NA,
+        "UpperThresholdExponent": pd.NA,
+    }
 
     return SyntheticModel(
         complements=complements,
@@ -99,6 +124,8 @@ def synthetic_model(stem: str = "A", plain: str = "B") -> SyntheticModel:
             device: (high, low),
             device_complement: (high_complement, low_complement),
         },
+        thresholds={column: dict(entry) for column in complements},
+        monotonic_intervals=[interval for _, interval in pairs],
         device=device,
         device_complement=device_complement,
         high=high,
@@ -111,44 +138,71 @@ def synthetic_model(stem: str = "A", plain: str = "B") -> SyntheticModel:
 
 
 def declare_synthetic_model(monkeypatch, model: SyntheticModel = None):
-    """Install *model* as the model every loaded etdmap module reads.
+    """Install *model* as the model every loaded etd module reads.
 
-    Consumers bind the relations with ``from etdmap.data_model import ...``,
+    Consumers bind these names with ``from etdmap.data_model import ...``,
     which copies the object into their own namespace, so patching
     ``data_model`` alone would leave them reading the real model. The
-    declaration is therefore applied to every loaded etdmap module holding
-    either name -- which also means a module that starts consuming them
+    declaration is therefore applied to every loaded ``etd*`` module holding
+    one of the names -- which also means a module that starts consuming one
     later is covered without this helper being updated.
 
-    Scope is the two relations that say which columns belong to one device:
-    ``complement_column`` and ``tariff_root_to_splits``. Nothing else about
-    the model is replaced.
+    What is replaced is everything that answers "which columns belong to one
+    variable, and what may it read":
+
+    - ``complement_column``, ``cumulative_column``, ``interval_column``
+    - ``tariff_root_to_splits``
+    - ``monotonic_interval_columns``
+    - ``thresholds_dict``
+
+    ``thresholds_dict`` is replaced rather than merged, deliberately: a test
+    that declares its own model should not also inherit bounds for columns
+    it never mentions. Add entries to ``model.thresholds`` for any further
+    column a code path under test looks up.
 
     Returns the model, so a test can read its column names from it.
     """
     model = model if model is not None else synthetic_model()
+    cumulatives = {cumulative for cumulative in model.complements
+                   if cumulative not in model.monotonic_intervals}
 
     def _complement(column):
         return model.complements.get(column)
 
+    def _cumulative(column):
+        """The cumulative side of *column*, or None where there is none."""
+        found = model.complements.get(column)
+        return found if found in cumulatives else None
+
+    def _interval(column):
+        """The interval side of *column*, or None where there is none."""
+        found = model.complements.get(column)
+        return found if found in model.monotonic_intervals else None
+
+    replacements = {
+        "complement_column": _complement,
+        "cumulative_column": _cumulative,
+        "interval_column": _interval,
+        "tariff_root_to_splits": model.tariff_splits,
+        "monotonic_interval_columns": model.monotonic_intervals,
+        "thresholds_dict": model.thresholds,
+    }
+
     patched = 0
     for module in list(sys.modules.values()):
-        if not getattr(module, "__name__", "").startswith("etdmap"):
+        if not getattr(module, "__name__", "").startswith("etd"):
             continue
-        if callable(getattr(module, "complement_column", None)):
-            monkeypatch.setattr(module, "complement_column", _complement)
-            patched += 1
-        if isinstance(getattr(module, "tariff_root_to_splits", None), dict):
-            monkeypatch.setattr(
-                module, "tariff_root_to_splits", model.tariff_splits
-            )
+        for name, replacement in replacements.items():
+            if getattr(module, name, None) is None:
+                continue
+            monkeypatch.setattr(module, name, replacement)
             patched += 1
     if not patched:
         raise ValueError(
-            "[declare_synthetic_model] no loaded etdmap module exposes "
-            "complement_column or tariff_root_to_splits, so the declared "
-            "model would not be read by anything. Import the module under "
-            "test before calling this."
+            "[declare_synthetic_model] no loaded etd module exposes any of "
+            f"{sorted(replacements)}, so the declared model would not be "
+            "read by anything. Import the module under test before calling "
+            "this."
         )
     return model
 
@@ -184,8 +238,14 @@ def installed_fingerprint(*extra_files) -> str:
 # (generating from thresholds is circular -- data drawn inside [Min, Max] can
 # never violate its own thresholds, so the validators/clipping are never
 # exercised and a wrong threshold cannot be caught). Editing thresholds.csv no
-# longer rewrites this fixture. tests/test_threshold_fixture_coverage.py warns
-# if thresholds.csv grows variables/columns/units this dict no longer covers.
+# longer rewrites this fixture.
+#
+# This dict is also the LIST OF COLUMNS the fixture generates: the generator
+# iterates it, not cumulative_columns. Driving generation off the declared model
+# made every new model variable a fixture error -- adding
+# ElektriciteitsgebruikTotaalWarmtepompCumulatief to the model broke four tests
+# that have nothing to do with it. A fixture declares its own columns; what the
+# model declares is tested as behaviour, not as an inventory.
 SYNTHETIC_DIFF_RANGES: dict[str, tuple[float, float]] = {
     "ElektriciteitNetgebruik": (0.0, 1.5),
     "ElektriciteitNetgebruikHoog": (0.0, 1.5),
@@ -261,13 +321,7 @@ def generate_raw_dataset(output_dir):
             # Generate cumulative column data.
             # Each column uses an independent seed derived from household + column name
             # so fixture data is stable regardless of the order of cumulative_columns.
-            for col in sorted(cumulative_columns):
-                if col not in SYNTHETIC_DIFF_RANGES:
-                    raise ValueError(
-                        f"Cannot generate raw data test fixture: no synthetic range for "
-                        f"cumulative column '{col}' in SYNTHETIC_DIFF_RANGES (tests/conftest.py). "
-                        f"Add it -- see tests/test_threshold_fixture_coverage.py."
-                    )
+            for col in sorted(SYNTHETIC_DIFF_RANGES):
                 min_diff, max_diff = SYNTHETIC_DIFF_RANGES[col]
                 col_seed = int(hashlib.md5(f"{household_id}_{col}".encode()).hexdigest(), 16) % (2**32)
                 col_rng = Generator(PCG64(seed=col_seed))
