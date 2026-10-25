@@ -10,7 +10,7 @@ keeps them and still loses an implausible one.
 import pandas as pd
 import pytest
 
-from etdmap.data_model import cadence_lookup_names, scale_bounds, thresholds_dict
+from etdmap.data_model import complement_lookup_names, scale_bounds, thresholds_dict
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import apply_thresholds_to_df, cadence_minutes_by_column
 
@@ -62,12 +62,12 @@ class TestScaleBounds:
 
 class TestCadenceLookup:
     def test_a_column_is_found_under_its_own_name(self):
-        assert COL in cadence_lookup_names(COL)
+        assert COL in complement_lookup_names(COL)
 
     def test_a_derived_interval_column_is_found_under_its_cumulative(self):
         """Cadence is measured on the columns as delivered, so the interval
         column is not in the table under its own name."""
-        assert CUM in cadence_lookup_names(COL)
+        assert CUM in complement_lookup_names(COL)
 
     def test_a_cadence_row_on_the_cumulative_resolves_to_the_interval_column(self):
         resolved = cadence_minutes_by_column(_cadence(CUM, 15))

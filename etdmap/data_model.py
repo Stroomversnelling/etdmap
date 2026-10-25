@@ -659,7 +659,7 @@ def parse_device_declaration(cell) -> set:
     return names
 
 
-def cadence_lookup_names(column: str) -> list[str]:
+def complement_lookup_names(column: str) -> list[str]:
     """
     The names *column*'s cadence may be recorded under.
 
@@ -714,7 +714,7 @@ def cadence_minutes_by_column(cadence) -> dict:
     }
     resolved = dict(measured)
     for column in list(measured):
-        for name in cadence_lookup_names(column):
+        for name in complement_lookup_names(column):
             resolved.setdefault(name, measured[column])
     return resolved
 
