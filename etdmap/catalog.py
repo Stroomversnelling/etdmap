@@ -1,10 +1,10 @@
 """
-catalog.py — Pre-flight derivability check using the committed catalog parquet.
+catalog.py - Pre-flight derivability check using the committed catalog parquet.
 
 Checks whether all required target columns can be derived from the columns available
 in a mapped dataset, using the pre-built catalog in etdmap/data/catalog.parquet.
 
-No SymPy dependency — all checks are pure pandas + set operations on the catalog's
+No SymPy dependency - all checks are pure pandas + set operations on the catalog's
 lhs / rhs_vars columns.
 
 Usage:
@@ -76,6 +76,23 @@ rule_all_variables: set
 rule_lhs_variables, rule_rhs_variables, rule_all_variables = _build_rule_variable_sets()
 
 
+def rebuild_rule_variable_sets() -> None:
+    """
+    Rebuild the rule variable sets in place from Rule.csv as it now stands.
+
+    Called by :func:`etdmap.data_model.rebuild_model`, which owns when the
+    model changes. In place because importers hold these sets themselves.
+    """
+    lhs, rhs, all_variables = _build_rule_variable_sets()
+    for target, value in (
+        (rule_lhs_variables, lhs),
+        (rule_rhs_variables, rhs),
+        (rule_all_variables, all_variables),
+    ):
+        target.clear()
+        target.update(value)
+
+
 def load_catalog(catalog_path=None) -> pd.DataFrame:
     """
     Load the pre-built derivation catalog from etdmap package data.
@@ -123,7 +140,7 @@ def check_derivability(
     'available' and may unlock further derivations in subsequent passes.
 
     Targets that are already in 'available' are considered satisfied (no derivation
-    needed — the provider supplied them directly).
+    needed - the provider supplied them directly).
 
     Parameters
     ----------
@@ -138,8 +155,8 @@ def check_derivability(
     Returns
     -------
     dict with keys:
-      derivable : set[str]   — required targets that can be derived (not already available)
-      not_derivable : set[str] — required targets that cannot be derived
+      derivable : set[str]   - required targets that can be derived (not already available)
+      not_derivable : set[str] - required targets that cannot be derived
     """
     known = set(available)
     remaining = {t for t in required_targets if t not in known}
@@ -150,7 +167,7 @@ def check_derivability(
         changed = False
         still_remaining = set()
         for target in remaining:
-            # Check if any catalog entry has lhs==target and rhs_vars ⊆ known
+            # Check if any catalog entry has lhs==target and rhs_vars a subset of known
             target_rows = catalog_df[catalog_df["lhs"] == target]
             can_derive = any(
                 set(row["rhs_vars"]) <= known

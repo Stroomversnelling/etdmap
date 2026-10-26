@@ -11,7 +11,7 @@ Install with the ``testing`` extra to use this module.
 import hashlib
 import logging
 import os
-import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import NamedTuple
 
@@ -19,24 +19,22 @@ import pandas as pd
 from numpy.random import PCG64, Generator
 
 import etdmap
+import etdmap.data_model as data_model
 import etdmap.index_helpers as index_helpers
 import etdmap.mapping_helpers as mapping
-from etdmap.data_model import (
-    cumulative_columns,
-    interval_column,
-    scale_bounds,
-    thresholds_dict,
-)
-from etdmap.index_helpers import read_metadata
+from etdmap.index_helpers import bsv_metadata_columns, read_metadata
 from etdmap.record_validators import record_flag_conditions
 
 __all__ = [
+    "CADENCE_DTYPES",
     "SYNTHETIC_DIFF_RANGES",
     "SyntheticModel",
+    "cadence_sidecar",
     "declare_synthetic_model",
     "generate_mapped_dataset",
     "generate_raw_dataset",
     "installed_fingerprint",
+    "model_rows",
     "synthetic_model",
 ]
 
@@ -94,10 +92,17 @@ def synthetic_model(
 
     Pass the result to :func:`declare_synthetic_model`.
     """
-    device, device_complement = stem, f"{stem}_Complement"
-    high, low = f"{stem}_High", f"{stem}_Low"
-    high_complement, low_complement = f"{high}_Complement", f"{low}_Complement"
-    plain_complement = f"{plain}_Complement"
+    # Tariff registers are paired by name, so a declared model gets tariff
+    # splits only if its registers carry the substrings
+    # _build_tariff_register_pairs matches, and its interval columns the one
+    # suffix that pattern's suffix group accepts. The cumulative-to-interval
+    # link is declared through ComplementVariabele and needs no convention, so
+    # the suffix is here for the tariff pattern alone. The stems name nothing
+    # the real model names.
+    device, device_complement = stem, f"{stem}Diff"
+    high, low = f"{stem}Hoog", f"{stem}Laag"
+    high_complement, low_complement = f"{high}Diff", f"{low}Diff"
+    plain_complement = f"{plain}Diff"
 
     pairs = (
         (device, device_complement),
@@ -137,74 +142,157 @@ def synthetic_model(
     )
 
 
-def declare_synthetic_model(monkeypatch, model: SyntheticModel = None):
+def model_rows(model: SyntheticModel) -> tuple[list, list]:
+    """The etdmodel and thresholds rows *model* declares.
+
+    The translation from a declaration to the two tables the data model is
+    built from, so a declared model goes through the same derivation the
+    shipped one does rather than through lookups assembled here.
+
+    Returns
+    -------
+    tuple
+        ``(etdmodel rows, thresholds rows)``, both lists of mappings.
+    """
+    intervals = set(model.monotonic_intervals)
+    rows = []
+    for column, complement in model.complements.items():
+        is_interval = column in intervals
+        rows.append({
+            "Variabele": column,
+            "Entiteit": "Prestatiedata",
+            "Type variabele": "number",
+            "Cumulatief": "nee" if is_interval else "ja",
+            # The cumulative side carries Monotoon, which is what puts its
+            # interval column in monotonic_interval_columns.
+            "Monotoon": "nee" if is_interval else "ja",
+            "Momentaan": "nee",
+            "Diff": "ja" if is_interval else "nee",
+            "ComplementVariabele": complement,
+        })
+
+    threshold_rows = [
+        {"Variabele": column, **entry}
+        for column, entry in model.thresholds.items()
+    ]
+    return rows, threshold_rows
+
+
+@contextmanager
+def declare_synthetic_model(model: SyntheticModel = None):
     """Install *model* as the model every loaded etd module reads.
 
     Consumers bind these names with ``from etdmap.data_model import ...``,
-    which copies the object into their own namespace, so patching
-    ``data_model`` alone would leave them reading the real model. The
-    declaration is therefore applied to every loaded ``etd*`` module holding
-    one of the names -- which also means a module that starts consuming one
-    later is covered without this helper being updated.
+    which copies the object into their own namespace. Rather than patch each
+    of those bindings, the declaration is merged into the model tables and
+    every derived structure is rebuilt in place, so a module reading one of
+    them reads the declaration without being patched, and a module that starts
+    reading one later is covered without this helper being updated.
 
-    What is replaced is everything that answers "which columns belong to one
-    variable, and what may it read":
+    The declaration supplies rows; everything that answers "which columns
+    belong to one variable, and what may it read" is then derived from them --
+    the complement and tariff pairings, the monotonic interval columns, the
+    thresholds, and the per-column checks.
 
-    - ``complement_column``, ``cumulative_column``, ``interval_column``
-    - ``tariff_root_to_splits``
-    - ``monotonic_interval_columns``
-    - ``thresholds_dict``
+    The declaration is merged into the shipped model rather than replacing it,
+    so a column the declaration does not mention keeps whatever the model says
+    about it. State in ``model.thresholds`` the bound of every column a code
+    path under test looks up, so the test does not rest on a shipped number.
 
-    ``thresholds_dict`` is replaced rather than merged, deliberately: a test
-    that declares its own model should not also inherit bounds for columns
-    it never mentions. Add entries to ``model.thresholds`` for any further
-    column a code path under test looks up.
+    On exit the model is rebuilt from the shipped tables. A declared column
+    reaches more structures than its own row names, so the restore is a
+    rebuild rather than an undo of the entries that were written.
 
-    Returns the model, so a test can read its column names from it.
+    Yields the model, so a test can read its column names from it.
     """
     model = model if model is not None else synthetic_model()
-    cumulatives = {cumulative for cumulative in model.complements
-                   if cumulative not in model.monotonic_intervals}
+    rows, threshold_rows = model_rows(model)
+    data_model.rebuild_model(
+        extra_model_rows=rows, extra_threshold_rows=threshold_rows
+    )
+    try:
+        yield model
+    finally:
+        data_model.rebuild_model()
 
-    def _complement(column):
-        return model.complements.get(column)
 
-    def _cumulative(column):
-        """The cumulative side of *column*, or None where there is none."""
-        found = model.complements.get(column)
-        return found if found in cumulatives else None
+#: The sidecar's dtypes, as :func:`etdmap.mapping_helpers.detect_column_cadence`
+#: returns them. A hand-built table that gets one of these wrong is accepted by
+#: the frame and then read differently by whatever consumes it.
+CADENCE_DTYPES = {
+    "column": "string",
+    "cadence_minutes": "Int64",
+    "cadence_source": "string",
+    "cadence_detected": "Int64",
+    "confidence": "Float64",
+    "n_readings": "Int64",
+}
 
-    def _interval(column):
-        """The interval side of *column*, or None where there is none."""
-        found = model.complements.get(column)
-        return found if found in model.monotonic_intervals else None
 
-    replacements = {
-        "complement_column": _complement,
-        "cumulative_column": _cumulative,
-        "interval_column": _interval,
-        "tariff_root_to_splits": model.tariff_splits,
-        "monotonic_interval_columns": model.monotonic_intervals,
-        "thresholds_dict": model.thresholds,
-    }
+def cadence_sidecar(
+    columns,
+    *,
+    minutes=5,
+    grid_minutes=None,
+    source="declared",
+    detected=pd.NA,
+    confidence=pd.NA,
+    n_readings=pd.NA,
+    date_column="ReadingDate",
+) -> pd.DataFrame:
+    """
+    The per-column cadence table for one household, as a test needs it.
 
-    patched = 0
-    for module in list(sys.modules.values()):
-        if not getattr(module, "__name__", "").startswith("etd"):
-            continue
-        for name, replacement in replacements.items():
-            if getattr(module, name, None) is None:
-                continue
-            monkeypatch.setattr(module, name, replacement)
-            patched += 1
-    if not patched:
-        raise ValueError(
-            "[declare_synthetic_model] no loaded etd module exposes any of "
-            f"{sorted(replacements)}, so the declared model would not be "
-            "read by anything. Import the module under test before calling "
-            "this."
-        )
-    return model
+    What :func:`etdmap.mapping_helpers.detect_column_cadence` produces, without
+    running a detection: a test stating the cadence it means to exercise says so
+    rather than building a frame whose timestamps imply it.
+
+    *columns* is either names, all at *minutes*, or a mapping of name to its own
+    cadence. The *date_column* row is always present and carries *grid_minutes*,
+    defaulting to *minutes*, because the grid is read from that row and a table
+    without it resolves no grid at all.
+
+    Parameters
+    ----------
+    columns : iterable of str, or mapping of str to float
+        The columns to record, and their cadence where it differs.
+    minutes : float
+        Cadence for any column whose own value is not given.
+    grid_minutes : float, optional
+        The interval the dataset is recorded on. Defaults to *minutes*.
+    source : str
+        ``'declared'``, ``'detected'`` or ``'dataset'``.
+    detected, confidence, n_readings
+        What a detection would have measured. Default to pd.NA, which is what a
+        declared cadence carries.
+    date_column : str
+        Name of the timestamp column, whose row carries the grid.
+    """
+    per_column = (
+        dict(columns) if hasattr(columns, "items")
+        else {column: minutes for column in columns}
+    )
+    rows = [{
+        "column": date_column,
+        "cadence_minutes": minutes if grid_minutes is None else grid_minutes,
+        "cadence_source": source,
+        "cadence_detected": detected,
+        "confidence": confidence,
+        "n_readings": n_readings,
+    }]
+    rows += [
+        {
+            "column": column,
+            "cadence_minutes": column_minutes,
+            "cadence_source": source,
+            "cadence_detected": detected,
+            "confidence": confidence,
+            "n_readings": n_readings,
+        }
+        for column, column_minutes in per_column.items()
+        if column != date_column
+    ]
+    return pd.DataFrame(rows).astype(CADENCE_DTYPES)
 
 
 def installed_fingerprint(*extra_files) -> str:
@@ -272,22 +360,118 @@ SYNTHETIC_DIFF_RANGES: dict[str, tuple[float, float]] = {
 }
 
 
-def generate_raw_dataset(output_dir):
-    """
-    Pytest fixture to generate raw household data for 2 projects with 5 households each with a minimal index file.
-    Saves the generated files in a temporary directory.
+#: The dataset's shape, where a caller states none. Two projects because a
+#: project aggregate needs more than one, and enough households per project to
+#: meet the averaging floor, so a run exercises the production constant instead
+#: of a lowered one. Three days because the coarsest resample is daily and a
+#: single day gives it no interior slot.
+DEFAULT_HOUSEHOLDS_PER_PROJECT = 10
+DEFAULT_PROJECTS = 2
+DEFAULT_DAYS = 3
+DEFAULT_GRID = "5min"
+DEFAULT_BASE_DATE = pd.Timestamp("2023-01-01")
 
-    It will use household 1 and some variables to generate some expected mistakes/problems so we can test our validators and mapping process.
+#: One gap, in one column of one household. Not realism: with no gap anywhere
+#: imputation produces its artifacts having filled nothing, so a run cannot
+#: show the fill placing volume or the gap accumulator recording any. What the
+#: fill does with a gap is asserted per behaviour, on frames those tests build.
+#: Declared by household number and span fraction so it lands inside whatever
+#: shape the caller asked for.
+GAP_HOUSEHOLD = 1
+GAP_COLUMN = "Gasgebruik"
+GAP_START_FRACTION = 0.5
+GAP_SLOTS = 12
+
+
+def _blank_a_span(household_df, column, start_fraction, slots):
+    """*household_df* with *slots* readings of *column* set to pd.NA."""
+    start = int(len(household_df) * start_fraction)
+    household_df.loc[start:start + slots - 1, column] = pd.NA
+    return household_df
+
+
+#: One value per declared supplier metadata column, by dtype. The values are
+#: not the subject of any test; a column being declared and typed is, since the
+#: index join takes its dtypes from here.
+_SUPPLIER_METADATA_VALUES = {
+    "string": "synthetic",
+    "Float64": 1.0,
+    "Int64": 1,
+    "boolean": True,
+}
+
+
+def synthetic_supplier_metadata(household_keys) -> pd.DataFrame:
+    """
+    The supplier metadata frame for *household_keys*, from the model.
+
+    What :func:`etdmap.index_helpers.read_metadata` returns for a workbook,
+    without one: a row per household over exactly the columns the model lets a
+    supplier declare. Generated rather than read so the household count is the
+    caller's -- a workbook fixes it, and a dataset shaped for a behaviour then
+    has households the metadata does not cover.
+
+    Typed through :func:`etdmap.index_helpers.set_metadata_dtypes`, which is
+    where both declaration styles and the boolean synonyms are applied.
+
+    Parameters
+    ----------
+    household_keys : iterable of (str, str)
+        ``(HuisIdLeverancier, ProjectIdLeverancier)`` per household.
+    """
+    from etdmap.data_model import (
+        allowed_supplier_metadata_columns,
+        supplier_metadata_dtypes,
+    )
+    from etdmap.index_helpers import set_metadata_dtypes
+
+    keys = list(household_keys)
+    frame = pd.DataFrame({
+        "HuisIdLeverancier": [household for household, _ in keys],
+        "ProjectIdLeverancier": [project for _, project in keys],
+    })
+    for column in allowed_supplier_metadata_columns:
+        if column in frame.columns:
+            continue
+        declared = str(supplier_metadata_dtypes.get(column, "string"))
+        if declared not in _SUPPLIER_METADATA_VALUES:
+            raise ValueError(
+                f"synthetic_supplier_metadata: '{column}' is declared "
+                f"'{declared}', which has no value here. Add one, so a model "
+                f"column cannot be silently absent from the fixture."
+            )
+        frame[column] = [_SUPPLIER_METADATA_VALUES[declared]] * len(keys)
+    return set_metadata_dtypes(metadata_df=frame[allowed_supplier_metadata_columns])
+
+
+def generate_raw_dataset(
+    output_dir,
+    *,
+    households_per_project=DEFAULT_HOUSEHOLDS_PER_PROJECT,
+    projects=DEFAULT_PROJECTS,
+    days=DEFAULT_DAYS,
+    base_date=DEFAULT_BASE_DATE,
+    time_interval=DEFAULT_GRID,
+):
+    """
+    Raw supplier-shaped household data, with a minimal index file.
+
+    A clean, complete dataset: every cumulative column present and populated,
+    non-decreasing from zero, on an unbroken grid, with every value inside its
+    declared bound. What a stage does with a fault is asserted per fault, on a
+    frame the test builds, so nothing is injected here.
+
+    The shape is the caller's. It decides which behaviours a run can reach -- a
+    project below the averaging floor cannot publish an average, and a span
+    shorter than an interval gives that interval no slot -- so a caller testing
+    one of those states its own shape rather than inheriting this one.
 
     Returns:
         str: Path to the directory containing the generated fixture data.
     """
-    # Settings
-    num_households_per_project = 5
-    projects = [1, 2]
-    num_records = 105120  # 1 year of data at 5-minute intervals
-    base_date = pd.Timestamp("2023-01-01")
-    time_interval = "5min"  # 5-minute intervals
+    per_interval = pd.Timedelta(time_interval)
+    num_records = int(pd.Timedelta(days=days) / per_interval)
+    project_ids = list(range(1, projects + 1))
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -296,15 +480,11 @@ def generate_raw_dataset(output_dir):
     index_raw = []
     index_bsv = []
 
-    # Explicitly define the bit generator to ensure the algorithm/seed don't change
-    bit_generator = PCG64(seed=42)
-    rng = Generator(bit_generator)
-
     # Generate data for each household
-    for project_id in projects:
-        for household_idx in range(1, num_households_per_project + 1):
+    for project_id in project_ids:
+        for household_idx in range(1, households_per_project + 1):
             # Generate unique HuisIdBSV
-            household_id = (project_id - 1) * num_households_per_project + household_idx
+            household_id = (project_id - 1) * households_per_project + household_idx
 
             # Preconstruct the prefixed strings
             household_prefixed = f"Huis{household_id:02}"
@@ -330,14 +510,10 @@ def generate_raw_dataset(output_dir):
                 household_data[col] = cumulative
 
             household_df = pd.DataFrame(household_data)
-            # The interval these rows were built at, passed rather than
-            # defaulted again: the test cases place gaps and shifts relative to
-            # it, so a second copy of the figure could silently disagree.
-            household_df = add_raw_data_test_case(
-                base_date, household_df, household_id_raw=household_prefixed,
-                project_id_raw=project_prefixed, rng=rng,
-                interval=pd.Timedelta(time_interval),
-            )
+            if household_id == GAP_HOUSEHOLD:
+                household_df = _blank_a_span(
+                    household_df, GAP_COLUMN, GAP_START_FRACTION, GAP_SLOTS
+                )
 
             file_path = os.path.join(output_dir, f"household_{household_id}_table.parquet")
             household_df.to_parquet(file_path, index=False)
@@ -356,214 +532,6 @@ def generate_raw_dataset(output_dir):
 
     logging.info(f"Fixture generated in directory: {output_dir}")
     return output_dir
-
-
-# cases to add:
-#    mixed data types in a single column - are they reported and coerced correctly?
-#    drifting clocks - are they detected and corrected?
-#    less records than expected - are they reported?
-def add_raw_data_test_case(
-    base_date, household_df, household_id_raw, project_id_raw, rng, interval
-):
-    """Inject one household's deliberate fault into the generated raw data.
-
-    *interval* is the spacing the rows were generated at. It is required: the
-    cases below place gaps, shifts and duplicate readings relative to it, so a
-    default here would be a second copy of a figure the caller already holds and
-    could silently disagree with it.
-    """
-    if interval is None or pd.isna(interval):
-        raise ValueError(
-            "add_raw_data_test_case: interval was not given, so the spacing the "
-            "injected test cases are placed at is unknown."
-        )
-
-    if (household_id_raw == "Huis1") and (project_id_raw == "Project1"):
-        # There is a gap in data but after gap it continues (shift data down 24h)
-        # Define conditions
-        gap_start = base_date + pd.Timedelta(days=30)
-        gap_length = pd.Timedelta(hours=24)
-        var = cumulative_columns[0]
-        household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length, shift = True)
-
-    elif (household_id_raw == "Huis2") and (project_id_raw == "Project1"):
-        # there is a gap in data but after gap it continues with the same starting value (shift data down 24h + copying the last value)
-        # Define conditions
-        gap_start = base_date + pd.Timedelta(days=60)
-        gap_length_adjusted = pd.Timedelta(hours=24) + interval
-        gap_end = gap_start + pd.Timedelta(hours=24)
-        var = cumulative_columns[1]
-        last_value = household_df.loc[household_df['ReadingDate'] == gap_start - interval, var]
-        if pd.isna(last_value).any():
-            raise ValueError(f"Last value before gap at {gap_start - interval} is missing for {var}")
-        household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length_adjusted, shift = True)
-        # fill value at gap_end time with the last value before the gap
-        household_df.loc[household_df['ReadingDate'] == gap_end, var] = last_value
-
-    elif (household_id_raw == "Huis3") and (project_id_raw == "Project1"):
-        # there is a gap in data and after the gap, the meter was reset to 0. Subtract the last value before the gap from all values after the gap.
-        # Define conditions
-        gap_start = base_date + pd.Timedelta(days=90)
-        gap_length = pd.Timedelta(hours=24)
-        gap_end = gap_start + gap_length
-        var = cumulative_columns[2]
-        household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length, shift = True)
-        household_df = reset_cumulative_column(household_df=household_df, columns=[var], reset_time=gap_end, check_negative = True)
-
-    elif (household_id_raw == "Huis4") and (project_id_raw == "Project1"):
-        # there is no gap in the data but the meter was reset to 0 at some point. Subtract the last value before the reset from all values after the reset.
-        meter_reset_date = base_date + pd.Timedelta(days=120)
-        var = cumulative_columns[3]
-        household_df = reset_cumulative_column(household_df=household_df, columns=[var], reset_time=meter_reset_date, check_negative = True)
-
-    elif (household_id_raw == "Huis5") and (project_id_raw == "Project1"):
-        # there is 24 hour gap in the data. Delete 24hrs of data and do not shift it down. There should be a big jump in the value as a result.
-        gap_start = base_date + pd.Timedelta(days=150)
-        gap_length = pd.Timedelta(hours=24)
-        var = cumulative_columns[4]
-        household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length, shift = False)
-
-    elif (household_id_raw in ["Huis6","Huis7", "Huis8", "Huis9", "Huis10"]) and (project_id_raw == "Project2"):
-        # at the same time for each household there is 24h gap in all data. Delete 24hs of data and do not shift it down. There should be a big jump in the value as a result.
-        gap_start = base_date + pd.Timedelta(days=180)
-        gap_length = pd.Timedelta(hours=24)
-        var = cumulative_columns[0]
-        household_df = introduce_gap(household_df=household_df, columns=[var], gap_start=gap_start, gap_length=gap_length, shift = False)
-
-    # There is a single variable that only has data every hour - insert pd.NA unless at the hour
-    hourly_var = cumulative_columns[5]
-    mask_hourly = (household_df['ReadingDate'].dt.minute != 0)
-    household_df.loc[mask_hourly, hourly_var] = pd.NA
-
-    # There is a single variable that only has data every 15 minutes - insert pd.NA unless at the 15 minute mark
-    fifteen_min_var = cumulative_columns[6]
-    mask_fifteen_min = (household_df['ReadingDate'].dt.minute % 15 != 0)
-    household_df.loc[mask_fifteen_min, fifteen_min_var] = pd.NA
-
-    # There is a single variable the supplier delivers as intervals only: the
-    # interval column carries hourly readings and the register is never sent, so
-    # nothing downstream has a running total to read for it. One tick is dropped
-    # so an absent reading can be told apart from the gaps between them.
-    #
-    # The variable is outside every sum validator and outside the infrequent-
-    # device fill-down, so the scenario adds a delivery form without changing
-    # what any existing check or case covers.
-    interval_only_var = "WarmteproductieRuimteverwarming"
-    interval_only_col = interval_column(interval_only_var)
-    hourly_ticks = household_df["ReadingDate"].dt.minute == 0
-    tick_seed = int(
-        hashlib.md5(f"{household_id_raw}_{interval_only_col}".encode()).hexdigest(), 16
-    ) % (2**32)
-    tick_rng = Generator(PCG64(seed=tick_seed))
-    # Drawn against the column's own hourly bound rather than twelve times its
-    # 5-minute one: a '5-minute' threshold scales sub-linearly, since an hour
-    # cannot sustain a five-minute peak. Readings land below the bound, so this
-    # is a plausible coarse delivery and not a second out-of-bounds case.
-    _, hourly_max = scale_bounds(thresholds_dict[interval_only_col], 60)
-    hourly_values = tick_rng.uniform(
-        0.0, float(hourly_max) * 0.8, size=int(hourly_ticks.sum())
-    )
-    delivered = pd.Series(pd.NA, index=household_df.index, dtype="Float64")
-    delivered.loc[hourly_ticks] = hourly_values
-    missed_tick = household_df.index[hourly_ticks][24]
-    delivered.loc[missed_tick] = pd.NA
-    household_df[interval_only_col] = delivered
-    household_df[interval_only_var] = pd.NA
-
-    ## There is a single variable that exceeds the upper limits
-    household_df[cumulative_columns[7]] = household_df[cumulative_columns[7]]*2
-
-    ## There is a single variable that is negative (some of the time)
-    # Define the probability of flipping a value to negative (e.g., 0.1 means 10% chance)
-    flip_probability = 0.005
-    # Create a boolean mask with True where we want to flip the values to negative
-    mask = rng.random(size=household_df.shape[0]) < flip_probability
-    # Apply the mask to flip some of the values in the specified column to their negatives
-    household_df.loc[mask, cumulative_columns[8]] *= -1
-
-    return household_df
-
-
-def shift_values(household_df, columns, shift_amount, gap_start=None):
-    """
-    Shift values in a column by a specific time delta.
-
-    Args:
-        household_df (pd.DataFrame): The household data.
-        columns (list): List of columns to shift values in.
-        shift_amount (pd.Timedelta): The amount of time to shift.
-        gap_start (pd.Timestamp, optional): If provided, apply the shift only for rows after this time.
-
-    Returns:
-        pd.DataFrame: Modified DataFrame with shifted values.
-    """
-    shifted_df = household_df[["ReadingDate", *columns]].copy()
-    if gap_start:
-        mask = household_df['ReadingDate'] >= gap_start
-        shifted_df.loc[mask, 'ReadingDate'] += shift_amount
-    else:
-        shifted_df['ReadingDate'] += shift_amount
-
-    # Merge shifted values back into the original DataFrame
-    household_df = household_df.drop(columns=columns)
-    household_df = household_df.merge(shifted_df, on='ReadingDate', how='left')
-
-    # Make sure the gap is filled with pd.NA
-    if gap_start:
-        mask_gap = (household_df['ReadingDate'] >= gap_start) & (household_df['ReadingDate'] < gap_start + shift_amount)
-        household_df.loc[mask_gap, columns] = pd.NA
-
-    return household_df
-
-
-def introduce_gap(household_df, columns, gap_start, gap_length, shift=True):
-    """
-    Introduce a gap in the specified columns by setting values to pd.NA in the gap range.
-
-    Args:
-        household_df (pd.DataFrame): The household data.
-        columns (list): List of columns to apply the gap.
-        gap_start (pd.Timestamp): Start of the gap.
-        gap_length (pd.Timedelta): The length of the gap.
-        shift (bool): If True, shift existing values. If False, overwrite with pd.NA.
-
-    Returns:
-        pd.DataFrame: Modified DataFrame with the gap.
-    """
-
-    if shift:
-        return shift_values(household_df=household_df, columns=columns, shift_amount=gap_length, gap_start=gap_start)
-    else:
-        gap_end = gap_start + gap_length
-        mask = (household_df['ReadingDate'] >= gap_start) & (household_df['ReadingDate'] < gap_end)
-        household_df.loc[mask, columns] = pd.NA
-        return household_df
-
-
-def reset_cumulative_column(household_df, columns, reset_time, check_negative = True):
-    """
-    Resets the cumulative column to 0 after a given time
-
-    Args:
-        household_df (pd.DataFrame): The household data.
-        columns (list): List of columns to reset.
-        reset_time (pd.Timestamp): The time at which the meter reset occurs.
-        check_negative (bool): If True, asserts there should be no negative values after reset. Default is True.
-
-    Returns:
-        pd.DataFrame: Modified DataFrame with reset cumulative values.
-    """
-    for col in columns:
-        reset_value = pd.Series(household_df.loc[household_df['ReadingDate'] == reset_time, col].values).iloc[0]
-        if pd.isna(reset_value):
-            raise ValueError(f"No data available at reset time {reset_time} for column: {col}")
-        mask_reset = household_df['ReadingDate'] > reset_time
-        household_df.loc[mask_reset, col] -= reset_value
-
-        if check_negative:
-            assert all(household_df.loc[mask_reset, col] >= 0), "Values of column `{col}` after reset should not be negative"
-
-    return household_df
 
 
 def _list_files_data_fixture(folder_path):
@@ -655,10 +623,13 @@ def generate_mapped_dataset(
     target_folder,
     *,
     bsv_metadata_file,
-    supplier_metadata_xlsx_file,
+    supplier_metadata_xlsx_file=None,
     project_mapping_csv_path=None,
     raw_folder=None,
-    households=10,
+    households_per_project=DEFAULT_HOUSEHOLDS_PER_PROJECT,
+    projects=DEFAULT_PROJECTS,
+    days=DEFAULT_DAYS,
+    base_date=DEFAULT_BASE_DATE,
 ):
     """Generate the synthetic mapped dataset into *target_folder*.
 
@@ -678,26 +649,48 @@ def generate_mapped_dataset(
     raw_folder = Path(raw_folder) if raw_folder else target_folder.parent / "raw_fixture"
     project_mapping_csv_path = project_mapping_csv_path or bsv_metadata_file
 
-    raw_folder = generate_raw_dataset(raw_folder)
+    raw_folder = generate_raw_dataset(
+        raw_folder,
+        households_per_project=households_per_project,
+        projects=projects,
+        days=days,
+        base_date=base_date,
+    )
 
     etdmap.options.mapped_folder_path = target_folder
     etdmap.options.bsv_metadata_file = Path(bsv_metadata_file)
 
-    # The household-batch sync CSV sits beside the metadata. The real index
-    # write path populates index.parquet's batch columns from it, so fixtures
-    # exercise production code rather than a fixture-only derivation.
+    # The generated metadata sits inside the generated tree. The real index
+    # write path populates index.parquet's batch columns from the sync CSV, so
+    # fixtures exercise production code rather than a fixture-only derivation.
+    # Writing it beside the supplied metadata instead would put it in a folder
+    # the caller owns and two suites configured alike would share one copy.
     # Meenemen is empty: the researcher adds the rows and reviews later.
-    fixtures_dir = Path(bsv_metadata_file).parent
+    fixtures_dir = target_folder / "_generated_metadata"
+    fixtures_dir.mkdir(parents=True, exist_ok=True)
+    households = households_per_project * projects
+    household_ids = list(range(1, households + 1))
+    # The project each household was generated into, by the same arithmetic
+    # generate_raw_dataset assigns it. Declaring one project for all of them
+    # would contradict the index, which splits them.
+    project_of = [
+        ((household_id - 1) // households_per_project) + 1
+        for household_id in household_ids
+    ]
+    # The span the data actually covers. A window that does not contain the
+    # readings would make the batch disagree with the household files.
+    start = pd.Timestamp(base_date)
+    end = start + pd.Timedelta(days=days)
     pd.DataFrame({
-        "HuisIdBSV": pd.array(range(1, households + 1), dtype="Int64"),
-        "HuisBatchIdBSV": pd.array(range(1, households + 1), dtype="Int64"),
+        "HuisIdBSV": pd.array(household_ids, dtype="Int64"),
+        "HuisBatchIdBSV": pd.array(household_ids, dtype="Int64"),
         "BatchIdBSV": pd.array([1] * households, dtype="Int64"),
-        "ProjectIdBSV": pd.array([1] * households, dtype="Int64"),
+        "ProjectIdBSV": pd.array(project_of, dtype="Int64"),
         "Meenemen": pd.array([pd.NA] * households, dtype="boolean"),
-        "Gegevensfrequentie": pd.array(["5min"] * households, dtype="string"),
+        "Gegevensfrequentie": pd.array([DEFAULT_GRID] * households, dtype="string"),
         "Leverancierfrequentie": pd.array([pd.NA] * households, dtype="string"),
-        "Startdatum": ["2024-01-01 00:00:00 UTC"] * households,
-        "Einddatum": ["2025-01-01 00:00:00 UTC"] * households,
+        "Startdatum": [f"{start:%Y-%m-%d %H:%M:%S} UTC"] * households,
+        "Einddatum": [f"{end:%Y-%m-%d %H:%M:%S} UTC"] * households,
     }).to_csv(fixtures_dir / "household_batch_sync.csv", index=False)
     etdmap.options.household_batch_csv_path = fixtures_dir / "household_batch_sync.csv"
 
@@ -723,9 +716,7 @@ def generate_mapped_dataset(
     )
 
     cadence_rows = []
-    for count, (household_id, file_name) in enumerate(household_id_pairs):
-        if count >= households:
-            break
+    for household_id, file_name in household_id_pairs:
         logging.info(f"Starting {file_name}")
         # Read from the batch CSV written just above, the same way a mapper
         # resolves it, rather than repeating the fixture's own interval here.
@@ -743,11 +734,50 @@ def generate_mapped_dataset(
     # fixture is not something the pipeline can be run against.
     mapping.write_column_cadence(cadence_rows, str(etdmap.options.mapped_folder_path))
 
-    etdmap.options.project_mapping_csv_path = project_mapping_csv_path
-    metadata_df = read_metadata(Path(supplier_metadata_xlsx_file))
+    # The project mapping covers every project this dataset generated. A
+    # supplied file covers whatever it was written for, so a dataset with more
+    # projects than that leaves ProjectIdBSV unresolved on the rest.
+    generated_project_mapping = fixtures_dir / "project_mapping.csv"
+    pd.DataFrame({
+        "Dataleverancier": pd.array(["etdmap"] * projects, dtype="string"),
+        "ProjectIdLeverancier": pd.array(
+            [f"Project{project_id:02}" for project_id in range(1, projects + 1)],
+            dtype="string",
+        ),
+        "ProjectIdBSV": pd.array(range(1, projects + 1), dtype="Int64"),
+    }).to_csv(generated_project_mapping, index=False)
+    etdmap.options.project_mapping_csv_path = (
+        project_mapping_csv_path or generated_project_mapping
+    )
+
+    # Generated for the households this run made, for the same reason.
+    metadata_df = (
+        read_metadata(Path(supplier_metadata_xlsx_file))
+        if supplier_metadata_xlsx_file is not None
+        else synthetic_supplier_metadata(
+            zip(index_df["HuisIdLeverancier"], index_df["ProjectIdLeverancier"])
+        )
+    )
     index_helpers.add_supplier_metadata_to_index(
         index_df, metadata_df, data_supplier="etdmap"
     )
 
-    etdmap.options.bsv_metadata_file = reviewed_metadata
+    # The reviewed metadata, derived from the index this run just built rather
+    # than from the file the caller supplied. A supplied file fixes the
+    # household count, so the shape could not be the caller's and a dataset
+    # shaped for a behaviour -- a project large enough to meet the averaging
+    # floor, say -- would fail the household-key comparison in update_include.
+    # Meenemen is True throughout: the review has happened by this point, and a
+    # household it excluded would be absent from every stage downstream.
+    reviewed = index_df.loc[:, bsv_metadata_columns].copy()
+    reviewed["Meenemen"] = pd.array([True] * len(reviewed), dtype="boolean")
+    # Declared empty rather than absent: the device-absence reader refuses
+    # metadata with no such column at all.
+    reviewed["ApparaatOntbrekend"] = pd.array(
+        [pd.NA] * len(reviewed), dtype="string"
+    )
+    generated_reviewed = fixtures_dir / "metadata_reviewed.csv"
+    reviewed.to_csv(generated_reviewed, index=False)
+
+    etdmap.options.bsv_metadata_file = generated_reviewed
     return etdmap.options.mapped_folder_path

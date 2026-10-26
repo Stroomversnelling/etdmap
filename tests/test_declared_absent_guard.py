@@ -25,7 +25,7 @@ BOILERVAT = "ElektriciteitsgebruikBoilervat"
 
 
 @pytest.fixture
-def model(monkeypatch):
+def model():
     """The model the guard reads, declared by the test.
 
     The guard's behaviour is about the model's *relations* -- which columns
@@ -34,7 +34,8 @@ def model(monkeypatch):
     metadata happens to say today, which is exactly the drift the synthetic
     declaration avoids.
     """
-    return declare_synthetic_model(monkeypatch)
+    with declare_synthetic_model() as declared:
+        yield declared
 
 
 def _frame(values, column=RADIATOR, n=None):

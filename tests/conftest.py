@@ -24,34 +24,6 @@ from etdmap.testing import (
 
 
 
-# set paths
-def _clean_mapped_folder(mapped_folder_path):
-    """Remove generated files from mapped folder to ensure clean test state."""
-    from pathlib import Path
-    mapped_folder = Path(mapped_folder_path)
-    if mapped_folder.exists():
-        for f in mapped_folder.glob("household_*.parquet"):
-            f.unlink()
-        index_file = mapped_folder / "index.parquet"
-        if index_file.exists():
-            index_file.unlink()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def clean_mapped_folder_before_tests():
-    """
-    Clean mapped folder before etdmap tests run.
-
-    This ensures tests start from a clean state without leftover files
-    from previous test runs. The mapped files are regenerated as part
-    of testing the mapping logic.
-    """
-    test_config_path = Path("config_test.yaml")
-    if os.path.isfile(test_config_path):
-        with open(test_config_path, 'r') as file:
-            config = yaml.safe_load(file)
-        _clean_mapped_folder(config['etdmap_configuration']['mapped_folder_path'])
-    yield
 def load_config(config_path):
         with open(config_path, 'r') as file:
             return yaml.safe_load(file)
@@ -62,19 +34,6 @@ if os.path.isfile(test_config_path):
 else:
         raise FileNotFoundError("no file named 'config_test.yaml'")
 
-file_names = [
-    "index.parquet",
-    "household_1_table.parquet",
-    "household_2_table.parquet",
-    "household_3_table.parquet",
-    "household_4_table.parquet",
-    "household_5_table.parquet",
-    "household_6_table.parquet",
-    "household_7_table.parquet",
-    "household_8_table.parquet",
-    "household_9_table.parquet",
-    "household_10_table.parquet",
-]
 
 def pytest_addoption(parser):
     parser.addoption("--copy-data", action="store_true", help="Copy data to a persistent folder")
@@ -126,31 +85,30 @@ def raw_data_fixture(tmp_path_factory):
 
 
 
-@pytest.fixture
-def load_metadata():
-    def _load_metadata(filepath):
-        with open(filepath, "r") as f:
-            return json.load(f)
-    # return inner function as ficture
-    return _load_metadata
 
 
 
 
 @pytest.fixture(scope="session")
 def mapped_fixtures(tmp_path_factory):
-    """The synthetic mapped dataset, generated into the configured folder.
+    """The synthetic mapped dataset, generated into this session's own folder.
 
     Generation lives in `etdmap.testing` so downstream suites can build the
     same dataset for themselves. Tests that read the mapped files request this
     fixture, so they run in any order or in isolation.
+
+    Into a temporary folder rather than the configured one: the dataset is
+    written and rewritten by the stages that read it, so a folder shared with
+    another suite or another run is state they pass between them.
     """
     config = load_config(Path("config_test.yaml"))["etdmap_configuration"]
+    # The supplier metadata and the project mapping are generated for the
+    # households this run makes. A supplied workbook covers the households it
+    # was written for, so the join leaves the rest unresolved as soon as the
+    # shape is the caller's.
     return generate_mapped_dataset(
-        config["mapped_folder_path"],
+        tmp_path_factory.mktemp("mapped_fixture") / "mapped",
         bsv_metadata_file=config["bsv_metadata_file"],
-        supplier_metadata_xlsx_file=config["supplier_metadata_xlsx_file"],
-        project_mapping_csv_path=config["project_mapping_csv_path"],
         raw_folder=tmp_path_factory.mktemp("raw_fixture"),
     )
 

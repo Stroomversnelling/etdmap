@@ -140,6 +140,29 @@ def load_thresholds() -> pd.DataFrame:
     )
 
 
+def threshold_entry(row) -> tuple:
+    """
+    The ``thresholds_dict`` key and value one threshold row contributes.
+
+    The single definition of what a threshold row means, so loading the whole
+    table and loading one column cannot disagree about it.
+
+    Returns
+    -------
+    tuple
+        ``(variable_name, entry)``.
+    """
+    return row["Variabele"], {
+        "Min": row["Min"],
+        "Max": row["Max"],
+        "ThresholdType": row["ThresholdType"],
+        # Shape the upper bound takes when scaled to a coarser cadence.
+        # Absent means the defaults in scale_upper_bound apply.
+        "UpperThresholdSustained": row.get("UpperThresholdSustained", pd.NA),
+        "UpperThresholdExponent": row.get("UpperThresholdExponent", pd.NA),
+    }
+
+
 def load_thresholds_as_dict() -> dict:
     """
     Load thresholds as {variable_name: {"Min", "Max", "ThresholdType"}}.
@@ -148,19 +171,9 @@ def load_thresholds_as_dict() -> dict:
     "cumulatief" or "algemeen" -- and ThresholdType names it. Min or Max may be
     pd.NA, meaning no bound is declared on that side.
     """
-    thresholds_dict = {}
-    for _, row in load_thresholds().iterrows():
-        col = row["Variabele"]
-        thresholds_dict[col] = {
-            "Min": row["Min"],
-            "Max": row["Max"],
-            "ThresholdType": row["ThresholdType"],
-            # Shape the upper bound takes when scaled to a coarser cadence.
-            # Absent means the defaults in scale_upper_bound apply.
-            "UpperThresholdSustained": row.get("UpperThresholdSustained", pd.NA),
-            "UpperThresholdExponent": row.get("UpperThresholdExponent", pd.NA),
-        }
-    return thresholds_dict
+    return dict(
+        threshold_entry(row) for _, row in load_thresholds().iterrows()
+    )
 
 
 def _validate_yes_no_column(df: pd.DataFrame, column: str) -> None:
@@ -285,8 +298,8 @@ def get_aggregation_config() -> dict:
 # Change the CSV (or set etdmap.options.etdmodel_csv_path) to update these.
 # ---------------------------------------------------------------------------
 
-def _build_derived_structures():
-    df = load_etdmodel()
+def _build_derived_structures(df=None):
+    df = load_etdmodel() if df is None else df
 
     # Sort Prestatiedata rows by Volgorde when available, fall back to CSV row order.
     # Volgorde is an explicit integer sequence column that defines the canonical
@@ -473,7 +486,7 @@ _TARIFF_RE = re.compile(
 )
 
 
-def _build_tariff_register_pairs() -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+def _build_tariff_register_pairs(df=None) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
     """
     Derive peak/off-peak tariff register pair structures from etdmodel.csv.
 
@@ -491,7 +504,7 @@ def _build_tariff_register_pairs() -> tuple[dict[str, str], dict[str, tuple[str,
             variable in etdmodel.csv -- consumers typically check whether it
             appears in the data they are processing.
     """
-    df = load_etdmodel()
+    df = load_etdmodel() if df is None else df
     variables = set(df["Variabele"].dropna().astype(str))
 
     partners: dict[str, str] = {}
@@ -536,7 +549,7 @@ tariff_partner_columns, tariff_root_to_splits = _build_tariff_register_pairs()
 COMPLEMENT_COLUMN = "ComplementVariabele"
 
 
-def _build_cumulative_interval_pairs() -> tuple[dict[str, str], dict[str, str]]:
+def _build_cumulative_interval_pairs(df=None) -> tuple[dict[str, str], dict[str, str]]:
     """
     Read the cumulative <-> interval link from ``ComplementVariabele``.
 
@@ -552,7 +565,7 @@ def _build_cumulative_interval_pairs() -> tuple[dict[str, str], dict[str, str]]:
         If a declared pair is not one Cumulatief=ja variable and one Diff=ja
         variable. The link is then unreadable rather than merely wrong.
     """
-    df = load_etdmodel()
+    df = load_etdmodel() if df is None else df
     if COMPLEMENT_COLUMN not in df.columns:
         return {}, {}
 
@@ -893,12 +906,12 @@ test_aggregation_columns: list[str] = [
 # bracket access -- use .get(key, []) for permissive callers.
 # ---------------------------------------------------------------------------
 
-def _build_indexed_lookups() -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+def _build_indexed_lookups(df=None) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """
     Return ({Categorie: [Variabele,...]}, {Eenheid: [Variabele,...]}) from
     etdmodel.csv. Rows with NA in the index column are skipped.
     """
-    df = load_etdmodel()
+    df = load_etdmodel() if df is None else df
     by_cat: dict[str, set[str]] = {}
     by_unit: dict[str, set[str]] = {}
     for _, row in df.iterrows():
@@ -919,3 +932,150 @@ def _build_indexed_lookups() -> tuple[dict[str, list[str]], dict[str, list[str]]
 
 
 variables_by_categorie, variables_by_eenheid = _build_indexed_lookups()
+
+
+# ---------------------------------------------------------------------------
+# Loading a column after import
+# ---------------------------------------------------------------------------
+#: The shipped tables, held so a rebuild can merge rows into them without
+#: carrying whatever a previous rebuild added. Loaded on first use.
+_model_frame_base = None
+_thresholds_frame_base = None
+
+
+def _replace_in_place(target, value) -> None:
+    """
+    Put *value* into *target*, keeping the object importers already hold.
+
+    Rebinding is not available here: a module that did
+    ``from etdmap.data_model import cumulative_columns`` holds the list itself,
+    and ``data_analysis_columns`` is an alias of ``model_column_order``.
+    """
+    target.clear()
+    if isinstance(target, list):
+        target.extend(value)
+    else:
+        target.update(value)
+
+
+def _frame_with_extra_rows(base: pd.DataFrame, rows) -> pd.DataFrame:
+    """
+    *base* with *rows* appended, each row carrying base's columns and dtypes.
+
+    A column the caller leaves out arrives as pd.NA under base's declared dtype,
+    so a partial row means "not declared" rather than a dtype of its own.
+    """
+    if rows is None:
+        return base
+    extra = rows.copy() if isinstance(rows, pd.DataFrame) else pd.DataFrame(list(rows))
+    if extra.empty:
+        return base
+
+    unknown = sorted(set(extra.columns) - set(base.columns))
+    if unknown:
+        raise ValueError(
+            f"These rows declare fields the data model does not have: {unknown}. "
+            f"Use the field names of etdmodel.csv."
+        )
+
+    for column in base.columns:
+        if column in extra.columns:
+            extra[column] = extra[column].astype(base[column].dtype)
+        else:
+            extra[column] = pd.Series(
+                pd.NA, index=extra.index, dtype=base[column].dtype
+            )
+    return pd.concat([base, extra[base.columns]], ignore_index=True)
+
+
+def rebuild_model(extra_model_rows=None, extra_threshold_rows=None) -> None:
+    """
+    Rebuild every derived structure in place, optionally with extra rows.
+
+    Called with no rows it restores the shipped model, which is what makes it
+    usable as a teardown: a caller does not have to know which structures a
+    load reached. A column reaches more of them than its own row names -- the
+    pairing lookups, the indexed lookups and the per-column validators among
+    them -- so undoing a load entry by entry could not be known to be complete.
+
+    *extra_model_rows* are rows of etdmodel.csv and *extra_threshold_rows* rows
+    of thresholds.csv, as mappings or a DataFrame. A row whose Variabele is
+    already declared replaces that whole row rather than the fields it names,
+    so a field the row leaves out is pd.NA and not the shipped value. To change
+    one field of a declared variable, carry its row and change that field.
+    """
+    global _model_frame_base, _thresholds_frame_base
+    if _model_frame_base is None:
+        _model_frame_base = load_etdmodel()
+    if _thresholds_frame_base is None:
+        _thresholds_frame_base = load_thresholds()
+
+    model_df = _frame_with_extra_rows(_model_frame_base, extra_model_rows)
+    thresholds_df = _frame_with_extra_rows(
+        _thresholds_frame_base, extra_threshold_rows
+    )
+    # A later row wins, so an extra row replaces the declaration it names.
+    model_df = model_df.drop_duplicates(subset="Variabele", keep="last")
+    thresholds_df = thresholds_df.drop_duplicates(subset="Variabele", keep="last")
+
+    (
+        cumulative, momentaan, diff_cols, monotonic,
+        col_order, col_types, supplier_meta, supplier_meta_types,
+        all_perf_cols, required_perf_cols, all_col_types,
+    ) = _build_derived_structures(model_df)
+
+    _replace_in_place(cumulative_columns, cumulative)
+    _replace_in_place(momentaan_columns, momentaan)
+    _replace_in_place(diff_columns, diff_cols)
+    _replace_in_place(monotonic_columns, monotonic)
+    _replace_in_place(model_column_order, col_order)
+    _replace_in_place(model_column_type, col_types)
+    _replace_in_place(allowed_supplier_metadata_columns, supplier_meta)
+    _replace_in_place(supplier_metadata_dtypes, supplier_meta_types)
+    _replace_in_place(all_performance_data_columns, all_perf_cols)
+    _replace_in_place(required_performance_data_columns, required_perf_cols)
+    _replace_in_place(performance_column_dtypes, all_col_types)
+
+    _replace_in_place(
+        thresholds_dict,
+        dict(threshold_entry(row) for _, row in thresholds_df.iterrows()),
+    )
+
+    partner, root_to_splits = _build_tariff_register_pairs(model_df)
+    _replace_in_place(tariff_partner_columns, partner)
+    _replace_in_place(tariff_root_to_splits, root_to_splits)
+
+    # Before monotonic_interval_columns: interval_column reads these.
+    by_cumulative, by_interval = _build_cumulative_interval_pairs(model_df)
+    _replace_in_place(interval_by_cumulative, by_cumulative)
+    _replace_in_place(cumulative_by_interval, by_interval)
+
+    _replace_in_place(
+        monotonic_interval_columns,
+        [
+            interval
+            for cumulative_col in monotonic_columns
+            if (interval := interval_column(cumulative_col)) is not None
+        ],
+    )
+
+    by_categorie, by_eenheid = _build_indexed_lookups(model_df)
+    _replace_in_place(variables_by_categorie, by_categorie)
+    _replace_in_place(variables_by_eenheid, by_eenheid)
+
+    _replace_in_place(
+        physical_model_by_project,
+        {
+            int(row.ProjectIdBSV): str(row.FysischModel)
+            for row in load_projects().itertuples()
+            if pd.notna(row.ProjectIdBSV) and pd.notna(row.FysischModel)
+        },
+    )
+
+    # The per-column checks are keyed by column, so they follow the model.
+    # Imported here because these modules import this one.
+    from etdmap import catalog, dataset_validators, record_validators
+
+    record_validators.rebuild_flag_conditions(thresholds_df)
+    dataset_validators.rebuild_flag_conditions()
+    catalog.rebuild_rule_variable_sets()

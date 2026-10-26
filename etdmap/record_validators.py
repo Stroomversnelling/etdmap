@@ -358,18 +358,35 @@ def create_validate_momentaan(
     None
     """
     for col in columns_with_value_bounds:
-        def validate_momentaan(df: DataFrame, cadence=None, col=col) -> Series:
-            """Whether each reading of *col* is inside its declared bounds.
+        register_validate_momentaan(col, record_flag_conditions)
 
-            *cadence* is the per-column table from
-            :func:`etdmap.mapping_helpers.detect_column_cadence`; the bounds are
-            scaled to the interval *col* reports in, so a column reporting
-            hourly is judged against an hour's worth rather than a slot's.
-            """
-            condition_func = condition_func_threshold(col, cadence)
-            result = validate_columns(df, [col], condition_func)
-            return result
-        record_flag_conditions['validate_' + col] = validate_momentaan
+
+def register_validate_momentaan(col: str, record_flag_conditions: dict) -> None:
+    """
+    Add the single-reading bound check for one column.
+
+    The per-column form of :func:`create_validate_momentaan`, so a column
+    declared after import gets the same check the loop builds.
+
+    Parameters
+    ----------
+    col : str
+        Column whose Min/Max can be checked against one reading.
+    record_flag_conditions : dict
+        Dictionary to store the validation function.
+    """
+    def validate_momentaan(df: DataFrame, cadence=None, col=col) -> Series:
+        """Whether each reading of *col* is inside its declared bounds.
+
+        *cadence* is the per-column table from
+        :func:`etdmap.mapping_helpers.detect_column_cadence`; the bounds are
+        scaled to the interval *col* reports in, so a column reporting
+        hourly is judged against an hour's worth rather than a slot's.
+        """
+        condition_func = condition_func_threshold(col, cadence)
+        result = validate_columns(df, [col], condition_func)
+        return result
+    record_flag_conditions['validate_' + col] = validate_momentaan
 
 
 def create_validate_cumulative(
@@ -391,35 +408,59 @@ def create_validate_cumulative(
     None
     """
     # loop to produce cumulative outlier validators per cumulative column.
-    # The column checked is the interval column the data model links to the
-    # cumulative variable, which is not always its name plus "Diff".
     for col in cumulative_columns:
-        interval_col = interval_column(col)
-        if interval_col is None:
-            raise ValueError(
-                f"etdmodel.csv: '{col}' is a cumulative variable with no "
-                f"ComplementVariabele, so its interval column is unknown and no "
-                f"outlier check can be built for it. Declare the link in the "
-                f"data model."
-            )
+        register_validate_cumulative(col, record_flag_conditions)
 
-        logging.info(f"Creating {interval_col} outliers check")
-        # cadence is accepted and ignored: an outlier here is judged against the
-        # column's own distribution, which is already in its reporting interval.
-        def validate_cumulative_outliers(
-            df: DataFrame, diff_col=interval_col
-        ) -> Series:
-            logging.debug(f"[record_validators] Checking {diff_col} outliers")
-            try:
-                result = validate_columns(df, [diff_col], validate_not_outliers)
-                return result
-            except Exception as e:
-                logging.error(f"Error in {diff_col} outliers check")
-                raise Exception(f"Error in {diff_col} outliers check: {e!s}")  # noqa: B904
 
-        record_flag_conditions['validate_' + interval_col + '_outliers'] = (
-            validate_cumulative_outliers
+def register_validate_cumulative(col: str, record_flag_conditions: dict) -> None:
+    """
+    Add the outlier check for one cumulative column.
+
+    The per-column form of :func:`create_validate_cumulative`, so a column
+    declared after import gets the same check the loop builds. The column
+    checked is the interval column the data model links to the cumulative
+    variable, which is not always its name plus "Diff".
+
+    Parameters
+    ----------
+    col : str
+        The cumulative variable.
+    record_flag_conditions : dict
+        Dictionary to store the validation function.
+
+    Raises
+    ------
+    ValueError
+        If *col* declares no ComplementVariabele, so its interval column is
+        unknown.
+    """
+    interval_col = interval_column(col)
+    if interval_col is None:
+        raise ValueError(
+            f"etdmodel.csv: '{col}' is a cumulative variable with no "
+            f"ComplementVariabele, so its interval column is unknown and no "
+            f"outlier check can be built for it. Declare the link in the "
+            f"data model."
         )
+
+    logging.info(f"Creating {interval_col} outliers check")
+    # cadence is accepted and ignored: an outlier here is judged against the
+    # column's own distribution, which is already in its reporting interval.
+    def validate_cumulative_outliers(
+        df: DataFrame, diff_col=interval_col
+    ) -> Series:
+        logging.debug(f"[record_validators] Checking {diff_col} outliers")
+        try:
+            result = validate_columns(df, [diff_col], validate_not_outliers)
+            return result
+        except Exception as e:
+            logging.error(f"Error in {diff_col} outliers check")
+            raise Exception(f"Error in {diff_col} outliers check: {e!s}")  # noqa: B904
+
+    record_flag_conditions['validate_' + interval_col + '_outliers'] = (
+        validate_cumulative_outliers
+    )
+
 
 thresholds_df = load_thresholds()
 
@@ -439,9 +480,11 @@ record_quality_flag_conditions = {
 # such as a percentage, which holds at any cadence. '5-minute' is written per
 # interval, so its bound is scaled to the column's cadence before the check --
 # see _bounds_for.
+SINGLE_READING_THRESHOLD_TYPES = ['5-minute', 'momentaan', 'algemeen']
+
 momentaan_flag_conditions: dict = {}
 columns_with_value_bounds = thresholds_df[
-    thresholds_df['ThresholdType'].isin(['5-minute', 'momentaan', 'algemeen'])
+    thresholds_df['ThresholdType'].isin(SINGLE_READING_THRESHOLD_TYPES)
 ]['Variabele']
 create_validate_momentaan(columns_with_value_bounds, momentaan_flag_conditions)
 
@@ -455,3 +498,43 @@ record_flag_conditions = {
     **momentaan_flag_conditions,
     **cumulative_diff_flag_conditions,
 }
+
+
+def rebuild_flag_conditions(thresholds_frame=None) -> None:
+    """
+    Rebuild the per-column checks in place from the model as it now stands.
+
+    Called by :func:`etdmap.data_model.rebuild_model`, which owns when the
+    model changes. The categories are rebuilt rather than added to, so a column
+    the model no longer declares leaves no check behind.
+
+    ``record_flag_conditions`` is a merge of the three categories taken once at
+    import, not a view of them, and it is the dict the mapping pipeline
+    iterates -- so it is rebuilt here too, or a column loaded after import
+    would have a check nothing reads.
+
+    Parameters
+    ----------
+    thresholds_frame : pd.DataFrame, optional
+        The thresholds the checks are built against. Defaults to the shipped
+        table.
+    """
+    frame = load_thresholds() if thresholds_frame is None else thresholds_frame
+
+    momentaan_flag_conditions.clear()
+    create_validate_momentaan(
+        frame[frame['ThresholdType'].isin(SINGLE_READING_THRESHOLD_TYPES)][
+            'Variabele'
+        ],
+        momentaan_flag_conditions,
+    )
+
+    cumulative_diff_flag_conditions.clear()
+    create_validate_cumulative(
+        cumulative_columns, cumulative_diff_flag_conditions
+    )
+
+    record_flag_conditions.clear()
+    record_flag_conditions.update(record_quality_flag_conditions)
+    record_flag_conditions.update(momentaan_flag_conditions)
+    record_flag_conditions.update(cumulative_diff_flag_conditions)

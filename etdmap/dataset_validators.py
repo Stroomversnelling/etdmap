@@ -452,3 +452,37 @@ for col in cumulative_columns:
     dataset_flag_conditions["validate_" + interval_column(col)] = (
         create_validate_func_outliers_neg_cum(col)
     )
+
+
+#: The checks that hold whatever the model declares, as opposed to the
+#: per-column ones a rebuild replaces.
+_FIXED_FLAG_CONDITIONS = dict(dataset_flag_conditions)
+
+
+def rebuild_flag_conditions() -> None:
+    """
+    Rebuild the per-column dataset checks in place from the model as it stands.
+
+    Called by :func:`etdmap.data_model.rebuild_model`, which owns when the
+    model changes. The per-column entries are rebuilt rather than added to, so
+    a column the model no longer declares leaves no check behind; the
+    whole-file checks are kept as they are.
+    """
+    dataset_flag_conditions.clear()
+    dataset_flag_conditions.update(_FIXED_FLAG_CONDITIONS)
+
+    for col in cumulative_columns:
+        if col not in thresholds_dict:
+            raise ValueError(
+                f"'{col}' is a cumulative variable with no row in the "
+                f"thresholds, so the bounds its whole-file check reads are "
+                f"unknown. A cumulative variable needs a 'cumulatief' "
+                f"threshold row of its own, and its interval column needs one "
+                f"written per interval."
+            )
+        dataset_flag_conditions["validate_" + col] = create_validate_func_col(
+            col, thresholds_dict
+        )
+        dataset_flag_conditions["validate_" + interval_column(col)] = (
+            create_validate_func_outliers_neg_cum(col)
+        )

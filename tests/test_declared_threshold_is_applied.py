@@ -24,10 +24,11 @@ MAX = 0.5
 
 
 @pytest.fixture
-def model(monkeypatch):
-    return declare_synthetic_model(
-        monkeypatch, synthetic_model(maximum=MAX, minimum=MIN)
-    )
+def model():
+    with declare_synthetic_model(
+        synthetic_model(maximum=MAX, minimum=MIN)
+    ) as declared:
+        yield declared
 
 
 @pytest.fixture
