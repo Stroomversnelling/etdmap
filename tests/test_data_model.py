@@ -1,99 +1,22 @@
 import logging
-from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from unittest import mock
-
 from etdmap import data_model
 from etdmap.data_model import (
+    all_performance_data_columns,
     cumulative_column,
     cumulative_columns,
-    diff_columns,
-    interval_by_cumulative,
-    interval_column,
     data_analysis_columns,
+    diff_columns,
     get_aggregation_config,
+    interval_column,
     model_column_order,
-    all_performance_data_columns,
     required_performance_data_columns,
 )
+from etdmap.testing import cumulative_pair, model_row
 
-required_model_columns = [
-    "ProjectIdBSV",
-    "ProjectIdLeverancier",
-    "HuisIdBSV",
-    "HuisIdLeverancier",
-    "Weerstation",
-    "Oppervlakte",
-    "Compactheid",
-    "Warmtebehoefte",
-    "PrimairFossielGebruik",
-    "Bouwjaar",
-    "Renovatiejaar",
-    "WoningType",
-    "WoningTypeDetail",
-    "WarmteopwekkerType",
-    "WarmteopwekkerCategorie",
-    "Warmteopwekker",
-    "Ventilatiesysteem",
-    "Kookinstallatie",
-    "PVJaarbundel",
-    "PVMerk",
-    "PVType",
-    "PVAantalPanelen",
-    "PVWattpiekPerPaneel",
-    "EPV",
-    "GasgebruikVoorRenovatie",
-    "ElektriciteitVoorRenovatie",
-    "HuisIdBSV",
-    "HuisIdLeverancier",
-    "ReadingDate",
-    "ElektriciteitNetgebruikHoog",
-    "ElektriciteitNetgebruikLaag",
-    "ElektriciteitTerugleveringHoog",
-    "ElektriciteitTerugleveringLaag",
-    "ElektriciteitVermogen",
-    "Gasgebruik",
-    "ElektriciteitsgebruikWTW",
-    "ElektriciteitsgebruikWarmtepomp",
-    "ElektriciteitsgebruikBooster",
-    "ElektriciteitsgebruikBoilervat",
-    "ElektriciteitsgebruikTotaalHuishoudelijk",
-    "TemperatuurWarmTapwater",
-    "TemperatuurWoonkamer",
-    "TemperatuurWoonkamerSetpoint",
-    "WarmteproductieWarmtepomp",
-    "WatergebruikWarmTapwater",
-    "ZonopwekMomentaan",
-    "ZonopwekTotaal",
-    "CO2",
-    "Luchtvochtigheid",
-    "DebietVentilatieAanvoer",
-    "DebietVentilatieExtractie",
-]
-
-# this test is now wrong - we use the csv as a source of truth - to be fixed later.
-def test_columns_etdmodelcsv():
-    """
-    Test if all columns in the required_model_columns in the
-    data_model.py are indeed present in the etdmodel.csv in the
-    data folder.
-    Additional columns may exist.
-    """
-    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    columns_etdmodel = set(etdmodel_csv.Variabele.values)
-    assert set(required_model_columns).issubset(columns_etdmodel)
-    # give warning when more columns are defined in the etdmodel.csv
-    # then are required in etdmap.data_model
-    if columns_etdmodel - set(required_model_columns):
-        logging.warning(
-            f"More columns are defined in etdmodel.csv then are"
-            f"specified in etdmap.data_model require_columns"
-            f"The following columns are found, but not required: "
-            f"{columns_etdmodel - set(required_model_columns)}"
-            )
 
 def test_thresholdscsv():
     """
@@ -103,10 +26,8 @@ def test_thresholdscsv():
     - Check if all thresholds are numeric in thresholds.csv
     - Check if the cumulative types match the cumulative_columns from etdmap.data_model
     """
-    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    thresholds_csv = pd.read_csv(
-        Path(r'.\etdmap\data\thresholds.csv'),
-        )
+    etdmodel_csv = data_model.load_etdmodel()
+    thresholds_csv = data_model.load_thresholds()
     numeric_cols_with_range = set(
         etdmodel_csv[
             (etdmodel_csv['Type variabele'] == 'number') &
@@ -157,10 +78,10 @@ def test_get_aggregation_config_returns_known_columns():
 
 
 def test_get_aggregation_config_raises_on_missing_resample_method(tmp_path, monkeypatch):
-    import etdmap
-    from pathlib import Path
 
-    model = pd.read_csv(Path("etdmap/data/etdmodel.csv"))
+    import etdmap
+
+    model = data_model.load_etdmodel()
     # Clear ResamplingMethode for a known included variable
     model.loc[model["Variabele"] == "ElektriciteitNetgebruikHoogDiff", "ResamplingMethode"] = None
     patched = tmp_path / "etdmodel_patched.csv"
@@ -172,10 +93,10 @@ def test_get_aggregation_config_raises_on_missing_resample_method(tmp_path, monk
 
 
 def test_get_aggregation_config_raises_on_missing_aggregate_method(tmp_path, monkeypatch):
-    import etdmap
-    from pathlib import Path
 
-    model = pd.read_csv(Path("etdmap/data/etdmodel.csv"))
+    import etdmap
+
+    model = data_model.load_etdmodel()
     model.loc[model["Variabele"] == "ElektriciteitNetgebruikHoogDiff", "AggregatieMethode"] = None
     patched = tmp_path / "etdmodel_patched.csv"
     model.to_csv(patched, index=False)
@@ -187,10 +108,10 @@ def test_get_aggregation_config_raises_on_missing_aggregate_method(tmp_path, mon
 
 def test_get_aggregation_config_raises_on_inconsistent_derive(tmp_path, monkeypatch):
     """A 'derive' method on only one axis is a modelling error (ADR-003)."""
-    import etdmap
-    from pathlib import Path
 
-    model = pd.read_csv(Path("etdmap/data/etdmodel.csv"))
+    import etdmap
+
+    model = data_model.load_etdmodel()
     # Normalise any pre-existing 'derive' variable in the real model so this
     # test controls the single induced inconsistency below.
     both = (model["ResamplingMethode"] == "derive") | (model["AggregatieMethode"] == "derive")
@@ -209,10 +130,10 @@ def test_get_aggregation_config_raises_on_inconsistent_derive(tmp_path, monkeypa
 
 def test_get_aggregation_config_accepts_consistent_derive(tmp_path, monkeypatch):
     """'derive' on BOTH axes is valid and passes through to the config."""
-    import etdmap
-    from pathlib import Path
 
-    model = pd.read_csv(Path("etdmap/data/etdmodel.csv"))
+    import etdmap
+
+    model = data_model.load_etdmodel()
     # Normalise any pre-existing half-applied 'derive' in the real model so the
     # whole config is consistent, then add another consistent 'derive' variable.
     both = (model["ResamplingMethode"] == "derive") | (model["AggregatieMethode"] == "derive")
@@ -231,91 +152,121 @@ def test_get_aggregation_config_accepts_consistent_derive(tmp_path, monkeypatch)
 
 
 # ---------------------------------------------------------------------------
-# Regression tests for existing derived variables (etdmap/DECISIONS.md ADR-001)
+# What each derived list is, stated as behaviour (etdmap/DECISIONS.md ADR-001).
+#
+# Each test declares a row with the property in question and reads the list
+# back. Deriving the expected answer from the shipped model a second time, here,
+# would pass whenever the two derivations agree -- including when both are
+# wrong -- and say nothing about what the rule is.
 # ---------------------------------------------------------------------------
 
-def test_cumulative_columns_contains_no_date_types():
-    """Guard: the Type variabele != 'date' filter must hold."""
-    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    date_vars = set(etdmodel_csv[etdmodel_csv["Type variabele"] == "date"]["Variabele"])
-    overlap = set(cumulative_columns) & date_vars
-    assert not overlap, f"Date-typed columns found in cumulative_columns: {overlap}"
+@pytest.fixture
+def model_restored():
+    """Restores the shipped model, whatever the test declared."""
+    yield
+    data_model.rebuild_model()
 
 
-def test_cumulative_columns_match_the_cumulatief_flag():
-    """Guard: cumulative_columns is the Cumulatief flag alone, with no Entiteit
-    filter (DECISIONS.md ADR-001 item 1).
-    """
-    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    expected = etdmodel_csv[
-        (etdmodel_csv["Cumulatief"] == "ja")
-        & (etdmodel_csv["Type variabele"] != "date")
-    ]["Variabele"].tolist()
-    assert cumulative_columns == expected
-
-
-def test_model_column_order_is_prestatiedata_only():
-    """Regression: model_column_order must not include PrestatiedataBerekend rows.
-
-    Callers such as mapping_helpers and dataset_validators expect only
-    provider-supplied (Prestatiedata) columns here.
-    """
-    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    entiteit_map = dict(zip(etdmodel_csv["Variabele"], etdmodel_csv["Entiteit"]))
-    for col in model_column_order:
-        assert entiteit_map.get(col) == "Prestatiedata", (
-            f"{col} is in model_column_order but has Entiteit={entiteit_map.get(col)!r}"
+class TestWhatCumulativeColumnsIs:
+    def test_it_is_the_cumulatief_flag(self, model_restored):
+        rows, thresholds = cumulative_pair("QCumulative")
+        data_model.rebuild_model(
+            extra_model_rows=rows, extra_threshold_rows=thresholds
         )
 
+        assert "QCumulative" in cumulative_columns
 
-def test_model_column_order_matches_volgorde_sort():
-    """Regression: model_column_order must equal Prestatiedata rows sorted by Volgorde."""
-    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    perf = etdmodel_csv[etdmodel_csv["Entiteit"] == "Prestatiedata"].copy()
-    if "Volgorde" in perf.columns and perf["Volgorde"].notna().any():
-        perf = perf.sort_values("Volgorde", na_position="last")
-    expected = perf["Variabele"].tolist()
-    assert model_column_order == expected, (
-        "model_column_order does not match Prestatiedata rows sorted by Volgorde"
-    )
+    def test_the_entiteit_does_not_narrow_it(self, model_restored):
+        """ADR-001 item 1: the flag alone, with no Entiteit filter. A
+        calculated variable that accumulates is still a cumulative one."""
+        rows, thresholds = cumulative_pair(
+            "QCalculated", Entiteit="PrestatiedataBerekend"
+        )
+        data_model.rebuild_model(
+            extra_model_rows=rows, extra_threshold_rows=thresholds
+        )
 
+        assert "QCalculated" in cumulative_columns
 
-def test_data_analysis_columns_is_alias_of_model_column_order():
-    """Regression: data_analysis_columns is currently an alias of model_column_order.
+    def test_a_date_typed_row_is_excluded(self, model_restored):
+        """ReadingDate carries Cumulatief=ja in some versions of the model.
+        Filtering on the type rather than the name is what keeps it out."""
+        data_model.rebuild_model(extra_model_rows=[
+            model_row("QDate", Cumulatief="ja", **{"Type variabele": "date"})
+        ])
 
-    If this changes intentionally, update this test and etdmap/DECISIONS.md ADR-001.
-    """
-    assert data_analysis_columns == model_column_order
+        assert "QDate" not in cumulative_columns
 
+    def test_a_row_without_the_flag_is_not_in_it(self, model_restored):
+        data_model.rebuild_model(extra_model_rows=[model_row("QPlain")])
 
-# ---------------------------------------------------------------------------
-# Tests for new derived variables
-# ---------------------------------------------------------------------------
-
-def test_all_performance_data_columns_includes_prestatiedata_berekend():
-    """all_performance_data_columns must include at least one PrestatiedataBerekend row."""
-    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    entiteit_map = dict(zip(etdmodel_csv["Variabele"], etdmodel_csv["Entiteit"]))
-    berekend = [c for c in all_performance_data_columns if entiteit_map.get(c) == "PrestatiedataBerekend"]
-    assert berekend, "all_performance_data_columns contains no PrestatiedataBerekend columns"
+        assert "QPlain" not in cumulative_columns
 
 
-def test_all_performance_data_columns_is_superset_of_model_column_order():
-    """all_performance_data_columns must include everything in model_column_order."""
-    assert set(model_column_order) <= set(all_performance_data_columns)
+class TestWhatModelColumnOrderIs:
+    def test_it_holds_prestatiedata_rows(self, model_restored):
+        data_model.rebuild_model(extra_model_rows=[model_row("QDelivered")])
+
+        assert "QDelivered" in model_column_order
+
+    def test_a_calculated_row_is_not_in_it(self, model_restored):
+        """Its callers -- mapping_helpers, dataset_validators -- expect only
+        what a supplier may deliver."""
+        data_model.rebuild_model(extra_model_rows=[model_row("QCalculated", Entiteit="PrestatiedataBerekend")])
+
+        assert "QCalculated" not in model_column_order
+        assert "QCalculated" in all_performance_data_columns
+
+    def test_volgorde_decides_the_order(self, model_restored):
+        data_model.rebuild_model(extra_model_rows=[
+            model_row("QLate", Volgorde=99998),
+            model_row("QEarly", Volgorde=-1),
+        ])
+
+        assert model_column_order.index("QEarly") < model_column_order.index("QLate")
+
+    def test_the_first_declared_position_comes_first(self, model_restored):
+        """A row with the lowest Volgorde in the model sorts ahead of every
+        shipped column, so the ordering is the declared sequence and not the
+        order rows happen to sit in."""
+        data_model.rebuild_model(extra_model_rows=[model_row("QFirst", Volgorde=-1)])
+
+        assert model_column_order[0] == "QFirst"
+
+    def test_data_analysis_columns_is_the_same_list(self, model_restored):
+        """An alias, not a copy: a declaration reaches both names."""
+        data_model.rebuild_model(extra_model_rows=[model_row("QDelivered")])
+
+        assert data_analysis_columns == model_column_order
 
 
-def test_required_performance_data_columns_are_subset_of_all():
-    """required_performance_data_columns must be a subset of all_performance_data_columns."""
-    assert set(required_performance_data_columns) <= set(all_performance_data_columns)
+class TestWhatRequiredPerformanceDataColumnsIs:
+    def test_a_required_row_is_in_it(self, model_restored):
+        data_model.rebuild_model(extra_model_rows=[model_row("QRequired", Vereist="ja")])
 
+        assert "QRequired" in required_performance_data_columns
 
-def test_required_cols_match_vereist_ja_in_model():
-    """required_performance_data_columns must exactly match Vereist=='ja' Prestatiedata* rows."""
-    etdmodel_csv = pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
-    perf_all = etdmodel_csv[etdmodel_csv["Entiteit"].str.startswith("Prestatiedata", na=False)]
-    expected = set(perf_all[perf_all["Vereist"] == "ja"]["Variabele"].tolist())
-    assert set(required_performance_data_columns) == expected
+    def test_an_optional_row_is_not(self, model_restored):
+        data_model.rebuild_model(extra_model_rows=[model_row("QOptional", Vereist="nee")])
+
+        assert "QOptional" not in required_performance_data_columns
+        assert "QOptional" in all_performance_data_columns
+
+    def test_a_required_calculated_row_is_in_it_too(self, model_restored):
+        """Every Prestatiedata* entity, not the delivered one alone."""
+        data_model.rebuild_model(extra_model_rows=[
+            model_row("QRequiredCalc", Vereist="ja", Entiteit="PrestatiedataBerekend")
+        ])
+
+        assert "QRequiredCalc" in required_performance_data_columns
+
+    def test_the_required_are_a_subset_of_all(self):
+        assert set(required_performance_data_columns) <= set(
+            all_performance_data_columns
+        )
+
+    def test_all_includes_everything_in_the_order(self):
+        assert set(model_column_order) <= set(all_performance_data_columns)
 
 
 class TestCumulativeIntervalPairs:
@@ -363,7 +314,7 @@ class TestTheShippedModelIsConsistent:
 
     @pytest.fixture(scope="class")
     def model(self):
-        return pd.read_csv(Path(r'.\etdmap\data\etdmodel.csv'))
+        return data_model.load_etdmodel()
 
     @staticmethod
     def _declared(model):
@@ -537,30 +488,6 @@ class TestTheShippedModelIsConsistent:
             f"cannot produce: {signed}"
         )
 
-    def test_the_pairs_actually_build(self, model):
-        """Whatever the model carries, the link resolves for every cumulative
-        variable -- from the metadata, or from the names where it is silent."""
-        for column in cumulative_columns:
-            interval = interval_column(column)
-            assert interval is not None, f"{column} has no interval column"
-            assert cumulative_column(interval) == column
-
-
-class TestCumulativeIntervalPairs:
-    """The link between a cumulative variable and its interval column."""
-
-    def test_every_cumulative_variable_has_an_interval_column(self):
-        for column in cumulative_columns:
-            assert interval_column(column) is not None
-
-    def test_the_link_goes_both_ways(self):
-        for column in cumulative_columns:
-            assert cumulative_column(interval_column(column)) == column
-
-    def test_a_non_column_is_not_paired(self):
-        assert interval_column("ReadingDate") is None
-        assert cumulative_column("ReadingDate") is None
-
 
 class TestComplementVariabele:
     """Reading the link.
@@ -571,9 +498,9 @@ class TestComplementVariabele:
 
     @staticmethod
     def _pairs(rows, cumulative, intervals):
-        model = pd.DataFrame(rows)
-        with mock.patch.object(data_model, "load_etdmodel", lambda: model),              mock.patch.object(data_model, "cumulative_columns", cumulative),              mock.patch.object(data_model, "diff_columns", intervals):
-            return data_model._build_cumulative_interval_pairs()
+        return data_model._build_cumulative_interval_pairs(
+            pd.DataFrame(rows), cumulative=cumulative, intervals=intervals
+        )
 
     def test_it_pairs_names_that_share_no_stem(self):
         """What the metadata is for: no rule over the names can pair

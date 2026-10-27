@@ -13,6 +13,7 @@ from etdmap.index_helpers import (
     read_metadata,
 )
 from etdmap.record_validators import columns_with_value_bounds
+from etdmap.storage import mapped_household_paths
 from etdmap.testing import DEFAULT_HOUSEHOLDS_PER_PROJECT, DEFAULT_PROJECTS
 
 
@@ -54,21 +55,19 @@ def test_creation_validation_columns_index_data_files(mapped_fixtures, request):
     1. Appropirate columns are created in datafiles (record_validators) and index file (dataset validators)
     2. If True/False values are found as expected.
     """
-    # The count the dataset was generated with, not a literal: the shape is the
-    # caller's, and a test asserting its own number would fail whenever a
-    # fixture is shaped for the behaviour it covers.
+    # The count the dataset was generated with. The shape is a parameter of
+    # the generator, so a literal here would contradict any other shape.
     limit_houses = DEFAULT_HOUSEHOLDS_PER_PROJECT * DEFAULT_PROJECTS
     folder_path = mapped_fixtures
 
-    ### 1: Test household.parquet creation ###
-    files = os.listdir(folder_path)
-    files = [f for f in files if (
-        os.path.isfile(os.path.join(folder_path, f)) and \
-            ('household' in f))]
+    ### 1: Test household file creation ###
+    # Through the storage reader, which resolves whichever layout the mapping
+    # wrote.
+    files = mapped_household_paths(folder_path)
     assert len(files) == limit_houses, f"Expected {limit_houses} files, but found {len(files)}"
 
     # check for 1 file if it contains all the right columns
-    df_hh = pd.read_parquet(os.path.join(folder_path, files[0]), dtype_backend="numpy_nullable")
+    df_hh = pd.read_parquet(files[min(files)], dtype_backend="numpy_nullable")
     # columns that should be added by record_validators
     # The interval column is the one the data model links to the cumulative
     # variable, not its name plus "Diff".

@@ -3,8 +3,9 @@
 A behavioural test states the bound it is judged against rather than inheriting
 whatever the metadata declares this week. That needs two things of the library:
 a column's rows can be merged into the model tables at runtime, and every
-structure derived from them follows -- including the ones a column reaches
-without naming, which is why the restore is a rebuild rather than an undo.
+structure derived from them follows, including the ones a column reaches
+without naming. The restore is a rebuild of the shipped model for the same
+reason: those structures cannot be undone entry by entry.
 """
 
 import pandas as pd

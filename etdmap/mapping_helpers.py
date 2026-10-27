@@ -2611,8 +2611,8 @@ def apply_threshold_to_col(
     return df, col_stats
 
 
-# Sidecar written next to the per-household mapped parquets (one row per
-# HuisIdBSV + column that lost values in the threshold pass).
+# Sidecar written next to the mapped household batches (one row per HuisIdBSV +
+# column that lost values in the threshold pass; keyed as _write_sidecar notes).
 THRESHOLD_REMOVALS_FILENAME = "mapping_threshold_removals.parquet"
 
 # Nullable dtypes for the sidecar columns.
@@ -2641,6 +2641,14 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
     instead would leave a folder mapped by several suppliers holding only the
     last one's rows, since each mapper writes only the households it processed.
 
+    A sidecar row describes one household batch -- it is measured on that
+    dataset, and the grid it is measured against is declared per household
+    batch -- so the key these are written and merged on should be
+    ``HuisBatchIdBSV``. On ``HuisIdBSV`` two household batches of one household
+    cannot be told apart, and re-mapping one replaces the other's rows. This
+    holds only while the mapping writes one household batch per household
+    (``save_mapped_household``).
+
     An empty but correctly-typed frame is written when there are no rows and none
     were there before, so downstream readers get a stable schema either way.
 
@@ -2649,7 +2657,7 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
     if "HuisIdBSV" not in dtypes:
         raise ValueError(
             f"{label} sidecar declares no HuisIdBSV, so its rows cannot be "
-            f"merged per household. Add the id to its dtype map."
+            f"merged. Add the id to its dtype map."
         )
 
     df = pd.DataFrame(rows, columns=list(dtypes))
@@ -2687,7 +2695,7 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
 
 def threshold_stats_to_rows(household_id, threshold_stats):
     """
-    Flatten one household's threshold_stats dict into sidecar rows.
+    Flatten one household batch's threshold_stats dict into sidecar rows.
 
     Parameters
     ----------
@@ -2769,7 +2777,7 @@ _NEGATIVE_DIFF_DTYPES = {
 
 def negative_diff_stats_to_rows(household_id, dip_stats):
     """
-    Flatten one household's negative-diff figures into sidecar rows.
+    Flatten one household batch's negative-diff figures into sidecar rows.
 
     Parameters
     ----------
@@ -2826,7 +2834,7 @@ _GRID_COLLISION_DTYPES = {
 
 def grid_collisions_to_rows(household_id, collisions):
     """
-    Flatten one household's grid-collision figures into sidecar rows.
+    Flatten one household batch's grid-collision figures into sidecar rows.
 
     Parameters
     ----------
@@ -2873,7 +2881,7 @@ CADENCE_FILENAME = "mapping_column_cadence.parquet"
 
 def cadence_to_rows(household_id, cadence_df):
     """
-    Flatten one household's cadence table into sidecar rows.
+    Flatten one household batch's cadence table into sidecar rows.
 
     Parameters
     ----------
@@ -2979,7 +2987,7 @@ def write_frozen_spans(rows, mapped_folder_path, filename=FROZEN_SPANS_FILENAME)
 
 def save_household_shard(df, household_id, household_batch_id, sharded_folder_path):
     """
-    Write one household's mapped data as a hive-partitioned shard:
+    Write one household batch's mapped data as a hive-partitioned shard:
     ``<sharded_folder_path>/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/part.parquet``.
 
     Sharding originates at mapping (etdmap), not in a downstream combine step. The
@@ -2998,7 +3006,9 @@ def save_household_shard(df, household_id, household_batch_id, sharded_folder_pa
     household_id : int
         HuisIdBSV -- the household id (the flat pipeline's ``household_id``).
     household_batch_id : int
-        HuisBatchIdBSV (equals HuisIdBSV in the initial 1:1 state).
+        HuisBatchIdBSV -- the household batch this body of data belongs to. A
+        household can have several: another data structure, or a period after a
+        renovation. They coexist as sibling ``HuisBatchIdBSV=*`` partitions.
     sharded_folder_path : str or Path
         Root of the sharded mapped dataset.
 
@@ -3027,14 +3037,15 @@ def save_household_shard(df, household_id, household_batch_id, sharded_folder_pa
 
 def save_mapped_household(df, household_id, mapped_folder_path) -> str:
     """
-    Save one household's mapped data in the configured output format -- THE
-    single save primitive for all mappers.
+    Save one household batch's mapped data in the configured output format --
+    THE single save primitive for all mappers.
 
     Honours ``etdmap.options.mapped_output_format``:
     - "sharded" (default): hive shard under
       ``<mapped_folder_path>/sharded/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/``
-      (this writer assigns HuisBatchIdBSV = HuisIdBSV; mapping a household
-      that appears in more than one batch is not yet supported);
+      (this writer numbers the household batch with the household id, so a
+      household delivered in more than one household batch cannot be mapped
+      through it yet);
     - "flat": the legacy ``household_<n>_table.parquet`` (tests / legacy escape
       hatch via the map scripts' --flat flag).
 
@@ -3099,15 +3110,15 @@ def prune_stale_household_files(mapped_folder_path, keep_household_ids):
     if not os.path.isdir(folder):
         return removed
     for name in sorted(os.listdir(folder)):
-        m = _HOUSEHOLD_FILE_RE.match(name)
-        if not m:
+        match = _HOUSEHOLD_FILE_RE.match(name)
+        if not match:
             continue
-        hid = int(m.group(1))
-        if hid in keep:
+        household_id = int(match.group(1))
+        if household_id in keep:
             continue
         path = os.path.join(folder, name)
         os.remove(path)
-        removed.append({"HuisIdBSV": hid, "path": path})
+        removed.append({"HuisIdBSV": household_id, "path": path})
         logging.info(f"[mapping_helpers] Pruned stale household file: {path}")
     return removed
 
@@ -3141,28 +3152,32 @@ def prune_stale_household_shards(sharded_folder_path, keep_pairs):
     removed = []
     if not os.path.isdir(root):
         return removed
-    for hid_name in sorted(os.listdir(root)):
-        hid_m = _HOUSEID_DIR_RE.match(hid_name)
-        if not hid_m:
+    for household_dir_name in sorted(os.listdir(root)):
+        household_match = _HOUSEID_DIR_RE.match(household_dir_name)
+        if not household_match:
             continue
-        hid_dir = os.path.join(root, hid_name)
-        if not os.path.isdir(hid_dir):
+        household_dir = os.path.join(root, household_dir_name)
+        if not os.path.isdir(household_dir):
             continue
-        hid = int(hid_m.group(1))
-        for hbid_name in sorted(os.listdir(hid_dir)):
-            hbid_m = _HOUSEBATCHID_DIR_RE.match(hbid_name)
-            if not hbid_m:
+        household_id = int(household_match.group(1))
+        for batch_dir_name in sorted(os.listdir(household_dir)):
+            batch_match = _HOUSEBATCHID_DIR_RE.match(batch_dir_name)
+            if not batch_match:
                 continue
-            hbid = int(hbid_m.group(1))
-            if (hid, hbid) in keep:
+            household_batch_id = int(batch_match.group(1))
+            if (household_id, household_batch_id) in keep:
                 continue
-            part_dir = os.path.join(hid_dir, hbid_name)
+            part_dir = os.path.join(household_dir, batch_dir_name)
             shutil.rmtree(part_dir)
-            removed.append({"HuisIdBSV": hid, "HuisBatchIdBSV": hbid, "path": part_dir})
+            removed.append({
+                "HuisIdBSV": household_id,
+                "HuisBatchIdBSV": household_batch_id,
+                "path": part_dir,
+            })
             logging.info(f"[mapping_helpers] Pruned stale shard: {part_dir}")
         # Drop the HuisIdBSV=<n> parent if pruning emptied it.
-        if os.path.isdir(hid_dir) and not os.listdir(hid_dir):
-            os.rmdir(hid_dir)
+        if os.path.isdir(household_dir) and not os.listdir(household_dir):
+            os.rmdir(household_dir)
     return removed
 
 

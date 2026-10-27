@@ -133,9 +133,9 @@ class TestPipelineOutputFormat:
     """run_standard_pipeline honours etdmap.options.mapped_output_format --
     the same existing API, no new caller-facing parameter. Sharded is the
     default; "flat" writes the legacy one-file-per-household layout. Sharded
-    output goes to <mapped_folder_path>/sharded/; the writer assigns
-    HuisBatchIdBSV equal to HuisIdBSV (a household in more than one batch is
-    not yet supported)."""
+    output goes to <mapped_folder_path>/sharded/; the writer numbers the
+    household batch with the household id (mapping a household delivered in
+    more than one household batch is not yet supported)."""
 
     def test_default_output_format_is_sharded(self):
         assert etdmap.options.mapped_output_format == "sharded"

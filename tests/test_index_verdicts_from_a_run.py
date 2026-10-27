@@ -9,8 +9,8 @@ satisfy both and be caught here.
 It also states what the fixture's shape implies. The dataset is shaped for
 integration -- enough households per project to meet the averaging floor, over a
 span of days -- so the checks written against a production year of data fail on
-it, and correctly. Asserting that here keeps the shape's consequences visible:
-before this, changing the span moved twenty-seven verdicts and no test noticed.
+it, and correctly. A change of span moves those verdicts, and these say which
+ones.
 """
 
 import pandas as pd

@@ -2,14 +2,20 @@
 Storage-layout helpers: one home for "is this a single parquet file or a
 partitioned folder of shards, and how do I read it".
 
+A mapped dataset is one household batch: one body of data for a household,
+identified by ``HuisBatchIdBSV``. A household (``HuisIdBSV``) can have several
+-- another data structure, or a period after a renovation.
+
 Pipeline data is stored in one of two layouts:
 
-- flat (legacy): one parquet file per household,
-  ``household_<n>_table.parquet``.
-- sharded: a folder tree whose directory names carry the ids
+- sharded: a folder tree whose directory names carry both ids
   (``HuisIdBSV=<n>/HuisBatchIdBSV=<p>/*.parquet`` -- the hive-partitioning
-  convention). The ids live in the folder names, not inside the files, and
-  are never guessed: a folder name that does not parse raises an error.
+  convention), so it holds every household batch of every household. The ids
+  live in the folder names, not inside the files, and are never guessed: a
+  folder name that does not parse raises an error.
+- flat (legacy): one parquet file per household,
+  ``household_<n>_table.parquet``. It has no household-batch level and so
+  cannot represent a household with more than one.
 
 Every helper here detects the layout itself, so callers never pass a format.
 This module uses only pandas and pyarrow; functions that build lazy query
@@ -28,8 +34,8 @@ import etdmap
 
 _SHARD_PART_RE = _re.compile(r"HuisIdBSV=(\d+)[\\/]HuisBatchIdBSV=(\d+)")
 
-# The flat layout stores one file per household and carries the id only here,
-# so a reader that ignores the name loses the household identity entirely.
+# The flat layout carries the household id only in the file name, so a reader
+# that ignores the name loses the household identity entirely.
 _FLAT_FILE_RE = _re.compile(r"household_(\d+)_table\.parquet$")
 
 
@@ -61,13 +67,11 @@ def mapped_household_files(household_id, mapped_folder_path=None) -> list:
 
     Format-detected:
 
-    - sharded: the household's shard file(s), one per HuisBatch, sorted by
-      HuisBatchIdBSV. More than one entry means a multi-batch household --
-      the resolver returns them all (loaders return what exists); callers
-      with a one-file-per-household assumption must guard at their own
-      entry point.
-    - flat: the single ``household_<n>_table.parquet``; the flat layout
-      stores one file per household, so the batch id equals the household id.
+    - sharded: one file per household batch of that household, sorted by
+      HuisBatchIdBSV. All of them are returned; a caller that can handle only
+      one must guard at its own entry point.
+    - flat: the single ``household_<n>_table.parquet``. The layout has no
+      household-batch level, so the household id is reported in its place.
 
     Returns a list of (path, household_batch_id) tuples.
     Raises FileNotFoundError when the household has no data, and ValueError
@@ -77,44 +81,53 @@ def mapped_household_files(household_id, mapped_folder_path=None) -> list:
         mapped_folder_path = etdmap.options.mapped_folder_path
     root = str(mapped_folder_path)
     fmt = detect_mapped_format(root)
-    hid = int(household_id)
+    household_id = int(household_id)
 
     if fmt == "sharded":
         paths = sorted(_glob.glob(os.path.join(
-            root, "sharded", f"HuisIdBSV={hid}", "HuisBatchIdBSV=*", "*.parquet"
+            root, "sharded", f"HuisIdBSV={household_id}", "HuisBatchIdBSV=*",
+            "*.parquet"
         )))
         out = []
-        for p in paths:
-            m = _SHARD_PART_RE.search(p)
-            if m is None:
-                # NEVER silently default in sharded mode: a quiet 1:1
-                # fallback masks multi-batch data and blinds the batch
+        for path in paths:
+            match = _SHARD_PART_RE.search(path)
+            if match is None:
+                # NEVER silently default in sharded mode: substituting the
+                # household id for the household batch id masks a household
+                # delivered in several household batches and blinds the batch
                 # guards.
                 raise ValueError(
                     f"Cannot parse HuisIdBSV/HuisBatchIdBSV from shard "
-                    f"path {p!r}; refusing to guess the batch id."
+                    f"path {path!r}; refusing to guess the household batch id."
                 )
-            out.append((p, int(m.group(2))))
-        out.sort(key=lambda t: t[1])
+            out.append((path, int(match.group(2))))
+        out.sort(key=lambda found: found[1])
     else:
-        p = os.path.join(root, f"household_{hid}_table.parquet")
-        out = [(p, hid)] if os.path.exists(p) else []
+        path = os.path.join(root, f"household_{household_id}_table.parquet")
+        out = [(path, household_id)] if os.path.exists(path) else []
 
     if not out:
         raise FileNotFoundError(
-            f"No mapped data for HuisIdBSV {hid} under {root} ({fmt} layout)."
+            f"No mapped data for HuisIdBSV {household_id} under {root} "
+            f"({fmt} layout)."
         )
     return out
 
 
 def mapped_household_paths(mapped_folder_path=None, fmt="auto") -> dict:
     """
-    Map every household in a mapped folder to its single data file.
+    Map every household in a mapped folder to one data file.
 
-    Returns ``{HuisIdBSV: path}``. Tools that must read a SPECIFIC layout --
-    notably a comparison of the same dataset stored flat on one side and
-    sharded on the other -- pass ``fmt`` explicitly instead of parsing shard
-    paths themselves:
+    Returns ``{HuisIdBSV: path}``, so it answers for callers that work a
+    household at a time. A dataset is a household batch, and a household can
+    have several, which this return shape cannot express: a household with
+    more than one household-batch shard raises HouseBatchOverlapError. Use
+    :func:`mapped_household_files` to read every household batch of a
+    household, or iterate the shards directly.
+
+    Tools that must read a SPECIFIC layout -- notably a comparison of the same
+    dataset stored flat on one side and sharded on the other -- pass ``fmt``
+    explicitly instead of parsing shard paths themselves:
 
     - "flat"    -- ``household_<n>_table.parquet`` at the folder root.
     - "sharded" -- ``HuisIdBSV=<n>/HuisBatchIdBSV=<p>/*.parquet`` shards under
@@ -122,9 +135,7 @@ def mapped_household_paths(mapped_folder_path=None, fmt="auto") -> dict:
       root can be passed as-is).
     - "auto"    -- flat when any flat file exists, else sharded.
 
-    One path per household: a household with more than one batch shard raises
-    HouseBatchOverlapError, because a single path cannot represent it. An
-    unparseable shard directory name raises rather than being guessed.
+    An unparseable shard directory name raises rather than being guessed.
     """
     from etdmap.index_helpers import HouseBatchOverlapError
 
@@ -136,10 +147,12 @@ def mapped_household_paths(mapped_folder_path=None, fmt="auto") -> dict:
 
     def _flat() -> dict:
         out = {}
-        for p in sorted(_glob.glob(os.path.join(root, "household_*_table.parquet"))):
-            parts = os.path.basename(p)[: -len(".parquet")].split("_")
+        for path in sorted(
+            _glob.glob(os.path.join(root, "household_*_table.parquet"))
+        ):
+            parts = os.path.basename(path)[: -len(".parquet")].split("_")
             if len(parts) >= 2 and parts[1].isdigit():
-                out[int(parts[1])] = p
+                out[int(parts[1])] = path
         return out
 
     def _sharded() -> dict:
@@ -150,22 +163,22 @@ def mapped_household_paths(mapped_folder_path=None, fmt="auto") -> dict:
             if not hits:
                 continue
             out: dict = {}
-            for p in hits:
-                m = _SHARD_PART_RE.search(p)
-                if m is None:
+            for path in hits:
+                match = _SHARD_PART_RE.search(path)
+                if match is None:
                     raise ValueError(
                         f"Cannot parse HuisIdBSV/HuisBatchIdBSV from shard path "
-                        f"{p!r}; refusing to guess the household id."
+                        f"{path!r}; refusing to guess the household id."
                     )
-                household_id = int(m.group(1))
+                household_id = int(match.group(1))
                 if household_id in out:
                     raise HouseBatchOverlapError(
-                        f"HuisIdBSV {household_id} has more than one batch shard "
-                        f"under {base}; a single path per household cannot "
-                        f"represent it. A household in more than one batch is "
-                        f"valid in the data model but not yet supported here."
+                        f"HuisIdBSV {household_id} has more than one "
+                        f"household-batch shard under {base}, which this "
+                        f"return shape cannot represent. Read them with "
+                        f"mapped_household_files."
                     )
-                out[household_id] = p
+                out[household_id] = path
             return out
         return {}
 
@@ -186,8 +199,9 @@ def read_mapped_households(household_ids, columns=None, mapped_folder_path=None)
     and read individually -- measured 3x faster than pushing a WHERE through a
     glob scan, and RAM is bounded by the batch size.
 
-    Works on both layouts via detect_mapped_format. In the flat layout
-    HuisBatchIdBSV equals HuisIdBSV (one file per household).
+    Works on both layouts via detect_mapped_format. The flat layout has no
+    household-batch level, so a read of it reports HuisBatchIdBSV as the
+    household id.
 
     Raises FileNotFoundError listing any requested household with no data.
     """
@@ -199,17 +213,25 @@ def read_mapped_households(household_ids, columns=None, mapped_folder_path=None)
     read_cols = list(columns) if columns is not None else None
     frames = []
     missing = []
-    for hid in household_ids:
-        hid = int(hid)
+    for household_id in household_ids:
+        household_id = int(household_id)
         try:
-            files = mapped_household_files(hid, mapped_folder_path=root)
+            files = mapped_household_files(household_id, mapped_folder_path=root)
         except FileNotFoundError:
-            missing.append(hid)
+            missing.append(household_id)
             continue
-        for p, hbid in files:
-            df = pd.read_parquet(p, columns=read_cols, dtype_backend="numpy_nullable")
-            df.insert(0, "HuisIdBSV", pd.array([hid] * len(df), dtype="Int64"))
-            df.insert(1, "HuisBatchIdBSV", pd.array([hbid] * len(df), dtype="Int64"))
+        for path, household_batch_id in files:
+            df = pd.read_parquet(
+                path, columns=read_cols, dtype_backend="numpy_nullable"
+            )
+            df.insert(
+                0, "HuisIdBSV", pd.array([household_id] * len(df), dtype="Int64")
+            )
+            df.insert(
+                1,
+                "HuisBatchIdBSV",
+                pd.array([household_batch_id] * len(df), dtype="Int64"),
+            )
             frames.append(df)
 
     if missing:
@@ -237,12 +259,12 @@ def shard_root(path):
     its root and its partitions under ``sharded/``, so a recursive glob from the
     root matches both layouts at once and the reader rejects the mixture.
     """
-    p = str(path)
-    if not os.path.isdir(p):
+    root = str(path)
+    if not os.path.isdir(root):
         return None
-    if _glob.glob(os.path.join(p, "HuisIdBSV=*")):
-        return p
-    nested = os.path.join(p, "sharded")
+    if _glob.glob(os.path.join(root, "HuisIdBSV=*")):
+        return root
+    nested = os.path.join(root, "sharded")
     if _glob.glob(os.path.join(nested, "HuisIdBSV=*")):
         return nested
     return None
@@ -335,28 +357,28 @@ def source_read_targets(path, household_ids=None):
     str or list of str
         A single path/glob, or one glob per requested household.
     """
-    p = str(path)
-    layout = source_layout(p)
+    source = str(path)
+    layout = source_layout(source)
     if layout == "file":
-        return p
+        return source
     if household_ids is None:
-        return shard_glob(p) if layout == "sharded" else flat_glob(p)
-    wanted = sorted({int(h) for h in household_ids})
+        return shard_glob(source) if layout == "sharded" else flat_glob(source)
+    wanted = sorted({int(household_id) for household_id in household_ids})
     if not wanted:
         raise ValueError(
-            f"No households requested for {p}; pass None to read them all."
+            f"No households requested for {source}; pass None to read them all."
         )
-    root = shard_root(p) if layout == "sharded" else None
+    base = shard_root(source) if layout == "sharded" else source
     targets, absent = [], []
     for household_id in wanted:
         if layout == "flat":
-            flat_file = os.path.join(p, f"household_{household_id}_table.parquet")
+            flat_file = os.path.join(base, f"household_{household_id}_table.parquet")
             if os.path.exists(flat_file):
                 targets.append(flat_file)
             else:
                 absent.append(household_id)
             continue
-        shard_dir = os.path.join(root, f"HuisIdBSV={household_id}")
+        shard_dir = os.path.join(base, f"HuisIdBSV={household_id}")
         if os.path.isdir(shard_dir):
             targets.append(os.path.join(shard_dir, "**", "*.parquet"))
         else:
@@ -367,11 +389,11 @@ def source_read_targets(path, household_ids=None):
         # households the excluded ones among them never produced.
         logging.debug(
             f"[source_read_targets] {len(absent)} requested household(s) have "
-            f"no data in {p}: {absent}"
+            f"no data in {source}: {absent}"
         )
     if not targets:
         raise FileNotFoundError(
-            f"None of the requested households have data in {p}: {wanted}"
+            f"None of the requested households have data in {source}: {wanted}"
         )
     return targets
 
@@ -429,38 +451,39 @@ def read_source_frame(path, columns=None) -> pd.DataFrame:
     behaviour a combined single file would give).
     """
     import pyarrow.parquet as _pq
-    p = str(path)
-    layout = source_layout(p)
+    source = str(path)
+    layout = source_layout(source)
     if layout == "file":
-        return pd.read_parquet(p, columns=columns, dtype_backend="numpy_nullable")
+        return pd.read_parquet(source, columns=columns, dtype_backend="numpy_nullable")
     flat = layout == "flat"
-    pattern = flat_glob(p) if flat else shard_glob(p)
+    pattern = flat_glob(source) if flat else shard_glob(source)
     part_files = sorted(_glob.glob(pattern, recursive=True))
     if not part_files:
-        raise FileNotFoundError(f"No parquet files under {p} ({layout} layout).")
+        raise FileNotFoundError(f"No parquet files under {source} ({layout} layout).")
     frames = []
-    for f in part_files:
-        m = (_FLAT_FILE_RE if flat else _SHARD_PART_RE).search(
-            os.path.basename(f) if flat else f
+    for part_file in part_files:
+        match = (_FLAT_FILE_RE if flat else _SHARD_PART_RE).search(
+            os.path.basename(part_file) if flat else part_file
         )
-        if m is None:
+        if match is None:
             raise ValueError(
-                f"Cannot parse the household id from {f!r} ({layout} layout)."
+                f"Cannot parse the household id from {part_file!r} "
+                f"({layout} layout)."
             )
-        # One file per household in the flat layout, so the batch id is the
-        # household id -- the same equivalence mapped_household_files applies.
+        # The flat layout has no household-batch level, so the household id is
+        # reported in its place -- as mapped_household_files does.
         ids = (
-            (int(m.group(1)), int(m.group(1))) if flat
-            else (int(m.group(1)), int(m.group(2)))
+            (int(match.group(1)), int(match.group(1))) if flat
+            else (int(match.group(1)), int(match.group(2)))
         )
         if columns is None:
-            df = pd.read_parquet(f, dtype_backend="numpy_nullable")
+            df = pd.read_parquet(part_file, dtype_backend="numpy_nullable")
             n_rows = len(df)
         else:
-            stored = set(_pq.read_schema(f).names)
+            stored = set(_pq.read_schema(part_file).names)
             read_cols = [c for c in columns if c in stored]
             if read_cols:
-                df = pd.read_parquet(f, columns=read_cols,
+                df = pd.read_parquet(part_file, columns=read_cols,
                                      dtype_backend="numpy_nullable")
                 n_rows = len(df)
             else:
@@ -469,7 +492,7 @@ def read_source_frame(path, columns=None) -> pd.DataFrame:
                 # name). Reading zero columns yields a zero-length frame, so
                 # take the true row count from the footer and build an
                 # empty-body frame to inject the ids into.
-                n_rows = _pq.read_metadata(f).num_rows
+                n_rows = _pq.read_metadata(part_file).num_rows
                 df = pd.DataFrame(index=range(n_rows))
         for pos, (name, val) in enumerate(
             (("HuisIdBSV", ids[0]), ("HuisBatchIdBSV", ids[1]))
@@ -482,7 +505,7 @@ def read_source_frame(path, columns=None) -> pd.DataFrame:
     if columns is not None:
         missing = [c for c in columns if c not in out.columns]
         if missing:
-            raise ValueError(f"Column(s) {missing} not found in any file under {p}.")
+            raise ValueError(f"Column(s) {missing} not found in any file under {source}.")
         out = out[list(columns)]
     return out
 

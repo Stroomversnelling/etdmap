@@ -279,36 +279,92 @@ suite has already paid for them.
 
 ## Test fixtures
 
-The test suite compares freshly-generated pipeline output against committed
-fixture files in `tests/data/`. Two kinds of fixture are committed:
+Tests build the data they assert on. Nothing is committed under `tests/data/`
+and no test compares output against a stored copy of a previous run.
 
-- `metadata_*.json` -- per-column statistics summary of each pipeline output.
-- `sample_*.parquet` -- a deterministic 100-row sample of each pipeline output
-  (`df.sample(n=100, random_state=42)`).
+### A mapped dataset
 
-Both are derived from the anonymised synthetic test dataset described in
-ADR-007 (see `DECISIONS.md`). They are not production data. The synthetic
-input itself is generated in `tests/conftest.py` via `PCG64(seed=42)` and is
-fully deterministic.
+`etdmap.testing.generate_mapped_dataset` writes a mapped dataset, generated per
+session into a temporary folder. Raw supplier-shaped input is generated first
+and then mapped through `run_standard_pipeline`, so the fixture is the output of
+the production mapping path and lands in whichever layout
+`mapped_output_format` names -- the sharded one by default. Read it with
+`etdmap.storage.mapped_household_paths` rather than globbing for a filename.
 
-`*.parquet` and `*.csv` are gitignored by default; the fixture files are
-re-included via explicit `!tests/data/sample_*.parquet` and
-`!tests/data/metadata_*.json` exceptions in `.gitignore`. The `etdmap/data/`
-canonical model files (etdmodel.csv, thresholds.csv, catalog.parquet,
-Rule.csv) have their own exceptions.
+The data is deterministic: a per-column seed derived from the household and the
+column name, so values do not move when columns are reordered.
 
-To regenerate the fixtures after an intentional pipeline change, run the
-full mapping workflow so updated parquet files are written to
-`mapped_folder_path`, then from the repo root:
+```python
+from etdmap.testing import generate_mapped_dataset
 
-```bash
-python tests/test_helpers.py
+generate_mapped_dataset(
+    target_folder,
+    bsv_metadata_file=...,
+    households_per_project=10,   # defaults, see etdmap.testing
+    projects=2,
+    days=3,
+)
 ```
 
-This overwrites `tests/data/metadata_*.json` and `tests/data/sample_*.parquet`.
-Per ADR-007, fixture regeneration must be deliberate -- review the diff with
-`git diff tests/data/` before committing, and confirm the change is the
-expected consequence of a known pipeline update rather than a silent drift.
+The dataset is clean: every cumulative column the model declares is present,
+non-decreasing from zero, on an unbroken five-minute grid, every value inside
+the bound the model declares for it. One column of one household carries a gap
+(`GAP_HOUSEHOLD`, `GAP_COLUMN`, `GAP_SLOTS`).
+
+The columns in `INFREQUENT_DEVICE_COLUMNS` deliver a few unevenly spaced
+readings and are empty between them, as a supplier delivers a device that
+reports when it runs. No cadence can be measured off them, so the mapping's
+`fill_down_infrequent_devices` holds each reading until the next one arrives.
+Every other column reports on every row.
+
+The shape decides which behaviours a run can reach. A project below
+`etdtransform.presence.MIN_ELIGIBLE_HOUSEHOLDS` publishes no average; a span
+shorter than an interval gives that interval no slot. State the shape a test
+needs rather than taking the default. At the default span the dataset does not
+satisfy the checks written against a production year of data -- see
+`tests/test_index_verdicts_from_a_run.py` for which hold and which do not.
+
+Three metadata files are generated alongside, for the households of that run:
+the reviewed BSV metadata, the project mapping, and the household-batch sync
+CSV, all under `<target>/_generated_metadata/`. Passing
+`supplier_metadata_xlsx_file` or `project_mapping_csv_path` uses that file
+instead of generating one.
+
+### A model a test declares
+
+`declare_synthetic_model` installs a model for the duration of a test, for
+columns and bounds the shipped model need not carry:
+
+```python
+from etdmap.testing import declare_synthetic_model, synthetic_model
+
+with declare_synthetic_model(synthetic_model(maximum=0.5)) as model:
+    ...  # model.device, model.device_complement, model.high, model.low
+```
+
+The declaration is merged into the model tables and every derived structure is
+rebuilt in place, so a module that imported one by name sees it. The shipped
+model is restored on exit.
+
+`etdmap.data_model.rebuild_model(extra_model_rows=..., extra_threshold_rows=...)`
+is the same mechanism for rows a test writes itself -- one field of one variable,
+where `synthetic_model` declares a whole device. Everything is derived before
+anything is written, and a failure in the phase that cannot be derived ahead is
+followed by a rebuild from the shipped tables, so a declaration that will not
+load leaves the model loadable.
+
+### Other builders
+
+- `model_row(variable, **fields)` -- one row of etdmodel.csv, with the
+  classifiers defaulted, so a test states only the field it is about.
+- `cumulative_pair(variable, **fields)` -- that row, its interval column and
+  both threshold rows. The model refuses a cumulative variable missing either,
+  so declaring one means declaring all four.
+- `cadence_sidecar(columns, minutes=..., ...)` -- the per-column cadence table
+  `detect_column_cadence` produces, for a test stating a cadence rather than
+  implying one through timestamps. `CADENCE_DTYPES` is its schema.
+- `generate_raw_dataset` -- supplier-shaped input, if a test needs the stage
+  before mapping.
 
 # Overview
 
@@ -423,17 +479,24 @@ is written to help add them.
 
 In the data model households are not unique across batches, and `Meenemen`
 and the other batch fields belong to the household batch, not the household.
-A household appearing in more than one batch is not supported yet: today
-`HuisBatchIdBSV` equals `HuisIdBSV` and there is one row per household, and
-functions that assume one row or one file per household raise
-`HouseBatchOverlapError` rather than mixing data from different deliveries.
+`HuisBatchIdBSV` is therefore the key of a dataset, and `HuisIdBSV` is not.
+
+Two things are still catching up with that. The mapping numbers each household
+batch with its household's id (`save_mapped_household`), so it cannot yet write
+a household's second delivery. And the code paths that can only answer for one
+-- a single file for a household, a single index row -- raise
+`HouseBatchOverlapError` when they meet a household with several, rather than
+mixing data from different deliveries. Read a household's data with
+`mapped_household_files`, which answers per household batch.
 
 ## Storage layouts
 
 Mapped household data is stored in one of two layouts:
 
 - **flat (deprecated)**: one parquet file per household,
-  `household_<HuisIdBSV>_table.parquet`.
+  `household_<HuisIdBSV>_table.parquet`. It has no household-batch level, so
+  it cannot represent a household delivered more than once; reads of it
+  report `HuisBatchIdBSV` as the household id.
 - **sharded** (the default for new output): a partitioned folder tree in
   which the directory names carry the ids --
   `sharded/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/part.parquet`. The ids live in

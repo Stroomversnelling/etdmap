@@ -2,8 +2,8 @@
 
 etdmap owns mapping, so it owns the fixture dataset that represents mapped
 output. Downstream suites call :func:`generate_mapped_dataset` rather than
-reading a folder a previous run left behind, which keeps them aligned with what
-this package actually emits.
+reading a folder a previous run left behind, so they run against what this
+package currently emits.
 
 Install with the ``testing`` extra to use this module.
 """
@@ -23,18 +23,20 @@ import etdmap.data_model as data_model
 import etdmap.index_helpers as index_helpers
 import etdmap.mapping_helpers as mapping
 from etdmap.index_helpers import bsv_metadata_columns, read_metadata
-from etdmap.record_validators import record_flag_conditions
 
 __all__ = [
     "CADENCE_DTYPES",
-    "SYNTHETIC_DIFF_RANGES",
     "SyntheticModel",
     "cadence_sidecar",
+    "cumulative_pair",
     "declare_synthetic_model",
     "generate_mapped_dataset",
     "generate_raw_dataset",
     "installed_fingerprint",
+    "interval_draw_range",
+    "model_row",
     "model_rows",
+    "supplier_label",
     "synthetic_model",
 ]
 
@@ -72,33 +74,28 @@ def synthetic_model(
 ) -> SyntheticModel:
     """Build a two-device model that names nothing the real model names.
 
-    The live model is derived from Grist and its names change, so a
-    behavioural test reaching for a real variable is pinned to today's
-    metadata rather than to the behaviour it means to check. This builds the
-    same *shape* from names nothing else uses:
+    The live model is derived from Grist and its names change, so a test
+    reaching for a real variable is pinned to today's metadata rather than to
+    the behaviour it means to check. This builds the same *shape* from names
+    nothing else uses:
 
     - *stem* is a tariff device -- a combined variable, its complement, and
-      the two registers (each with its own complement) that mapping sums
+      the two tariff splits (each with its own complement) that mapping sums
       into it;
-    - *plain* is an ordinary device, with a complement and no registers.
-      Having one in the model is what keeps a test honest about a device
-      family being the declared one rather than every column on the frame.
+    - *plain* is an ordinary device, with a complement and no tariff splits.
+      Its presence is what distinguishes a declared device family from every
+      column on the frame.
 
     Every interval column is declared monotonic, and every column gets the
     same threshold entry -- *minimum*, *maximum*, *threshold_type*, with no
-    sustained level or exponent, so a bound scales by a plain multiply. A
-    test whose subject is a bound states the *maximum* it needs rather than
-    inheriting whatever the metadata happens to declare this week.
+    sustained level or exponent, so a bound scales by a plain multiply.
 
     Pass the result to :func:`declare_synthetic_model`.
     """
-    # Tariff registers are paired by name, so a declared model gets tariff
-    # splits only if its registers carry the substrings
-    # _build_tariff_register_pairs matches, and its interval columns the one
-    # suffix that pattern's suffix group accepts. The cumulative-to-interval
-    # link is declared through ComplementVariabele and needs no convention, so
-    # the suffix is here for the tariff pattern alone. The stems name nothing
-    # the real model names.
+    # Tariff registers are paired by name: _build_tariff_register_pairs
+    # matches the Hoog/Laag substrings and the one interval suffix its pattern
+    # accepts, so the names below carry both. The cumulative-to-interval link
+    # is declared through ComplementVariabele and needs no such convention.
     device, device_complement = stem, f"{stem}Diff"
     high, low = f"{stem}Hoog", f"{stem}Laag"
     high_complement, low_complement = f"{high}Diff", f"{low}Diff"
@@ -142,12 +139,69 @@ def synthetic_model(
     )
 
 
+def model_row(variable: str, **fields) -> dict:
+    """One row of etdmodel.csv, for a variable a test declares.
+
+    The classifiers default to "nee" and the entity to the delivered one, so a
+    row states only what it is about and a test reads as the property it
+    declares. Any field of etdmodel.csv may be passed; one the model does not
+    have is refused by :func:`etdmap.data_model.rebuild_model`.
+
+    :func:`model_rows` is the whole-declaration form, for a
+    :class:`SyntheticModel` rather than a single row.
+    """
+    return {
+        "Variabele": variable,
+        "Entiteit": "Prestatiedata",
+        "Type variabele": "number",
+        "Cumulatief": "nee",
+        "Monotoon": "nee",
+        "Momentaan": "nee",
+        "Diff": "nee",
+        **fields,
+    }
+
+
+def cumulative_pair(variable: str, **fields) -> tuple[list, list]:
+    """A cumulative variable, its interval column, and the thresholds of both.
+
+    Declaring a cumulative variable means declaring all four. The model refuses
+    one with no ``ComplementVariabele``, whose interval column -- and so the
+    outlier check built for it -- is unknown, and one with no threshold row,
+    whose whole-file bounds are.
+
+    *fields* go on the cumulative row. The bounds are arbitrary; a test whose
+    subject is a bound states its own through :func:`synthetic_model`.
+
+    Returns
+    -------
+    tuple
+        ``(etdmodel rows, thresholds rows)``, to pass to
+        :func:`etdmap.data_model.rebuild_model`.
+    """
+    interval = f"{variable}Diff"
+    return (
+        [
+            model_row(
+                variable, Cumulatief="ja", ComplementVariabele=interval, **fields
+            ),
+            model_row(interval, Diff="ja", ComplementVariabele=variable),
+        ],
+        [
+            {"Variabele": variable, "Min": 0.0, "Max": 10.0,
+             "ThresholdType": "cumulatief"},
+            {"Variabele": interval, "Min": 0.0, "Max": 1.0,
+             "ThresholdType": "5-minute"},
+        ],
+    )
+
+
 def model_rows(model: SyntheticModel) -> tuple[list, list]:
     """The etdmodel and thresholds rows *model* declares.
 
     The translation from a declaration to the two tables the data model is
-    built from, so a declared model goes through the same derivation the
-    shipped one does rather than through lookups assembled here.
+    built from, so a declared model goes through the same derivation as the
+    shipped one.
 
     Returns
     -------
@@ -183,25 +237,23 @@ def declare_synthetic_model(model: SyntheticModel = None):
     """Install *model* as the model every loaded etd module reads.
 
     Consumers bind these names with ``from etdmap.data_model import ...``,
-    which copies the object into their own namespace. Rather than patch each
-    of those bindings, the declaration is merged into the model tables and
-    every derived structure is rebuilt in place, so a module reading one of
-    them reads the declaration without being patched, and a module that starts
-    reading one later is covered without this helper being updated.
+    which copies the object into their own namespace. The declaration is
+    therefore merged into the model tables and every derived structure rebuilt
+    in place: a module reading one of them reads the declaration without being
+    patched.
 
-    The declaration supplies rows; everything that answers "which columns
-    belong to one variable, and what may it read" is then derived from them --
-    the complement and tariff pairings, the monotonic interval columns, the
+    The declaration supplies rows, and everything answering "which columns
+    belong to one variable, and what may it read" is derived from them -- the
+    complement and tariff pairings, the monotonic interval columns, the
     thresholds, and the per-column checks.
 
-    The declaration is merged into the shipped model rather than replacing it,
-    so a column the declaration does not mention keeps whatever the model says
-    about it. State in ``model.thresholds`` the bound of every column a code
-    path under test looks up, so the test does not rest on a shipped number.
+    It is merged into the shipped model rather than replacing it, so a column
+    it does not mention keeps whatever the model says about it. State in
+    ``model.thresholds`` the bound of every column the code under test looks
+    up, so the test does not rest on a shipped number.
 
-    On exit the model is rebuilt from the shipped tables. A declared column
-    reaches more structures than its own row names, so the restore is a
-    rebuild rather than an undo of the entries that were written.
+    On exit the model is rebuilt from the shipped tables, which is the restore:
+    a declared column reaches more structures than its own row names.
 
     Yields the model, so a test can read its column names from it.
     """
@@ -316,67 +368,96 @@ def installed_fingerprint(*extra_files) -> str:
     return digest.hexdigest()[:16]
 
 
-# Frozen synthetic generation ranges for the raw-data test fixture:
-# cumulative column name -> (min_diff, max_diff) for its per-interval Diff.
-#
-# PROVENANCE: seeded 2026-06-19 from the then-current thresholds.csv effective
-# values (each "{col}Diff" row's Min/Max, with a missing Max collapsed to 1.0).
-# These are INTENTIONALLY INDEPENDENT of thresholds.csv from here on: test input
-# must exercise behaviour, never be derived from the artifact under test
-# (generating from thresholds is circular -- data drawn inside [Min, Max] can
-# never violate its own thresholds, so the validators/clipping are never
-# exercised and a wrong threshold cannot be caught). Editing thresholds.csv no
-# longer rewrites this fixture.
-#
-# This dict is also the LIST OF COLUMNS the fixture generates: the generator
-# iterates it, not cumulative_columns. Driving generation off the declared model
-# made every new model variable a fixture error -- adding
-# ElektriciteitsgebruikTotaalWarmtepompCumulatief to the model broke four tests
-# that have nothing to do with it. A fixture declares its own columns; what the
-# model declares is tested as behaviour, not as an inventory.
-SYNTHETIC_DIFF_RANGES: dict[str, tuple[float, float]] = {
-    "ElektriciteitNetgebruik": (0.0, 1.5),
-    "ElektriciteitNetgebruikHoog": (0.0, 1.5),
-    "ElektriciteitNetgebruikLaag": (0.0, 1.5),
-    "ElektriciteitTeruglevering": (0.0, 1.5),
-    "ElektriciteitTerugleveringHoog": (0.0, 1.5),
-    "ElektriciteitTerugleveringLaag": (0.0, 1.5),
-    "ElektriciteitsgebruikBoilervat": (0.0, 0.32),
-    "ElektriciteitsgebruikBooster": (0.0, 0.32),
-    "ElektriciteitsgebruikOverigGG": (0.0, 1.0),
-    "ElektriciteitsgebruikRadiator": (0.0, 0.32),
-    "ElektriciteitsgebruikWTW": (0.0, 0.32),
-    "ElektriciteitsgebruikWarmtepomp": (0.0, 0.96),
-    "ElektriciteitsgebruikWarmtepompIntern": (0.0, 1.0),
-    "Gasgebruik": (0.0, 0.8333),
-    "WarmteproductieRuimteverwarming": (0.0, 0.0576),
-    "WarmteproductieWarmTapwater": (0.0, 0.0576),
-    "WarmteproductieWarmtepomp": (0.0, 0.0576),
-    "WatergebruikRuimteverwarming": (0.0, 1.0),
-    "WatergebruikWarmTapwater": (0.0, 100.0),
-    "WatergebruikWarmtepomp": (0.0, 1.0),
-    "ZonopwekTotaal": (0.0, 0.96),
-    "ZonopwekVerbruik": (0.0, 1.0),
+def supplier_label(household_number: int) -> str:
+    """The HuisIdLeverancier the fixture gives household *household_number*.
+
+    The generator writes it onto the raw data and the mapping reads it back off
+    the filename, so both sides spell it through here.
+    """
+    return f"Huis{household_number:02}"
+
+
+#: The devices this fixture fills down, and how much sparser than the gap cycle
+#: below each one reports. Each supplier mapper declares its own set: which
+#: devices report infrequently is a fact about a supplier's export, not about
+#: the model.
+#:
+#: A column carrying a value on every row leaves
+#: ``fill_down_infrequent_devices`` nothing to fill, so these are generated
+#: sparse.
+INFREQUENT_DEVICE_SPARSITY = {
+    "ElektriciteitsgebruikBoilervat": 1,
+    "ElektriciteitsgebruikRadiator": 2,
+    "ElektriciteitsgebruikBooster": 5,
 }
 
+INFREQUENT_DEVICE_COLUMNS = tuple(INFREQUENT_DEVICE_SPARSITY)
 
-#: The dataset's shape, where a caller states none. Two projects because a
-#: project aggregate needs more than one, and enough households per project to
-#: meet the averaging floor, so a run exercises the production constant instead
-#: of a lowered one. Three days because the coarsest resample is daily and a
-#: single day gives it no interior slot.
+#: The gaps between an infrequent device's readings, in grid rows, cycled over
+#: the span and multiplied by the device's sparsity.
+#:
+#: Uneven, with no gap repeating within a cycle: these devices report when they
+#: run rather than on a schedule, so no cadence can be measured off them.
+#: ``detect_column_cadence`` reports the most common gap's share as its
+#: confidence, and distinct gaps keep that share under the threshold at which a
+#: measurement is trusted, so the column falls back to the grid and
+#: ``fill_down_infrequent_devices`` holds each reading until the next arrives.
+_INFREQUENT_GAPS = (7, 23, 53, 97)
+
+#: Fewest readings an infrequent device may deliver over the span. One reading
+#: fills to a flat line, with no accumulation anywhere.
+_MIN_INFREQUENT_READINGS = 2
+
+#: Drawn against where a column declares no upper bound, since a per-interval
+#: reading needs some magnitude and the model states none for it.
+UNBOUNDED_INTERVAL_DRAW = 1.0
+
+
+def interval_draw_range(column: str, grid_minutes: float) -> tuple:
+    """
+    The range a plausible per-interval reading of *column* is drawn from.
+
+    The bound the model declares for the column's interval form, scaled to the
+    grid the fixture is generated at. A reading drawn inside its own bound
+    cannot violate it, so a test whose subject is a violation declares the
+    bound and the value itself through :func:`declare_synthetic_model`.
+
+    Raises
+    ------
+    KeyError
+        When *column* has no interval form, or that form declares no
+        threshold. Either means the fixture is generating a column the model
+        says nothing about.
+    """
+    from etdmap.data_model import interval_column, scale_bounds, thresholds_dict
+
+    interval = interval_column(column)
+    if interval is None or interval not in thresholds_dict:
+        raise KeyError(
+            f"interval_draw_range: '{column}' has no declared interval "
+            f"threshold to draw from. Either the model needs one, or the "
+            f"column is not a cumulative variable of the model."
+        )
+    lower, upper = scale_bounds(thresholds_dict[interval], grid_minutes)
+    lower = 0.0 if pd.isna(lower) else float(lower)
+    upper = UNBOUNDED_INTERVAL_DRAW if pd.isna(upper) else float(upper)
+    return lower, upper
+
+
+#: The dataset's shape, where a caller states none. Two projects, because a
+#: project aggregate needs more than one; enough households per project to meet
+#: the averaging floor; and three days, because the coarsest resample is daily
+#: and a single day gives it no interior slot.
 DEFAULT_HOUSEHOLDS_PER_PROJECT = 10
 DEFAULT_PROJECTS = 2
 DEFAULT_DAYS = 3
 DEFAULT_GRID = "5min"
 DEFAULT_BASE_DATE = pd.Timestamp("2023-01-01")
 
-#: One gap, in one column of one household. Not realism: with no gap anywhere
-#: imputation produces its artifacts having filled nothing, so a run cannot
-#: show the fill placing volume or the gap accumulator recording any. What the
-#: fill does with a gap is asserted per behaviour, on frames those tests build.
-#: Declared by household number and span fraction so it lands inside whatever
-#: shape the caller asked for.
+#: One gap, in one column of one household: with no gap anywhere, imputation
+#: writes its artifacts having filled nothing, and the gap accumulator records
+#: nothing. Declared by household number and span fraction, so it lands inside
+#: whatever shape the caller asked for.
 GAP_HOUSEHOLD = 1
 GAP_COLUMN = "Gasgebruik"
 GAP_START_FRACTION = 0.5
@@ -407,9 +488,8 @@ def synthetic_supplier_metadata(household_keys) -> pd.DataFrame:
 
     What :func:`etdmap.index_helpers.read_metadata` returns for a workbook,
     without one: a row per household over exactly the columns the model lets a
-    supplier declare. Generated rather than read so the household count is the
-    caller's -- a workbook fixes it, and a dataset shaped for a behaviour then
-    has households the metadata does not cover.
+    supplier declare. Generated rather than read, so the household count is
+    the caller's: a workbook covers the households it was written for.
 
     Typed through :func:`etdmap.index_helpers.set_metadata_dtypes`, which is
     where both declaration styles and the boolean synonyms are applied.
@@ -444,6 +524,49 @@ def synthetic_supplier_metadata(household_keys) -> pd.DataFrame:
     return set_metadata_dtypes(metadata_df=frame[allowed_supplier_metadata_columns])
 
 
+def _infrequent_reading_rows(column, num_records):
+    """The rows an infrequent device delivers a reading on."""
+    scale = INFREQUENT_DEVICE_SPARSITY[column]
+    rows = []
+    row = 0
+    while row < num_records:
+        rows.append(row)
+        row += _INFREQUENT_GAPS[len(rows) % len(_INFREQUENT_GAPS)] * scale
+    if len(rows) < _MIN_INFREQUENT_READINGS:
+        raise ValueError(
+            f"generate_raw_dataset: the span is {num_records} rows, which "
+            f"gives '{column}' {len(rows)} reading(s) at its sparsity of "
+            f"{scale}. Generate a longer span, or lower the sparsity."
+        )
+    return rows
+
+
+def _cumulative_column(column, reading_rows, num_records, grid_minutes, household_id):
+    """One cumulative column, carrying a reading on each row in *reading_rows*.
+
+    The rows in between are empty: a device that did not report delivered
+    nothing. Increments are drawn against the bound for one grid interval
+    wherever the readings land, so a reading is inside its own bound however
+    long the device was idle for.
+    """
+    min_diff, max_diff = interval_draw_range(column, grid_minutes)
+    # Seeded per household and column, so a column's values do not move when
+    # the column list does.
+    column_seed = int(
+        hashlib.md5(f"{household_id}_{column}".encode()).hexdigest(), 16
+    ) % (2**32)
+    draw = Generator(PCG64(seed=column_seed))
+    diffs = pd.Series(
+        draw.uniform(min_diff, max_diff, size=len(reading_rows) - 1),
+        dtype="Float64",
+    )
+    readings = pd.concat(
+        [pd.Series([0], dtype="Float64"), diffs.cumsum()], ignore_index=True
+    )
+    readings.index = reading_rows
+    return readings.reindex(range(num_records))
+
+
 def generate_raw_dataset(
     output_dir,
     *,
@@ -456,22 +579,38 @@ def generate_raw_dataset(
     """
     Raw supplier-shaped household data, with a minimal index file.
 
-    A clean, complete dataset: every cumulative column present and populated,
-    non-decreasing from zero, on an unbroken grid, with every value inside its
-    declared bound. What a stage does with a fault is asserted per fault, on a
-    frame the test builds, so nothing is injected here.
+    A clean, complete dataset: every cumulative column present, non-decreasing
+    from zero, on an unbroken grid, with every value inside its declared bound.
+    No fault is injected; a stage's handling of one is tested on a frame that
+    test builds.
 
-    The shape is the caller's. It decides which behaviours a run can reach -- a
-    project below the averaging floor cannot publish an average, and a span
-    shorter than an interval gives that interval no slot -- so a caller testing
-    one of those states its own shape rather than inheriting this one.
+    The infrequent devices (:data:`INFREQUENT_DEVICE_COLUMNS`) deliver a few
+    unevenly spaced readings and are empty between them, as a supplier delivers
+    them. Every other column reports on every row.
+
+    The shape is the caller's, and it decides which behaviours a run can reach:
+    a project below the averaging floor publishes no average, and a span
+    shorter than an interval gives that interval no slot.
 
     Returns:
         str: Path to the directory containing the generated fixture data.
     """
     per_interval = pd.Timedelta(time_interval)
     num_records = int(pd.Timedelta(days=days) / per_interval)
+    grid_minutes = per_interval.total_seconds() / 60
     project_ids = list(range(1, projects + 1))
+
+    # The rows each column carries a reading on. The same for every household,
+    # so it is resolved once -- and raises here rather than per household if the
+    # span is too short for a device to report twice.
+    reading_rows = {
+        column: (
+            _infrequent_reading_rows(column, num_records)
+            if column in INFREQUENT_DEVICE_COLUMNS
+            else list(range(num_records))
+        )
+        for column in data_model.cumulative_columns
+    }
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -487,7 +626,7 @@ def generate_raw_dataset(
             household_id = (project_id - 1) * households_per_project + household_idx
 
             # Preconstruct the prefixed strings
-            household_prefixed = f"Huis{household_id:02}"
+            household_prefixed = supplier_label(household_id)
             project_prefixed = f"Project{project_id:02}"
 
             # Generate time series
@@ -498,16 +637,10 @@ def generate_raw_dataset(
                 "ReadingDate": timestamps,
             }
 
-            # Generate cumulative column data.
-            # Each column uses an independent seed derived from household + column name
-            # so fixture data is stable regardless of the order of cumulative_columns.
-            for col in sorted(SYNTHETIC_DIFF_RANGES):
-                min_diff, max_diff = SYNTHETIC_DIFF_RANGES[col]
-                col_seed = int(hashlib.md5(f"{household_id}_{col}".encode()).hexdigest(), 16) % (2**32)
-                col_rng = Generator(PCG64(seed=col_seed))
-                diffs = pd.Series(col_rng.uniform(min_diff, max_diff, size=num_records - 1), dtype="float64")
-                cumulative = pd.concat([pd.Series([0]), diffs.cumsum()], ignore_index=True)
-                household_data[col] = cumulative
+            for col in sorted(data_model.cumulative_columns):
+                household_data[col] = _cumulative_column(
+                    col, reading_rows[col], num_records, grid_minutes, household_id
+                )
 
             household_df = pd.DataFrame(household_data)
             if household_id == GAP_HOUSEHOLD:
@@ -535,16 +668,32 @@ def generate_raw_dataset(
 
 
 def _list_files_data_fixture(folder_path):
-    return {f[:-8]: f for f in os.listdir(folder_path) if f.endswith(".parquet") and "index" not in f}
+    """The raw household files, keyed by stem, in household-number order.
+
+    HuisIdBSV is assigned in the order this yields. Sorting on the number in
+    the name rather than on the name keeps household_10 after household_1 and
+    makes the assignment the same on any platform.
+    """
+    names = [
+        name for name in os.listdir(folder_path)
+        if name.endswith(".parquet") and "index" not in name
+    ]
+    return {
+        name[:-8]: name
+        for name in sorted(names, key=lambda name: int(name.split("_")[1]))
+    }
 
 
 def _process_data_fixture_file(
     household_id, file_name, etd_test_fixture_path, mapped_folder_path, grid_minutes
 ):
-    """Map one raw fixture file, returning its index entry and its cadence."""
+    """Map one raw fixture file, returning its index entry and its cadence.
+
+    The pipeline writes the household file, so nothing here names its path.
+    """
     file_path = os.path.join(etd_test_fixture_path, file_name)
-    new_file_path = os.path.join(
-        mapped_folder_path, f"household_{int(household_id)}_table.parquet"
+    household_id_supplier = supplier_label(
+        int(file_name.replace("household_", "").replace("_table.parquet", ""))
     )
 
     data_fixture_df = pd.read_parquet(file_path, dtype_backend="numpy_nullable")
@@ -565,58 +714,40 @@ def _process_data_fixture_file(
         grid_minutes=grid_minutes,
     )
 
-    # What the supplier delivered, recorded on the frame as delivered: every row
-    # here is a row that arrived, so an empty cell is a field the supplier left
-    # empty rather than a slot no row came for. The padding below answers the
-    # third case. Must precede the fill, or a filled cell reads as delivered.
+    # What the supplier delivered, on the frame as delivered: every row here is
+    # a row that arrived, so an empty cell is a field left empty rather than a
+    # slot no row came for. Must precede the fill, or a filled cell reads as
+    # delivered.
     mapping.mark_delivered(data_fixture_df)
 
-    data_fixture_df = mapping.ensure_intervals(
-        data_fixture_df, freq=mapping.cadence_label(grid_minutes)
-    )
-
-    data_fixture_df = mapping.rearrange_model_columns(
-        household_df=data_fixture_df, add_columns=True, context=f"{household_id}/{file_name}"
-    )
-
-    # Before the fill-down and before add_diff_columns, as in
-    # run_standard_pipeline: both write values, and the cadence lattice is
-    # anchored on the delivery record taken above.
-    mapping.mark_cadence(
+    # Which devices report infrequently is per supplier, so the fill sits
+    # outside run_standard_pipeline and a mapper applies it before calling.
+    data_fixture_df = mapping.fill_down_infrequent_devices(
         data_fixture_df,
+        columns=INFREQUENT_DEVICE_COLUMNS,
         cadence=cadence,
         grid_minutes=grid_minutes,
-        context=f"{household_id}/{file_name}",
     )
 
-    data_fixture_df = mapping.fill_down_infrequent_devices(
-        df=data_fixture_df,
-        columns=("ElektriciteitsgebruikBoilervat", "ElektriciteitsgebruikRadiator", "ElektriciteitsgebruikBooster"),
+    # The production mapping path, as the supplier mappers call it: the flags a
+    # stage downstream reads are the ones this path writes.
+    new_entry = mapping.run_standard_pipeline(
+        data_fixture_df,
+        int(household_id),
+        household_id_supplier,
+        mapped_folder_path,
+        context=f"{household_id}/{file_name}",
+        cadence=cadence,
         grid_minutes=grid_minutes,
     )
 
-    data_fixture_df = mapping.add_diff_columns(data_fixture_df, context=f"{household_id}/{file_name}")
-
-    for flag, condition in record_flag_conditions.items():
-        try:
-            data_fixture_df[flag] = condition(
-                data_fixture_df,
-                **index_helpers.supported_kwargs(condition, cadence=cadence),
-            )
-        except Exception as e:
-            logging.error(
-                f"Error validating with {flag} for household {household_id} / {file_name}: {e}",
-                exc_info=True,
-            )
-            data_fixture_df[flag] = pd.NA
-
-    data_fixture_df.to_parquet(new_file_path, engine="pyarrow")
-
-    return {
-        "HuisIdLeverancier": f'Huis{int(file_name.replace("household_", "").replace("_table.parquet", "")):02}',
-        "ProjectIdLeverancier": project_id,
-        "HuisIdBSV": household_id,
-    }, cadence
+    # From the pipeline rather than the frame measured above: it adds the
+    # cadence row for a tariff root built from delivered splits, which has none
+    # of its own. Both extras are popped; the index takes no other fields.
+    cadence = new_entry.pop("_cadence", None)
+    new_entry.pop("_validation_summary", None)
+    new_entry["ProjectIdLeverancier"] = project_id
+    return new_entry, cadence
 
 
 def generate_mapped_dataset(
@@ -633,9 +764,12 @@ def generate_mapped_dataset(
 ):
     """Generate the synthetic mapped dataset into *target_folder*.
 
-    Writes ``household_<id>_table.parquet`` per household, ``index.parquet`` and
-    the per-column cadence sidecar -- the shape downstream stages read. Raw supplier-shaped input is generated
-    first, into *raw_folder* when given and a sibling of the target otherwise.
+    Raw supplier-shaped input is generated first -- into *raw_folder* when
+    given, a sibling of the target otherwise -- and mapped through
+    ``run_standard_pipeline``. The result is ``index.parquet``, the per-column
+    cadence sidecar, and the household data in whichever layout
+    ``etdmap.options.mapped_output_format`` names; read it with
+    :func:`etdmap.storage.mapped_household_paths`.
 
     The caller supplies the metadata paths, so each suite uses its own
     configuration and this module needs none.
@@ -683,6 +817,9 @@ def generate_mapped_dataset(
     end = start + pd.Timedelta(days=days)
     pd.DataFrame({
         "HuisIdBSV": pd.array(household_ids, dtype="Int64"),
+        # One household batch per household, numbered with the household id,
+        # which is what save_mapped_household writes. A household can have
+        # several household batches; the mapping cannot produce them yet.
         "HuisBatchIdBSV": pd.array(household_ids, dtype="Int64"),
         "BatchIdBSV": pd.array([1] * households, dtype="Int64"),
         "ProjectIdBSV": pd.array(project_of, dtype="Int64"),
@@ -750,7 +887,8 @@ def generate_mapped_dataset(
         project_mapping_csv_path or generated_project_mapping
     )
 
-    # Generated for the households this run made, for the same reason.
+    # Generated for the households this run made, so the join resolves all
+    # of them whatever shape the caller asked for.
     metadata_df = (
         read_metadata(Path(supplier_metadata_xlsx_file))
         if supplier_metadata_xlsx_file is not None

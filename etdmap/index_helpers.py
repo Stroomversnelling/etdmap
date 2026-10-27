@@ -1225,8 +1225,10 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     if missing:
         # PENDING households: newly mapped, not yet added to the HuisBatch
         # table by the researcher. They stay in the index with NA batch
-        # fields; the paste-ready proposal supports the manual addition
-        # (HuisBatchIdBSV = HuisIdBSV for a first batch).
+        # fields; the paste-ready proposal supports the manual addition. It
+        # numbers the household batch with the household id, which is what the
+        # mapping writes; a household's further household batches are added in
+        # the HuisBatch table itself.
         missing_df = index_df[index_df["HuisIdBSV"].isin(missing)]
         proposal = pd.DataFrame({
             "HuisIdBSV": pd.array(missing, dtype="Int64"),

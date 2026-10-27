@@ -549,9 +549,15 @@ tariff_partner_columns, tariff_root_to_splits = _build_tariff_register_pairs()
 COMPLEMENT_COLUMN = "ComplementVariabele"
 
 
-def _build_cumulative_interval_pairs(df=None) -> tuple[dict[str, str], dict[str, str]]:
+def _build_cumulative_interval_pairs(
+    df=None, cumulative=None, intervals=None
+) -> tuple[dict[str, str], dict[str, str]]:
     """
     Read the cumulative <-> interval link from ``ComplementVariabele``.
+
+    Which variables count as cumulative and which as interval is a derivation
+    of the same model. Pass *cumulative* and *intervals* to read the link for a
+    model other than the one currently loaded; they default to the loaded one.
 
     Returns
     -------
@@ -569,8 +575,8 @@ def _build_cumulative_interval_pairs(df=None) -> tuple[dict[str, str], dict[str,
     if COMPLEMENT_COLUMN not in df.columns:
         return {}, {}
 
-    cumulative = set(cumulative_columns)
-    intervals = set(diff_columns)
+    cumulative = set(cumulative_columns if cumulative is None else cumulative)
+    intervals = set(diff_columns if intervals is None else intervals)
 
     forward, backward = {}, {}
     for _, row in df.iterrows():
@@ -992,17 +998,32 @@ def rebuild_model(extra_model_rows=None, extra_threshold_rows=None) -> None:
     """
     Rebuild every derived structure in place, optionally with extra rows.
 
-    Called with no rows it restores the shipped model, which is what makes it
-    usable as a teardown: a caller does not have to know which structures a
-    load reached. A column reaches more of them than its own row names -- the
-    pairing lookups, the indexed lookups and the per-column validators among
-    them -- so undoing a load entry by entry could not be known to be complete.
+    Called with no rows it restores the shipped model, which is the teardown
+    for a declaration: a column reaches more structures than its own row names
+    -- the pairing lookups, the indexed lookups and the per-column validators
+    among them -- so a load is undone by rebuilding, not entry by entry.
 
     *extra_model_rows* are rows of etdmodel.csv and *extra_threshold_rows* rows
     of thresholds.csv, as mappings or a DataFrame. A row whose Variabele is
     already declared replaces that whole row rather than the fields it names,
     so a field the row leaves out is pd.NA and not the shipped value. To change
     one field of a declared variable, carry its row and change that field.
+
+    A failure leaves the model loadable
+    ----------------------------------
+    Everything is derived before anything is written, so a declaration that
+    cannot be derived from -- an unknown field, an unreadable complement pair,
+    a bound that will not parse -- raises with the model as it was.
+
+    Replacing the containers cannot fail, but the per-column checks built from
+    them can: a declared cumulative variable with no threshold row is refused
+    there, by design. A failure in that phase is followed by a rebuild from the
+    shipped tables, so the model is the shipped one and not half this
+    declaration. The declaration's own error is the one raised.
+
+    The shipped tables are held apart and never written to, so that restore is
+    always available. It restores the shipped model, not whatever a surrounding
+    caller declared: declarations do not nest.
     """
     global _model_frame_base, _thresholds_frame_base
     if _model_frame_base is None:
@@ -1010,6 +1031,7 @@ def rebuild_model(extra_model_rows=None, extra_threshold_rows=None) -> None:
     if _thresholds_frame_base is None:
         _thresholds_frame_base = load_thresholds()
 
+    # ---- Derive. Nothing below is written to until all of it exists. ----
     model_df = _frame_with_extra_rows(_model_frame_base, extra_model_rows)
     thresholds_df = _frame_with_extra_rows(
         _thresholds_frame_base, extra_threshold_rows
@@ -1024,58 +1046,70 @@ def rebuild_model(extra_model_rows=None, extra_threshold_rows=None) -> None:
         all_perf_cols, required_perf_cols, all_col_types,
     ) = _build_derived_structures(model_df)
 
-    _replace_in_place(cumulative_columns, cumulative)
-    _replace_in_place(momentaan_columns, momentaan)
-    _replace_in_place(diff_columns, diff_cols)
-    _replace_in_place(monotonic_columns, monotonic)
-    _replace_in_place(model_column_order, col_order)
-    _replace_in_place(model_column_type, col_types)
-    _replace_in_place(allowed_supplier_metadata_columns, supplier_meta)
-    _replace_in_place(supplier_metadata_dtypes, supplier_meta_types)
-    _replace_in_place(all_performance_data_columns, all_perf_cols)
-    _replace_in_place(required_performance_data_columns, required_perf_cols)
-    _replace_in_place(performance_column_dtypes, all_col_types)
-
-    _replace_in_place(
-        thresholds_dict,
-        dict(threshold_entry(row) for _, row in thresholds_df.iterrows()),
-    )
-
+    thresholds = dict(threshold_entry(row) for _, row in thresholds_df.iterrows())
     partner, root_to_splits = _build_tariff_register_pairs(model_df)
-    _replace_in_place(tariff_partner_columns, partner)
-    _replace_in_place(tariff_root_to_splits, root_to_splits)
-
-    # Before monotonic_interval_columns: interval_column reads these.
-    by_cumulative, by_interval = _build_cumulative_interval_pairs(model_df)
-    _replace_in_place(interval_by_cumulative, by_cumulative)
-    _replace_in_place(cumulative_by_interval, by_interval)
-
-    _replace_in_place(
-        monotonic_interval_columns,
-        [
-            interval
-            for cumulative_col in monotonic_columns
-            if (interval := interval_column(cumulative_col)) is not None
-        ],
+    # Told which variables are which, rather than reading the loaded model: the
+    # pairs being derived here are this model's, and the loaded one is still
+    # the previous one at this point.
+    by_cumulative, by_interval = _build_cumulative_interval_pairs(
+        model_df, cumulative=cumulative, intervals=diff_cols
     )
-
+    monotonic_intervals = [
+        by_cumulative[column] for column in monotonic if column in by_cumulative
+    ]
     by_categorie, by_eenheid = _build_indexed_lookups(model_df)
-    _replace_in_place(variables_by_categorie, by_categorie)
-    _replace_in_place(variables_by_eenheid, by_eenheid)
+    projects = {
+        int(row.ProjectIdBSV): str(row.FysischModel)
+        for row in load_projects().itertuples()
+        if pd.notna(row.ProjectIdBSV) and pd.notna(row.FysischModel)
+    }
 
-    _replace_in_place(
-        physical_model_by_project,
-        {
-            int(row.ProjectIdBSV): str(row.FysischModel)
-            for row in load_projects().itertuples()
-            if pd.notna(row.ProjectIdBSV) and pd.notna(row.FysischModel)
-        },
+    # ---- Write. Replacement in place keeps the object importers hold. ----
+    replacements = (
+        (cumulative_columns, cumulative),
+        (momentaan_columns, momentaan),
+        (diff_columns, diff_cols),
+        (monotonic_columns, monotonic),
+        (model_column_order, col_order),
+        (model_column_type, col_types),
+        (allowed_supplier_metadata_columns, supplier_meta),
+        (supplier_metadata_dtypes, supplier_meta_types),
+        (all_performance_data_columns, all_perf_cols),
+        (required_performance_data_columns, required_perf_cols),
+        (performance_column_dtypes, all_col_types),
+        (thresholds_dict, thresholds),
+        (tariff_partner_columns, partner),
+        (tariff_root_to_splits, root_to_splits),
+        (interval_by_cumulative, by_cumulative),
+        (cumulative_by_interval, by_interval),
+        (monotonic_interval_columns, monotonic_intervals),
+        (variables_by_categorie, by_categorie),
+        (variables_by_eenheid, by_eenheid),
+        (physical_model_by_project, projects),
     )
+    declared = extra_model_rows is not None or extra_threshold_rows is not None
+    try:
+        for target, value in replacements:
+            _replace_in_place(target, value)
 
-    # The per-column checks are keyed by column, so they follow the model.
-    # Imported here because these modules import this one.
-    from etdmap import catalog, dataset_validators, record_validators
+        # The per-column checks are keyed by column, so they follow the model.
+        # Imported here because these modules import this one.
+        from etdmap import catalog, dataset_validators, record_validators
 
-    record_validators.rebuild_flag_conditions(thresholds_df)
-    dataset_validators.rebuild_flag_conditions()
-    catalog.rebuild_rule_variable_sets()
+        record_validators.rebuild_flag_conditions(thresholds_df)
+        dataset_validators.rebuild_flag_conditions()
+        catalog.rebuild_rule_variable_sets()
+    except Exception:
+        # Without extra rows this IS the restore, so there is nothing to fall
+        # back to and re-entering would not terminate.
+        if declared:
+            try:
+                rebuild_model()
+            except Exception as restore_failure:
+                raise RuntimeError(
+                    "rebuild_model: a declaration failed to load and the "
+                    "shipped model would not load either, so the model is "
+                    "left half-built. The process cannot be trusted to read "
+                    "it."
+                ) from restore_failure
+        raise
