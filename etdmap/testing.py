@@ -29,7 +29,11 @@ __all__ = [
     "SyntheticModel",
     "cadence_sidecar",
     "cumulative_pair",
+    "household_batch_of",
+    "household_frame",
+    "households_frame",
     "declare_synthetic_model",
+    "HOUSEHOLD_BATCH_OFFSET",
     "generate_mapped_dataset",
     "generate_raw_dataset",
     "installed_fingerprint",
@@ -137,6 +141,136 @@ def synthetic_model(
         plain=plain,
         plain_complement=plain_complement,
     )
+
+
+#: Distance between a household id and the household batch id a test frame
+#: declares for it. The two are never equal in a frame: code reaching for the
+#: household where the dataset is meant then finds no rows rather than the
+#: right ones.
+HOUSEHOLD_BATCH_OFFSET = 1000
+
+
+def household_batch_of(household_id: int) -> int:
+    """The household batch id a test frame gives *household_id*."""
+    return int(household_id) + HOUSEHOLD_BATCH_OFFSET
+
+
+def household_frame(
+    n_rows: int = 4,
+    start="2024-01-01",
+    project: int = 1,
+    freq: str = "5min",
+    **columns,
+):
+    """One household batch's rows: the id columns, plus *columns*, plus the
+    cumulative counterpart of every interval column given.
+
+    Each value may be a scalar (repeated) or a list of length *n_rows*. The
+    pairing is completed from the data model rather than spelled out per test,
+    because a frame holding one half of a pair is not a household artifact and
+    the stages refuse it.
+
+    ``HuisIdBSV`` and ``HuisBatchIdBSV`` are deliberately absent: the shard
+    path carries them, which is where a reader expects them. Use
+    :func:`households_frame` for a frame that carries the ids itself.
+    """
+    from etdmap.data_model import cumulative_column
+
+    df = pd.DataFrame({
+        "ProjectIdBSV": pd.array([project] * n_rows, dtype="Int64"),
+        "ReadingDate": pd.date_range(start, periods=n_rows, freq=freq, tz="UTC"),
+    })
+    for name, value in columns.items():
+        values = value if isinstance(value, (list, tuple)) else [value] * n_rows
+        df[name] = pd.array(list(values), dtype="Float64")
+    for name in list(columns):
+        counterpart = cumulative_column(name)
+        if counterpart and counterpart not in df.columns:
+            # A monotonic cumulative column under the interval one. The value is
+            # not the subject of any test that needs the pair present; its being
+            # there is.
+            df[counterpart] = pd.array(
+                [float(i) for i in range(n_rows)], dtype="Float64"
+            )
+    return df
+
+
+def households_frame(
+    per_household: dict,
+    *,
+    start="2024-01-01",
+    freq: str = "5min",
+    project: int = 1,
+    project_of: dict | None = None,
+    tz: str | None = "UTC",
+    **columns,
+):
+    """Several households' rows in one frame, carrying both id columns.
+
+    What a stage receives once the shard reader has injected the ids, so a test
+    that works on a frame rather than a shard tree -- a project average, a
+    chunk, a per-dataset groupby -- builds it here instead of assembling the id
+    columns itself.
+
+    *per_household* maps a household id to that household's values for the
+    columns in *columns*: either ``{household: [values]}`` when one column is
+    given, or ``{household: {column: [values]}}`` for several. The row count per
+    household is the length of its values. Every interval column's cumulative
+    counterpart is completed as :func:`household_frame` does.
+
+    ``HuisBatchIdBSV`` is :func:`household_batch_of` the household, so the two
+    ids are never equal.
+
+    *project_of* gives a household its own project where they differ; *project*
+    is the one they share otherwise. *tz* may be None for a tz-naive frame,
+    which some stages' inputs are.
+    """
+    from etdmap.data_model import cumulative_column
+
+    names = list(columns)
+    parts = []
+    for household_id, value in per_household.items():
+        per_column = (
+            dict(value) if isinstance(value, dict)
+            else {names[0]: value} if names
+            else {}
+        )
+        for name, declared in columns.items():
+            per_column.setdefault(name, declared)
+        n_rows = max(
+            (len(v) for v in per_column.values() if isinstance(v, (list, tuple))),
+            default=1,
+        )
+        part = pd.DataFrame({
+            "HuisIdBSV": pd.array([int(household_id)] * n_rows, dtype="Int64"),
+            "HuisBatchIdBSV": pd.array(
+                [household_batch_of(household_id)] * n_rows, dtype="Int64"
+            ),
+            "ProjectIdBSV": pd.array(
+                [int((project_of or {}).get(household_id, project))] * n_rows,
+                dtype="Int64",
+            ),
+            "ReadingDate": pd.date_range(
+                start, periods=n_rows, freq=freq, tz=tz
+            ),
+        })
+        for name, values in per_column.items():
+            if not isinstance(values, (list, tuple)):
+                values = [values] * n_rows
+            part[name] = pd.array(list(values), dtype="Float64")
+        for name in per_column:
+            counterpart = cumulative_column(name)
+            if counterpart and counterpart not in part.columns:
+                part[counterpart] = pd.array(
+                    [float(i) for i in range(n_rows)], dtype="Float64"
+                )
+        parts.append(part)
+    if not parts:
+        raise ValueError(
+            "households_frame: no households given, so there is no frame to "
+            "build. Name at least one."
+        )
+    return pd.concat(parts, ignore_index=True)
 
 
 def model_row(variable: str, **fields) -> dict:

@@ -62,10 +62,15 @@ def _write_bsv_metadata(folder, rows):
     return path
 
 
+#: Distance between a household id and the household batch id these rows
+#: declare for it, so a test cannot pass by confusing the two.
+_BATCH_OFFSET = 1000
+
+
 def _sync_row(hid, hbid=None, batch=1, freq="5min", start=_START, end=_END):
     return {
         "HuisIdBSV": hid,
-        "HuisBatchIdBSV": hbid if hbid is not None else hid,
+        "HuisBatchIdBSV": hbid if hbid is not None else hid + _BATCH_OFFSET,
         "BatchIdBSV": batch,
         "ProjectIdBSV": 1,
         "Meenemen": True,  # ignored: Meenemen comes via the BSV metadata only

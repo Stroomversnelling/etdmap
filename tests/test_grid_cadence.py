@@ -58,7 +58,7 @@ class TestGridMinutesForHousehold:
         path = tmp_path / "huisbatch.csv"
         pd.DataFrame({
             "HuisIdBSV": pd.array([1, 2, 3], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([1, 2, 3], dtype="Int64"),
+            "HuisBatchIdBSV": pd.array([1001, 1002, 1003], dtype="Int64"),
             "Gegevensfrequentie": pd.array(["5min", "15min", None], dtype="string"),
         }).to_csv(path, index=False)
 
@@ -114,7 +114,7 @@ class TestTheGridIsKeyedOnTheBatch:
         path = tmp_path / "huisbatch_multi.csv"
         pd.DataFrame({
             "HuisIdBSV": pd.array([7, 7, 8], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([7, 70, 8], dtype="Int64"),
+            "HuisBatchIdBSV": pd.array([1007, 1070, 1008], dtype="Int64"),
             "Gegevensfrequentie": pd.array(
                 ["5min", "15min", "1h"], dtype="string"
             ),
@@ -126,9 +126,9 @@ class TestTheGridIsKeyedOnTheBatch:
         etdmap.options.household_batch_csv_path = previous
 
     def test_each_batch_resolves_its_own_grid(self, two_batches):
-        assert grid_minutes_for_household_batch(7) == 5.0
-        assert grid_minutes_for_household_batch(70) == 15.0
-        assert grid_minutes_for_household_batch(8) == 60.0
+        assert grid_minutes_for_household_batch(1007) == 5.0
+        assert grid_minutes_for_household_batch(1070) == 15.0
+        assert grid_minutes_for_household_batch(1008) == 60.0
 
     def test_a_household_with_two_batches_refuses_to_answer(self, two_batches):
         """The grid is a property of the dataset. Returning the first listed
@@ -138,8 +138,8 @@ class TestTheGridIsKeyedOnTheBatch:
             grid_minutes_for_household(7)
 
         message = str(excinfo.value)
-        assert "7" in message
-        assert "70" in message
+        assert "1007" in message
+        assert "1070" in message
 
     def test_a_household_with_one_batch_still_resolves(self, two_batches):
         assert grid_minutes_for_household(8) == 60.0
@@ -160,7 +160,7 @@ class TestTheGridIsKeyedOnTheBatch:
         path = tmp_path / "huisbatch_blank.csv"
         pd.DataFrame({
             "HuisIdBSV": pd.array([5], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([50], dtype="Int64"),
+            "HuisBatchIdBSV": pd.array([1050], dtype="Int64"),
             "Gegevensfrequentie": pd.array([None], dtype="string"),
         }).to_csv(path, index=False)
 
@@ -168,7 +168,7 @@ class TestTheGridIsKeyedOnTheBatch:
         etdmap.options.household_batch_csv_path = str(path)
         try:
             with pytest.raises(ValueError, match="Gegevensfrequentie"):
-                grid_minutes_for_household_batch(50)
+                grid_minutes_for_household_batch(1050)
         finally:
             etdmap.options.household_batch_csv_path = previous
 
@@ -197,7 +197,7 @@ class TestTheGridIsKeyedOnTheBatch:
         path = tmp_path / "huisbatch_dup.csv"
         pd.DataFrame({
             "HuisIdBSV": pd.array([3, 3], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([30, 30], dtype="Int64"),
+            "HuisBatchIdBSV": pd.array([1030, 1030], dtype="Int64"),
             "Gegevensfrequentie": pd.array(["5min", "15min"], dtype="string"),
         }).to_csv(path, index=False)
 
@@ -205,7 +205,7 @@ class TestTheGridIsKeyedOnTheBatch:
         etdmap.options.household_batch_csv_path = str(path)
         try:
             with pytest.raises(ValueError, match="2 rows"):
-                grid_minutes_for_household_batch(30)
+                grid_minutes_for_household_batch(1030)
         finally:
             etdmap.options.household_batch_csv_path = previous
 

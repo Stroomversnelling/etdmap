@@ -1724,7 +1724,7 @@ class TestGridCollisionsAreCounted:
     def test_the_sidecar_is_typed(self, tmp_path):
         from etdmap.mapping_helpers import write_grid_collisions
         path = write_grid_collisions(
-            [{"HuisBatchIdBSV": 1, "column": self.COL, "n_discarded": 2,
+            [{"HuisBatchIdBSV": 1 + 1000, "column": self.COL, "n_discarded": 2,
               "n_slots_contested": 1, "max_per_slot": 3}],
             str(tmp_path),
         )
@@ -1938,7 +1938,7 @@ class TestNegativeDiffMagnitudesAreRecorded:
     def test_the_sidecar_is_typed(self, tmp_path):
         from etdmap.mapping_helpers import write_negative_diff_removals
         rows = [{
-            "HuisBatchIdBSV": 1, "column": self.COL,
+            "HuisBatchIdBSV": 1 + 1000, "column": self.COL,
             "n_dips": 2, "n_readings_removed": 2,
             "sum_dip_magnitude": -25.0, "min_dip": -20.0, "max_dip": -5.0,
             "n_jump_back": 1, "n_repeat_negative": 0, "n_meter_reset": 1,
@@ -1984,12 +1984,12 @@ class TestWriteThresholdRemovals:
 
     def test_writes_rows_with_nullable_dtypes(self, tmp_path):
         rows = [
-            {"HuisBatchIdBSV": 1, "column": "A", "n_below": 2, "n_above": 0,
+            {"HuisBatchIdBSV": 1 + 1000, "column": "A", "n_below": 2, "n_above": 0,
              "sum_removed_negative": -1.5, "sum_removed_positive": 0.0,
              "balance_removed": -1.5,
              "min_removed": -1.0, "max_removed": -0.5,
              "lower_bound": 0.0, "upper_bound": pd.NA},
-            {"HuisBatchIdBSV": 1, "column": "B", "n_below": 0, "n_above": 4,
+            {"HuisBatchIdBSV": 1 + 1000, "column": "B", "n_below": 0, "n_above": 4,
              "sum_removed_negative": 0.0, "sum_removed_positive": 600.0,
              "balance_removed": 600.0,
              "min_removed": 100.0, "max_removed": 200.0,

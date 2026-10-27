@@ -84,7 +84,7 @@ class TestTheGridCanComeFromMetadata:
         path = tmp_path / "huisbatch.csv"
         pd.DataFrame({
             "HuisIdBSV": pd.array([1, 2], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([1, 2], dtype="Int64"),
+            "HuisBatchIdBSV": pd.array([1001, 1002], dtype="Int64"),
             "Gegevensfrequentie": pd.array(["15min", None], dtype="string"),
         }).to_csv(path, index=False)
         previous = etdmap.options.household_batch_csv_path

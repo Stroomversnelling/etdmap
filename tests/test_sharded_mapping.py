@@ -227,7 +227,7 @@ class TestDatasetValidatorsReadBothLayouts:
         path = tmp_path / "huisbatch.csv"
         pd.DataFrame({
             "HuisIdBSV": pd.array([self.HOUSEHOLD_ID], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([self.HOUSEHOLD_ID], dtype="Int64"),
+            "HuisBatchIdBSV": pd.array([value + 1000 for value in [self.HOUSEHOLD_ID]], dtype="Int64"),
             "Gegevensfrequentie": pd.array([f"{GRID}min"], dtype="string"),
         }).to_csv(path, index=False)
         monkeypatch.setattr(
