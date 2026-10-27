@@ -499,7 +499,7 @@ class TestTheInputContractIsEnforcedAtTheBoundary:
 
         df = _frame(list(values), dates=dates)
         return run_standard_pipeline(
-            df, household_id=1, household_id_supplier="H1",
+            df, household_id=1, household_batch_id=1001, household_id_supplier="H1",
             mapped_folder_path=".", grid_minutes=5,
         )
 
@@ -557,7 +557,7 @@ class TestTheInputContractIsEnforcedAtTheBoundary:
             "2024-01-01", periods=len(values), freq="5min"
         ))
         entry = run_standard_pipeline(
-            df, household_id=1, household_id_supplier="H1",
+            df, household_id=1, household_batch_id=1001, household_id_supplier="H1",
             mapped_folder_path=str(tmp_path), grid_minutes=5,
             cadence=detect_column_cadence(df, grid_minutes=5),
         )

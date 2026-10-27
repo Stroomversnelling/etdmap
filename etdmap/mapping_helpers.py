@@ -32,6 +32,8 @@ from etdmap.data_model import (
 from etdmap.index_helpers import (
     get_mapped_data,
     grid_minutes_for_household,
+    grid_minutes_for_household_batch,
+    household_batch_for_household,
     read_index,
     supported_kwargs,
 )
@@ -2617,7 +2619,7 @@ THRESHOLD_REMOVALS_FILENAME = "mapping_threshold_removals.parquet"
 
 # Nullable dtypes for the sidecar columns.
 _THRESHOLD_REMOVAL_DTYPES = {
-    "HuisIdBSV": "Int64",
+    "HuisBatchIdBSV": "Int64",
     "column": "string",
     "n_below": "Int64",
     "n_above": "Int64",
@@ -2636,28 +2638,27 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
     """
     Merge accumulated sidecar rows into the typed parquet beside the mapped data.
 
-    Rows are merged on ``HuisIdBSV``: the households this run wrote replace their
-    own rows, and every other household's rows are kept. Overwriting the file
-    instead would leave a folder mapped by several suppliers holding only the
-    last one's rows, since each mapper writes only the households it processed.
+    A sidecar row describes one household batch: it is measured on that
+    dataset, against the grid that household batch declares. ``HuisBatchIdBSV``
+    is therefore the key, and ``HuisIdBSV`` is not -- on the household, two
+    household batches of one household cannot be told apart and re-mapping one
+    would replace the other's rows. Join to the household through
+    ``index.parquet`` where accounting needs it.
 
-    A sidecar row describes one household batch -- it is measured on that
-    dataset, and the grid it is measured against is declared per household
-    batch -- so the key these are written and merged on should be
-    ``HuisBatchIdBSV``. On ``HuisIdBSV`` two household batches of one household
-    cannot be told apart, and re-mapping one replaces the other's rows. This
-    holds only while the mapping writes one household batch per household
-    (``save_mapped_household``).
+    Rows are merged on that key: the household batches this run wrote replace
+    their own rows, and every other row is kept. Overwriting the file instead
+    would leave a folder mapped by several suppliers holding only the last
+    one's rows, since each mapper writes only what it processed.
 
     An empty but correctly-typed frame is written when there are no rows and none
     were there before, so downstream readers get a stable schema either way.
 
     Returns the path written.
     """
-    if "HuisIdBSV" not in dtypes:
+    if "HuisBatchIdBSV" not in dtypes:
         raise ValueError(
-            f"{label} sidecar declares no HuisIdBSV, so its rows cannot be "
-            f"merged. Add the id to its dtype map."
+            f"{label} sidecar declares no HuisBatchIdBSV, so its rows cannot "
+            f"be merged. Add the id to its dtype map."
         )
 
     df = pd.DataFrame(rows, columns=list(dtypes))
@@ -2678,29 +2679,35 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
     kept = 0
     if os.path.exists(path):
         existing = pd.read_parquet(path, dtype_backend="numpy_nullable")
-        if "HuisIdBSV" in existing.columns:
-            written_now = set(df["HuisIdBSV"].dropna().unique())
-            others = existing[~existing["HuisIdBSV"].isin(written_now)]
+        if "HuisBatchIdBSV" in existing.columns:
+            written_now = set(df["HuisBatchIdBSV"].dropna().unique())
+            others = existing[~existing["HuisBatchIdBSV"].isin(written_now)]
             kept = len(others)
             if kept:
                 df = pd.concat([others, df], ignore_index=True).astype(dtypes)
+        elif "HuisIdBSV" in existing.columns:
+            raise ValueError(
+                f"{path} is keyed on HuisIdBSV, which predates the household "
+                f"batch being the dataset key. Re-run the mapping to rewrite "
+                f"it, or remove it."
+            )
 
     df.to_parquet(path, engine="pyarrow")
     logging.info(
         f"[mapping_helpers] Wrote {len(df)} {label} row(s) to {path}"
-        + (f" ({kept} kept from other households)" if kept else "")
+        + (f" ({kept} kept from other household batches)" if kept else "")
     )
     return path
 
 
-def threshold_stats_to_rows(household_id, threshold_stats):
+def threshold_stats_to_rows(household_batch_id, threshold_stats):
     """
     Flatten one household batch's threshold_stats dict into sidecar rows.
 
     Parameters
     ----------
-    household_id : int
-        The household's HuisIdBSV.
+    household_batch_id : int
+        The dataset's HuisBatchIdBSV.
     threshold_stats : dict
         {column: {"n_below", "n_above", "sum_removed_negative",
         "sum_removed_positive", "balance_removed", "min_removed",
@@ -2716,7 +2723,7 @@ def threshold_stats_to_rows(household_id, threshold_stats):
     for col, s in (threshold_stats or {}).items():
         rows.append(
             {
-                "HuisIdBSV": household_id,
+                "HuisBatchIdBSV": household_batch_id,
                 "column": col,
                 "n_below": s["n_below"],
                 "n_above": s["n_above"],
@@ -2760,7 +2767,7 @@ def write_threshold_removals(
 NEGATIVE_DIFF_FILENAME = "mapping_negative_diff_removals.parquet"
 
 _NEGATIVE_DIFF_DTYPES = {
-    "HuisIdBSV": "Int64",
+    "HuisBatchIdBSV": "Int64",
     "column": "string",
     "n_dips": "Int64",
     "n_readings_removed": "Int64",
@@ -2775,14 +2782,14 @@ _NEGATIVE_DIFF_DTYPES = {
 }
 
 
-def negative_diff_stats_to_rows(household_id, dip_stats):
+def negative_diff_stats_to_rows(household_batch_id, dip_stats):
     """
     Flatten one household batch's negative-diff figures into sidecar rows.
 
     Parameters
     ----------
-    household_id : int
-        The household's HuisIdBSV.
+    household_batch_id : int
+        The dataset's HuisBatchIdBSV.
     dip_stats : dict
         {column: figures} as produced by
         ``add_diff_columns(return_stats=True)``. May be empty or None.
@@ -2794,7 +2801,7 @@ def negative_diff_stats_to_rows(household_id, dip_stats):
     """
     rows = []
     for col, s in (dip_stats or {}).items():
-        rows.append({"HuisIdBSV": household_id, "column": col, **s})
+        rows.append({"HuisBatchIdBSV": household_batch_id, "column": col, **s})
     return rows
 
 
@@ -2824,7 +2831,7 @@ def write_negative_diff_removals(
 GRID_COLLISIONS_FILENAME = "mapping_grid_collisions.parquet"
 
 _GRID_COLLISION_DTYPES = {
-    "HuisIdBSV": "Int64",
+    "HuisBatchIdBSV": "Int64",
     "column": "string",
     "n_discarded": "Int64",
     "n_slots_contested": "Int64",
@@ -2832,14 +2839,14 @@ _GRID_COLLISION_DTYPES = {
 }
 
 
-def grid_collisions_to_rows(household_id, collisions):
+def grid_collisions_to_rows(household_batch_id, collisions):
     """
     Flatten one household batch's grid-collision figures into sidecar rows.
 
     Parameters
     ----------
-    household_id : int
-        The household's HuisIdBSV.
+    household_batch_id : int
+        The dataset's HuisBatchIdBSV.
     collisions : dict
         {column: figures} as produced by
         ``snap_readings_to_grid(return_stats=True)``. May be empty or None.
@@ -2851,7 +2858,7 @@ def grid_collisions_to_rows(household_id, collisions):
     """
     rows = []
     for col, s in (collisions or {}).items():
-        rows.append({"HuisIdBSV": household_id, "column": col, **s})
+        rows.append({"HuisBatchIdBSV": household_batch_id, "column": col, **s})
     return rows
 
 
@@ -2879,14 +2886,14 @@ def write_grid_collisions(
 CADENCE_FILENAME = "mapping_column_cadence.parquet"
 
 
-def cadence_to_rows(household_id, cadence_df):
+def cadence_to_rows(household_batch_id, cadence_df):
     """
     Flatten one household batch's cadence table into sidecar rows.
 
     Parameters
     ----------
-    household_id : int
-        The household's HuisIdBSV.
+    household_batch_id : int
+        The dataset's HuisBatchIdBSV.
     cadence_df : pd.DataFrame or None
         The output of detect_column_cadence. May be empty or None.
 
@@ -2899,7 +2906,7 @@ def cadence_to_rows(household_id, cadence_df):
         return []
     rows = []
     for record in cadence_df.to_dict(orient="records"):
-        rows.append({"HuisIdBSV": household_id, **record})
+        rows.append({"HuisBatchIdBSV": household_batch_id, **record})
     return rows
 
 
@@ -2918,7 +2925,7 @@ def write_column_cadence(rows, mapped_folder_path, filename=CADENCE_FILENAME):
     """
     return _write_sidecar(
         rows, mapped_folder_path, filename,
-        {"HuisIdBSV": "Int64", **_CADENCE_TABLE_DTYPES}, "column-cadence",
+        {"HuisBatchIdBSV": "Int64", **_CADENCE_TABLE_DTYPES}, "column-cadence",
     )
 
 
@@ -2926,7 +2933,7 @@ FROZEN_SPANS_FILENAME = "mapping_frozen_spans.parquet"
 
 
 def frozen_spans_to_rows(
-    household_id, column, spans, reading_dates=None,
+    household_batch_id, column, spans, reading_dates=None,
     span_kind: str = "derived_interval",
 ):
     """
@@ -2949,7 +2956,7 @@ def frozen_spans_to_rows(
     rows = []
     for span in spans.to_dict(orient="records"):
         row = {
-            "HuisIdBSV": household_id,
+            "HuisBatchIdBSV": household_batch_id,
             "column": column,
             "span_kind": span_kind,
             **span,
@@ -2973,7 +2980,7 @@ def write_frozen_spans(rows, mapped_folder_path, filename=FROZEN_SPANS_FILENAME)
     a merge yields pd.NA rather than a wrong value.
     """
     dtypes = {
-        "HuisIdBSV": "Int64",
+        "HuisBatchIdBSV": "Int64",
         "column": "string",
         "span_kind": "string",
         **_SPAN_DTYPES,
@@ -3035,19 +3042,19 @@ def save_household_shard(df, household_id, household_batch_id, sharded_folder_pa
     return out_path
 
 
-def save_mapped_household(df, household_id, mapped_folder_path) -> str:
+def save_mapped_household(
+    df, household_id, household_batch_id, mapped_folder_path
+) -> str:
     """
     Save one household batch's mapped data in the configured output format --
     THE single save primitive for all mappers.
 
     Honours ``etdmap.options.mapped_output_format``:
     - "sharded" (default): hive shard under
-      ``<mapped_folder_path>/sharded/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/``
-      (this writer numbers the household batch with the household id, so a
-      household delivered in more than one household batch cannot be mapped
-      through it yet);
-    - "flat": the legacy ``household_<n>_table.parquet`` (tests / legacy escape
-      hatch via the map scripts' --flat flag).
+      ``<mapped_folder_path>/sharded/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/``;
+    - "flat": the legacy ``household_<n>_table.parquet``, which has no
+      household-batch level and so cannot hold a household's second dataset
+      (tests / legacy escape hatch via the map scripts' --flat flag).
 
     run_standard_pipeline calls this internally; mapper scripts that write
     household output directly (e.g. map_watch_e) MUST use this instead of a raw
@@ -3067,7 +3074,7 @@ def save_mapped_household(df, household_id, mapped_folder_path) -> str:
         return save_household_shard(
             df,
             household_id=int(household_id),
-            household_batch_id=int(household_id),
+            household_batch_id=int(household_batch_id),
             sharded_folder_path=os.path.join(str(mapped_folder_path), "sharded"),
         )
     raise ValueError(
@@ -3201,7 +3208,9 @@ def _accumulates(col: str) -> bool:
     return col in cumulative_columns or cumulative_column(col) is not None
 
 
-def _detect_frozen_spans_for_household(df, household_id, cadence=None, context=""):
+def _detect_frozen_spans_for_household_batch(
+    df, household_batch_id, cadence=None, context=""
+):
     """
     Find frozen spans in every interval column that has an upper bound.
 
@@ -3311,7 +3320,7 @@ def _detect_frozen_spans_for_household(df, household_id, cadence=None, context="
         )
         rows.extend(
             frozen_spans_to_rows(
-                household_id, col, spans, reading_dates,
+                household_batch_id, col, spans, reading_dates,
                 span_kind="derived_interval" if derived else "delivered_interval",
             )
         )
@@ -3777,6 +3786,7 @@ def run_standard_pipeline(
     cadence: pd.DataFrame | None = None,
     treat_frozen_spans: bool = True,
     grid_minutes: float | None = None,
+    household_batch_id: int | None = None,
 ) -> dict:
     """
     Standard per-household processing pipeline shared by all ETD supplier mappers.
@@ -3812,7 +3822,9 @@ def run_standard_pipeline(
     df : pd.DataFrame
         Household time-series data with BSV column names.
     household_id : int
-        BSV household ID (HuisIdBSV).
+        BSV household ID (HuisIdBSV). The index row this returns is the
+        household's; the data and its sidecars are keyed on the household batch
+        below.
     household_id_supplier : str
         Supplier household ID (HuisIdLeverancier).
     mapped_folder_path : str or Path
@@ -3830,6 +3842,10 @@ def run_standard_pipeline(
     grid_minutes : float, optional
         The grid to place the data on. Resolved from the household batch's
         declared ``Gegevensfrequentie`` when not given.
+    household_batch_id : int, optional
+        HuisBatchIdBSV -- the dataset being mapped. It keys the output shard
+        and every sidecar row. Resolved from the household batch table when not
+        given, which refuses a household that has several.
 
     Returns
     -------
@@ -3918,8 +3934,10 @@ def run_standard_pipeline(
     # ------------------------------------------------------------------
     # 4. Pad to the grid this household batch is recorded on
     # ------------------------------------------------------------------
+    if household_batch_id is None:
+        household_batch_id = household_batch_for_household(household_id)
     if grid_minutes is None:
-        grid_minutes = grid_minutes_for_household(household_id)
+        grid_minutes = grid_minutes_for_household_batch(household_batch_id)
     logging.info(
         f"[run_standard_pipeline] {ctx}Grid is {cadence_label(grid_minutes)}."
     )
@@ -3972,8 +3990,8 @@ def run_standard_pipeline(
     # ------------------------------------------------------------------
     # 7b. Detect frozen spans in the interval columns just computed
     # ------------------------------------------------------------------
-    frozen_span_rows = _detect_frozen_spans_for_household(
-        df, household_id, cadence=cadence, context=context
+    frozen_span_rows = _detect_frozen_spans_for_household_batch(
+        df, household_batch_id, cadence=cadence, context=context
     )
     if treat_frozen_spans:
         _treat_frozen_spans(df, frozen_span_rows, context=context)
@@ -4039,7 +4057,9 @@ def run_standard_pipeline(
     # 10. Save via the single format-aware primitive (sharded default; flat is
     #     the legacy escape hatch)
     # ------------------------------------------------------------------
-    saved_path = save_mapped_household(df, household_id, mapped_folder_path)
+    saved_path = save_mapped_household(
+        df, household_id, household_batch_id, mapped_folder_path
+    )
     logging.info(
         f"[run_standard_pipeline] {ctx}Saved to {saved_path} "
         f"({len(df)} rows, {len(df.columns)} columns)"

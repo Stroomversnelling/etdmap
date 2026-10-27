@@ -507,7 +507,7 @@ class TestTheDerivedRowReachesTheSidecar:
         path = write_column_cadence(cadence_to_rows(7, table), str(tmp_path))
         out = pd.read_parquet(path, dtype_backend="numpy_nullable")
 
-        root = out[(out["HuisIdBSV"] == 7) & (out["column"] == ROOT)].iloc[0]
+        root = out[(out["HuisBatchIdBSV"] == 7) & (out["column"] == ROOT)].iloc[0]
         assert int(root["cadence_minutes"]) == 60
         assert root["cadence_source"] == "combined"
         assert pd.isna(root["cadence_detected"])
@@ -565,7 +565,7 @@ class TestSplitsAtDifferentCadencesRaise:
         try:
             with pytest.raises(ValueError, match="different"):
                 run_standard_pipeline(
-                    df, household_id=903, household_id_supplier="H903",
+                    df, household_id=903, household_batch_id=1903, household_id_supplier="H903",
                     mapped_folder_path=tmp_path, grid_minutes=GRID,
                     cadence=_cadence([
                         ("ReadingDate", GRID, "detected", GRID, 1.0, 12),
@@ -601,6 +601,7 @@ class TestThePipelineHandsTheDerivedRowBack:
             return run_standard_pipeline(
                 df,
                 household_id=household_id,
+                household_batch_id=household_id + 1000,
                 household_id_supplier=f"H{household_id}",
                 mapped_folder_path=tmp_path,
                 grid_minutes=GRID,
@@ -687,6 +688,7 @@ class TestTheDerivedRowIsWhatGivesTheRootItsLattice:
         try:
             run_standard_pipeline(
                 df, household_id=household_id,
+                household_batch_id=household_id + 1000,
                 household_id_supplier=f"H{household_id}",
                 mapped_folder_path=tmp_path, grid_minutes=GRID, cadence=cadence,
             )

@@ -615,7 +615,7 @@ class TestRunStandardPipeline:
         df = pd.DataFrame({"SomeCol": [1, 2, 3]})
         with pytest.raises(KeyError, match="ReadingDate"):
             run_standard_pipeline(
-                df, household_id=1, household_id_supplier="HuisA",
+                df, household_id=1, household_batch_id=1001, household_id_supplier="HuisA",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
             )
 
@@ -623,7 +623,7 @@ class TestRunStandardPipeline:
         df = pd.DataFrame({"ReadingDate": ["bad", "also-bad"]})
         with pytest.raises((ValueError, Exception)):
             run_standard_pipeline(
-                df, household_id=1, household_id_supplier="HuisA",
+                df, household_id=1, household_batch_id=1001, household_id_supplier="HuisA",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
             )
 
@@ -631,7 +631,7 @@ class TestRunStandardPipeline:
         """End-to-end smoke test: pipeline writes a file and returns the index entry."""
         df = _minimal_pipeline_df(n=12)
         result = run_standard_pipeline(
-            df, household_id=42, household_id_supplier="HuisX",
+            df, household_id=42, household_batch_id=1042, household_id_supplier="HuisX",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df),
         )
@@ -649,7 +649,7 @@ class TestRunStandardPipeline:
         df = _minimal_pipeline_df(n=6)
         df = df.iloc[::-1].reset_index(drop=True)  # reverse the order
         run_standard_pipeline(
-            df, household_id=1, household_id_supplier="H",
+            df, household_id=1, household_batch_id=1001, household_id_supplier="H",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df),
         )
@@ -660,7 +660,7 @@ class TestRunStandardPipeline:
         """Output parquet must contain all model columns."""
         df = _minimal_pipeline_df(n=6)
         run_standard_pipeline(
-            df, household_id=2, household_id_supplier="H2",
+            df, household_id=2, household_batch_id=1002, household_id_supplier="H2",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df),
         )
@@ -1312,7 +1312,7 @@ class TestThresholdStatsToRows:
         rows = threshold_stats_to_rows(42, stats)
         by_col = {r["column"]: r for r in rows}
         assert len(rows) == 2
-        assert by_col["ElektriciteitVermogen"]["HuisIdBSV"] == 42
+        assert by_col["ElektriciteitVermogen"]["HuisBatchIdBSV"] == 42
         assert by_col["ElektriciteitVermogen"]["n_below"] == 2
         assert by_col["ElektriciteitVermogen"]["n_above"] == 1
         assert by_col["ElektriciteitVermogen"]["min_removed"] == -5.0
@@ -1712,7 +1712,7 @@ class TestGridCollisionsAreCounted:
                 "n_discarded": 3, "n_slots_contested": 2, "max_per_slot": 3,
             },
         })
-        assert rows[0]["HuisIdBSV"] == 42
+        assert rows[0]["HuisBatchIdBSV"] == 42
         assert rows[0]["column"] == self.COL
         assert rows[0]["n_discarded"] == 3
 
@@ -1724,13 +1724,13 @@ class TestGridCollisionsAreCounted:
     def test_the_sidecar_is_typed(self, tmp_path):
         from etdmap.mapping_helpers import write_grid_collisions
         path = write_grid_collisions(
-            [{"HuisIdBSV": 1, "column": self.COL, "n_discarded": 2,
+            [{"HuisBatchIdBSV": 1, "column": self.COL, "n_discarded": 2,
               "n_slots_contested": 1, "max_per_slot": 3}],
             str(tmp_path),
         )
         out = pd.read_parquet(path, dtype_backend="numpy_nullable")
         assert len(out) == 1
-        assert str(out["HuisIdBSV"].dtype) == "Int64"
+        assert str(out["HuisBatchIdBSV"].dtype) == "Int64"
         assert str(out["column"].dtype) == "string"
         assert str(out["n_discarded"].dtype) == "Int64"
 
@@ -1926,7 +1926,7 @@ class TestNegativeDiffMagnitudesAreRecorded:
                 "n_no_recovery": 0, "n_zero_total": 0,
             },
         })
-        assert rows[0]["HuisIdBSV"] == 42
+        assert rows[0]["HuisBatchIdBSV"] == 42
         assert rows[0]["column"] == self.COL
         assert rows[0]["sum_dip_magnitude"] == -5.0
 
@@ -1938,7 +1938,7 @@ class TestNegativeDiffMagnitudesAreRecorded:
     def test_the_sidecar_is_typed(self, tmp_path):
         from etdmap.mapping_helpers import write_negative_diff_removals
         rows = [{
-            "HuisIdBSV": 1, "column": self.COL,
+            "HuisBatchIdBSV": 1, "column": self.COL,
             "n_dips": 2, "n_readings_removed": 2,
             "sum_dip_magnitude": -25.0, "min_dip": -20.0, "max_dip": -5.0,
             "n_jump_back": 1, "n_repeat_negative": 0, "n_meter_reset": 1,
@@ -1947,7 +1947,7 @@ class TestNegativeDiffMagnitudesAreRecorded:
         path = write_negative_diff_removals(rows, str(tmp_path))
         out = pd.read_parquet(path, dtype_backend="numpy_nullable")
         assert len(out) == 1
-        assert str(out["HuisIdBSV"].dtype) == "Int64"
+        assert str(out["HuisBatchIdBSV"].dtype) == "Int64"
         assert str(out["column"].dtype) == "string"
         assert str(out["sum_dip_magnitude"].dtype) == "Float64"
         assert str(out["n_dips"].dtype) == "Int64"
@@ -1976,7 +1976,7 @@ class TestWriteThresholdRemovals:
     """write_threshold_removals writes a typed sidecar parquet (ADR-005)."""
 
     EXPECTED_COLS = [
-        "HuisIdBSV", "column", "n_below", "n_above",
+        "HuisBatchIdBSV", "column", "n_below", "n_above",
         "sum_removed_negative", "sum_removed_positive", "balance_removed",
         "min_removed", "max_removed",
         "lower_bound", "upper_bound", "cadence_minutes",
@@ -1984,12 +1984,12 @@ class TestWriteThresholdRemovals:
 
     def test_writes_rows_with_nullable_dtypes(self, tmp_path):
         rows = [
-            {"HuisIdBSV": 1, "column": "A", "n_below": 2, "n_above": 0,
+            {"HuisBatchIdBSV": 1, "column": "A", "n_below": 2, "n_above": 0,
              "sum_removed_negative": -1.5, "sum_removed_positive": 0.0,
              "balance_removed": -1.5,
              "min_removed": -1.0, "max_removed": -0.5,
              "lower_bound": 0.0, "upper_bound": pd.NA},
-            {"HuisIdBSV": 1, "column": "B", "n_below": 0, "n_above": 4,
+            {"HuisBatchIdBSV": 1, "column": "B", "n_below": 0, "n_above": 4,
              "sum_removed_negative": 0.0, "sum_removed_positive": 600.0,
              "balance_removed": 600.0,
              "min_removed": 100.0, "max_removed": 200.0,
@@ -1999,7 +1999,7 @@ class TestWriteThresholdRemovals:
         out = pd.read_parquet(path, dtype_backend="numpy_nullable")
         assert list(out.columns) == self.EXPECTED_COLS
         assert len(out) == 2
-        assert str(out["HuisIdBSV"].dtype) == "Int64"
+        assert str(out["HuisBatchIdBSV"].dtype) == "Int64"
         assert str(out["n_below"].dtype) == "Int64"
         assert str(out["min_removed"].dtype) == "Float64"
         assert str(out["column"].dtype) == "string"
@@ -2102,7 +2102,7 @@ class TestPipelineDropsUnmappedColumns:
         df["nan [nan]"] = pd.array([0] * 12, dtype="Int64")
 
         run_standard_pipeline(
-            df, household_id=77, household_id_supplier="H77",
+            df, household_id=77, household_batch_id=1077, household_id_supplier="H77",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df))
         out = pd.read_parquet(tmp_path / "household_77_table.parquet", dtype_backend="numpy_nullable")

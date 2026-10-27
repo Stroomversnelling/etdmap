@@ -55,11 +55,15 @@ def mapped_household(mapped_fixtures):
 
 @pytest.fixture(scope="module")
 def cadence(mapped_fixtures):
-    """The household's rows of the sidecar the mapping measured and wrote."""
+    """The dataset's rows of the sidecar the mapping measured and wrote.
+
+    Keyed on the household batch, which the generator numbers with the
+    household id.
+    """
     frame = pd.read_parquet(
         mapped_fixtures / CADENCE_FILENAME, dtype_backend="numpy_nullable"
     )
-    rows = frame[frame["HuisIdBSV"] == HOUSEHOLD]
+    rows = frame[frame["HuisBatchIdBSV"] == HOUSEHOLD]
     return rows.set_index("column")
 
 

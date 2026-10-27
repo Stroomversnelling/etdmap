@@ -57,8 +57,8 @@ def _delivered_frame(values, col=DIFF):
 
 
 def _detect(df):
-    from etdmap.mapping_helpers import _detect_frozen_spans_for_household
-    return _detect_frozen_spans_for_household(
+    from etdmap.mapping_helpers import _detect_frozen_spans_for_household_batch
+    return _detect_frozen_spans_for_household_batch(
         df, 1, cadence=_measured_cadence(df), context="t",
     )
 

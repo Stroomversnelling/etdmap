@@ -109,15 +109,17 @@ class TestSaveMappedHousehold:
     def test_sharded_mode(self, tmp_path):
         from etdmap.mapping_helpers import save_mapped_household
         with _output_format("sharded"):
-            path = save_mapped_household(_mapped_df(), 42, tmp_path)
-        assert (tmp_path / "sharded" / "HuisIdBSV=42" / "HuisBatchIdBSV=42" / "part.parquet").exists()
+            path = save_mapped_household(_mapped_df(), 42, 9, tmp_path)
+        assert (tmp_path / "sharded" / "HuisIdBSV=42" / "HuisBatchIdBSV=9" / "part.parquet").exists()
         assert not (tmp_path / "household_42_table.parquet").exists()
         assert "HuisIdBSV=42" in str(path)
 
     def test_flat_mode(self, tmp_path):
         from etdmap.mapping_helpers import save_mapped_household
         with _output_format("flat"):
-            path = save_mapped_household(_mapped_df(), 42, tmp_path)
+            path = save_mapped_household(_mapped_df(), 42, 9, tmp_path)
+        # The flat layout has no household-batch level, so the household id
+        # names the file and the household batch id is not in the path.
         assert (tmp_path / "household_42_table.parquet").exists()
         assert not (tmp_path / "sharded").exists()
         assert str(path).endswith("household_42_table.parquet")
@@ -126,7 +128,7 @@ class TestSaveMappedHousehold:
         from etdmap.mapping_helpers import save_mapped_household
         with _output_format("banana"):
             with pytest.raises(ValueError):
-                save_mapped_household(_mapped_df(), 1, tmp_path)
+                save_mapped_household(_mapped_df(), 1, 1, tmp_path)
 
 
 class TestPipelineOutputFormat:
@@ -143,17 +145,20 @@ class TestPipelineOutputFormat:
     def test_sharded_mode_writes_shard_not_flat(self, tmp_path):
         with _output_format("sharded"):
             run_standard_pipeline(
-                _pipeline_df(), household_id=42, household_id_supplier="HuisX",
+                _pipeline_df(), household_id=42, household_batch_id=1042, household_id_supplier="HuisX",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
                 cadence=_pipeline_cadence(_pipeline_df()))
-        shard = tmp_path / "sharded" / "HuisIdBSV=42" / "HuisBatchIdBSV=42" / "part.parquet"
+        shard = (
+            tmp_path / "sharded" / "HuisIdBSV=42" / "HuisBatchIdBSV=1042"
+            / "part.parquet"
+        )
         assert shard.exists()
         assert not (tmp_path / "household_42_table.parquet").exists()
 
     def test_flat_mode_unchanged_legacy(self, tmp_path):
         with _output_format("flat"):
             run_standard_pipeline(
-                _pipeline_df(), household_id=42, household_id_supplier="HuisX",
+                _pipeline_df(), household_id=42, household_batch_id=1042, household_id_supplier="HuisX",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
                 cadence=_pipeline_cadence(_pipeline_df()))
         assert (tmp_path / "household_42_table.parquet").exists()
@@ -169,18 +174,18 @@ class TestPipelineOutputFormat:
         shard_dir.mkdir()
         with _output_format("flat"):
             run_standard_pipeline(
-                _pipeline_df(), household_id=7, household_id_supplier="H7",
+                _pipeline_df(), household_id=7, household_batch_id=1007, household_id_supplier="H7",
                 mapped_folder_path=flat_dir, grid_minutes=GRID,
                 cadence=_pipeline_cadence(_pipeline_df()))
         with _output_format("sharded"):
             run_standard_pipeline(
-                _pipeline_df(), household_id=7, household_id_supplier="H7",
+                _pipeline_df(), household_id=7, household_batch_id=1007, household_id_supplier="H7",
                 mapped_folder_path=shard_dir, grid_minutes=GRID,
                 cadence=_pipeline_cadence(_pipeline_df()))
         flat = pd.read_parquet(flat_dir / "household_7_table.parquet",
                                dtype_backend="numpy_nullable")
         shard = pd.read_parquet(
-            shard_dir / "sharded" / "HuisIdBSV=7" / "HuisBatchIdBSV=7" / "part.parquet",
+            shard_dir / "sharded" / "HuisIdBSV=7" / "HuisBatchIdBSV=1007" / "part.parquet",
             dtype_backend="numpy_nullable",
         )
         pd.testing.assert_frame_equal(flat, shard)
@@ -189,7 +194,7 @@ class TestPipelineOutputFormat:
         with _output_format("banana"):
             with pytest.raises(ValueError):
                 run_standard_pipeline(
-                    _pipeline_df(), household_id=1, household_id_supplier="H1",
+                    _pipeline_df(), household_id=1, household_batch_id=1001, household_id_supplier="H1",
                     mapped_folder_path=tmp_path, grid_minutes=GRID,
                     cadence=_pipeline_cadence(_pipeline_df()))
 
@@ -205,6 +210,7 @@ class TestDatasetValidatorsReadBothLayouts:
     """
 
     HOUSEHOLD_ID = 42
+    HOUSEHOLD_BATCH_ID = 9
 
     def _index_df(self):
         return pd.DataFrame({
@@ -235,7 +241,9 @@ class TestDatasetValidatorsReadBothLayouts:
 
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
         with _output_format(fmt):
-            save_mapped_household(_mapped_df(), self.HOUSEHOLD_ID, tmp_path)
+            save_mapped_household(
+                _mapped_df(), self.HOUSEHOLD_ID, self.HOUSEHOLD_BATCH_ID, tmp_path
+            )
 
         entry = {
             "HuisIdLeverancier": "Huis42",
@@ -280,7 +288,7 @@ class TestDatasetValidatorsReadBothLayouts:
         # Another household's shard exists, so the layout is detectable but
         # household 42 has no data of its own.
         with _output_format("sharded"):
-            save_mapped_household(_mapped_df(), 99, tmp_path)
+            save_mapped_household(_mapped_df(), 99, 990, tmp_path)
 
         entry = {
             "HuisIdLeverancier": "Huis42",
@@ -306,7 +314,7 @@ class TestGetMappedDataReadsBothLayouts:
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
         written = _mapped_df()
         with _output_format(fmt):
-            save_mapped_household(written, 42, tmp_path)
+            save_mapped_household(written, 42, 9, tmp_path)
 
         got = get_mapped_data(42)
         pd.testing.assert_frame_equal(got, written)
@@ -320,7 +328,7 @@ class TestGetMappedDataReadsBothLayouts:
 
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
         with _output_format(fmt):
-            save_mapped_household(_mapped_df(), 42, tmp_path)
+            save_mapped_household(_mapped_df(), 42, 9, tmp_path)
 
         cols = get_mapped_data(42).columns
         assert "HuisIdBSV" not in cols
@@ -332,7 +340,7 @@ class TestGetMappedDataReadsBothLayouts:
 
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
         with _output_format("sharded"):
-            save_mapped_household(_mapped_df(), 99, tmp_path)
+            save_mapped_household(_mapped_df(), 99, 990, tmp_path)
 
         with pytest.raises(FileNotFoundError, match="42"):
             get_mapped_data(42)

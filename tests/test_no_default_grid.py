@@ -173,7 +173,7 @@ class TestAResolvedCadenceScalesTheBound:
     def test_the_pipeline_refuses_without_a_cadence(self, tmp_path):
         with pytest.raises(ValueError, match="no cadence was given"):
             run_standard_pipeline(
-                _frame(), household_id=1, household_id_supplier="H1",
+                _frame(), household_id=1, household_batch_id=1001, household_id_supplier="H1",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
             )
 

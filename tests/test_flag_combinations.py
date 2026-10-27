@@ -119,7 +119,7 @@ def mapped(tmp_path_factory):
     try:
         run_standard_pipeline(
             frame,
-            household_id=9001,
+            household_id=9001, household_batch_id=10001,
             household_id_supplier="H9001",
             mapped_folder_path=folder,
             grid_minutes=GRID,

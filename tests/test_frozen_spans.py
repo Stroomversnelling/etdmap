@@ -249,13 +249,13 @@ class TestIntervalColumnsInheritTheirCumulativeCadence:
         return df
 
     def _spans(self, cadence_minutes):
-        from etdmap.mapping_helpers import _detect_frozen_spans_for_household
+        from etdmap.mapping_helpers import _detect_frozen_spans_for_household_batch
         cadence = pd.DataFrame({
             "HuisIdBSV": pd.array([1], dtype="Int64"),
             "column": pd.array(["WatergebruikWarmTapwater"], dtype="string"),
             "cadence_minutes": pd.array([cadence_minutes], dtype="Int64"),
         })
-        return _detect_frozen_spans_for_household(self._frame(), 1, cadence=cadence)
+        return _detect_frozen_spans_for_household_batch(self._frame(), 1, cadence=cadence)
 
     def test_a_five_minute_cadence_makes_the_jump_implausible(self):
         rows = self._spans(5)
@@ -300,10 +300,10 @@ class TestTreatment:
 
     def _treated(self, df):
         from etdmap.mapping_helpers import (
-            _detect_frozen_spans_for_household,
+            _detect_frozen_spans_for_household_batch,
             _treat_frozen_spans,
         )
-        rows = _detect_frozen_spans_for_household(
+        rows = _detect_frozen_spans_for_household_batch(
             df, 1, cadence=_measured_cadence(df)
         )
         _treat_frozen_spans(df, rows)
@@ -364,16 +364,16 @@ class TestOnlyAccumulatingVariables:
         return df
 
     def test_a_momentaan_column_is_never_treated_as_a_frozen_span(self):
-        from etdmap.mapping_helpers import _detect_frozen_spans_for_household
+        from etdmap.mapping_helpers import _detect_frozen_spans_for_household_batch
         df = self._frame("SlimmemeterVoltageL1")
-        assert _detect_frozen_spans_for_household(
+        assert _detect_frozen_spans_for_household_batch(
             df, 1, cadence=_measured_cadence(df)
         ) == []
 
     def test_a_cumulative_column_with_the_same_shape_is(self):
-        from etdmap.mapping_helpers import _detect_frozen_spans_for_household
+        from etdmap.mapping_helpers import _detect_frozen_spans_for_household_batch
         df = self._frame("WatergebruikWarmTapwater")
-        assert len(_detect_frozen_spans_for_household(
+        assert len(_detect_frozen_spans_for_household_batch(
             df, 1, cadence=_measured_cadence(df)
         )) == 1
 
@@ -414,9 +414,9 @@ class TestARegisterIsNotScanned:
         return df
 
     def test_a_register_reports_no_span(self):
-        from etdmap.mapping_helpers import _detect_frozen_spans_for_household
+        from etdmap.mapping_helpers import _detect_frozen_spans_for_household_batch
         df = self._register_frame("ElektriciteitNetgebruik", 109967.957)
-        assert _detect_frozen_spans_for_household(
+        assert _detect_frozen_spans_for_household_batch(
             df, 1, cadence=_measured_cadence(df)
         ) == []
 
@@ -429,14 +429,14 @@ class TestARegisterIsNotScanned:
         reads. Without it the same frame is the supplier's own amounts, where
         pd.NA is unknown rather than idle and no span is reported.
         """
-        from etdmap.mapping_helpers import _detect_frozen_spans_for_household
+        from etdmap.mapping_helpers import _detect_frozen_spans_for_household_batch
         col = "ElektriciteitNetgebruikDiff"
         df = self._register_frame(col, 9.0)
         set_flags(
             df, col, df[col].notna(),
             MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE,
         )
-        rows = _detect_frozen_spans_for_household(
+        rows = _detect_frozen_spans_for_household_batch(
             df, 1, cadence=_measured_cadence(df)
         )
         assert len(rows) == 1
@@ -448,12 +448,12 @@ class TestARegisterIsNotScanned:
         threshold pass is what removes it; span treatment must not, because
         blanking it here also claims the span that justified it."""
         from etdmap.mapping_helpers import (
-            _detect_frozen_spans_for_household,
+            _detect_frozen_spans_for_household_batch,
             _treat_frozen_spans,
         )
         col = "ElektriciteitNetgebruik"
         df = self._register_frame(col, 109967.957)
-        rows = _detect_frozen_spans_for_household(
+        rows = _detect_frozen_spans_for_household_batch(
             df, 1, cadence=_measured_cadence(df)
         )
         _treat_frozen_spans(df, rows)

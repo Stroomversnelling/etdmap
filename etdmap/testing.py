@@ -689,8 +689,14 @@ def _process_data_fixture_file(
 ):
     """Map one raw fixture file, returning its index entry and its cadence.
 
-    The pipeline writes the household file, so nothing here names its path.
+    The pipeline writes the household batch's file, so nothing here names its
+    path.
     """
+    # The dataset being mapped. It keys the output shard and every sidecar row;
+    # the index entry the pipeline returns is the household's.
+    household_batch_id = index_helpers.household_batch_for_household(
+        int(household_id)
+    )
     file_path = os.path.join(etd_test_fixture_path, file_name)
     household_id_supplier = supplier_label(
         int(file_name.replace("household_", "").replace("_table.parquet", ""))
@@ -739,6 +745,7 @@ def _process_data_fixture_file(
         context=f"{household_id}/{file_name}",
         cadence=cadence,
         grid_minutes=grid_minutes,
+        household_batch_id=household_batch_id,
     )
 
     # From the pipeline rather than the frame measured above: it adds the
@@ -747,7 +754,7 @@ def _process_data_fixture_file(
     cadence = new_entry.pop("_cadence", None)
     new_entry.pop("_validation_summary", None)
     new_entry["ProjectIdLeverancier"] = project_id
-    return new_entry, cadence
+    return new_entry, cadence, household_batch_id
 
 
 def generate_mapped_dataset(
@@ -857,12 +864,14 @@ def generate_mapped_dataset(
         logging.info(f"Starting {file_name}")
         # Read from the batch CSV written just above, the same way a mapper
         # resolves it, rather than repeating the fixture's own interval here.
-        new_entry, cadence = _process_data_fixture_file(
+        new_entry, cadence, household_batch_id = _process_data_fixture_file(
             household_id, file_name, raw_folder,
             etdmap.options.mapped_folder_path,
             index_helpers.grid_minutes_for_household(household_id),
         )
-        cadence_rows.extend(mapping.cadence_to_rows(household_id, cadence))
+        cadence_rows.extend(
+            mapping.cadence_to_rows(household_batch_id, cadence)
+        )
         index_df = index_helpers.update_index(
             index_df, new_entry, data_provider="etdmap"
         )

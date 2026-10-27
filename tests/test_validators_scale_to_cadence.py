@@ -107,7 +107,7 @@ class TestTheTwoLayersAgree:
         assert bool(verdict.iloc[0]) is False
 
 
-def _run_pipeline(tmp_path, grid, household_id, steps):
+def _run_pipeline(tmp_path, grid, household_id, steps, household_batch_id=None):
     """One household through ``run_standard_pipeline``, read back.
 
     *steps* are the per-reading increments of the cumulative column, so a
@@ -124,7 +124,9 @@ def _run_pipeline(tmp_path, grid, household_id, steps):
     })
     cadence = detect_column_cadence(df, grid_minutes=grid)
     run_standard_pipeline(
-        df, household_id=household_id, household_id_supplier=f"H{household_id}",
+        df, household_id=household_id,
+        household_batch_id=household_batch_id or household_id + 1000,
+        household_id_supplier=f"H{household_id}",
         mapped_folder_path=tmp_path, grid_minutes=grid, cadence=cadence,
     )
     paths = mapped_household_paths(tmp_path)

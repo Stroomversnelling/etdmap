@@ -176,6 +176,60 @@ def _batch_table_for_grid(context):
     return table
 
 
+def household_batch_for_household(household_id):
+    """
+    The household batch a household's single dataset is.
+
+    ``HuisBatchIdBSV`` identifies a dataset and is what the mapped artifacts
+    and their sidecars are keyed on; ``HuisIdBSV`` identifies the household it
+    belongs to. This resolves one to the other through the household batch
+    table, for callers that start from a household.
+
+    Parameters
+    ----------
+    household_id : int
+        HuisIdBSV.
+
+    Returns
+    -------
+    int
+        HuisBatchIdBSV.
+
+    Raises
+    ------
+    HouseBatchOverlapError
+        When the household has more than one household batch. There is then no
+        single dataset to return, and the caller has to say which one it means.
+    ValueError
+        When the batch table is absent or unconfigured, does not hold the
+        household, or holds it with no HuisBatchIdBSV.
+    """
+    context = f"Household {household_id}"
+    table = _batch_table_for_grid(context)
+
+    rows = table[table["HuisIdBSV"] == household_id]
+    if rows.empty:
+        raise ValueError(
+            f"{context} is not in the household batch table, so the dataset it "
+            f"was delivered as is unknown. Check the data model: sync "
+            f"HuisBatch before mapping it."
+        )
+
+    batch_ids = sorted(int(b) for b in rows["HuisBatchIdBSV"].dropna().unique())
+    if len(batch_ids) > 1:
+        raise HouseBatchOverlapError(
+            f"{context} has data in more than one household batch "
+            f"(HuisBatchIdBSV {batch_ids}), so there is no single dataset to "
+            f"return. Name the household batch the caller means."
+        )
+    if not batch_ids:
+        raise ValueError(
+            f"{context} has a household batch row carrying no HuisBatchIdBSV, "
+            f"so its dataset cannot be identified. Check the data model."
+        )
+    return batch_ids[0]
+
+
 def grid_minutes_for_household_batch(household_batch_id):
     """
     The grid a dataset is recorded on, in minutes.
@@ -268,35 +322,12 @@ def grid_minutes_for_household(household_id):
         not in the batch table.
     """
     context = f"Household {household_id}"
-    table = _batch_table_for_grid(context)
-
-    rows = table[table["HuisIdBSV"] == household_id]
-    if rows.empty:
-        raise ValueError(
-            f"{context} is not in the household batch table, so the grid it is "
-            f"recorded on is unknown. Check the data model: sync HuisBatch "
-            f"before mapping it."
-        )
-
-    batch_ids = sorted(
-        int(b) for b in rows["HuisBatchIdBSV"].dropna().unique()
-    )
-    if len(batch_ids) > 1:
-        raise HouseBatchOverlapError(
-            f"{context} has data in more than one household batch "
-            f"(HuisBatchIdBSV {batch_ids}), and each batch declares its own "
-            f"Gegevensfrequentie. Resolve the grid per dataset with "
-            f"grid_minutes_for_household_batch."
-        )
-    if not batch_ids:
-        raise ValueError(
-            f"{context} has a household batch row carrying no HuisBatchIdBSV, "
-            f"so the dataset its grid belongs to is unknown. Check the data "
-            f"model."
-        )
-
     try:
-        return grid_minutes_for_household_batch(batch_ids[0])
+        return grid_minutes_for_household_batch(
+            household_batch_for_household(household_id)
+        )
+    except HouseBatchOverlapError:
+        raise
     except ValueError as e:
         raise ValueError(f"{context}: {e}") from e
 

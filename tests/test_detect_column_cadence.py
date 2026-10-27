@@ -139,13 +139,13 @@ class TestCadenceSidecar:
         out = pd.read_parquet(path, dtype_backend='numpy_nullable')
 
         assert list(out.columns) == [
-            'HuisIdBSV', 'column', 'cadence_minutes', 'cadence_source',
+            'HuisBatchIdBSV', 'column', 'cadence_minutes', 'cadence_source',
             'cadence_detected', 'confidence', 'n_readings'
         ]
-        assert str(out['HuisIdBSV'].dtype) == 'Int64'
+        assert str(out['HuisBatchIdBSV'].dtype) == 'Int64'
         assert str(out['cadence_minutes'].dtype) == 'Int64'
         # The same column reports at different cadences in different households.
-        by_house = out.set_index(['HuisIdBSV', 'column'])['cadence_minutes']
+        by_house = out.set_index(['HuisBatchIdBSV', 'column'])['cadence_minutes']
         assert by_house[(7, 'fast')] == 5
         assert by_house[(9, 'fast')] == 15
 
