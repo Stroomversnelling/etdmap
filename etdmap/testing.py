@@ -671,7 +671,12 @@ def metadata_set(folder, household_batch_ids, *, household_of=None,
         household_batches, household_of=household_of, project=project, delivery_batch=delivery_batch,
         supplier=supplier, Meenemen=include,
     )
-    reviewed = index.loc[:, bsv_metadata_columns].copy()
+    # The household batch rides along beside the review columns, as
+    # build_bsv_metadata now carries it: the device declarations are made per
+    # household batch, so a reader resolving them has to find that key here.
+    reviewed = index.loc[
+        :, [*bsv_metadata_columns, ids.HOUSEHOLD_BATCH]
+    ].copy()
     # Declared empty rather than absent: the device-absence reader refuses
     # metadata with no such column at all.
     reviewed["ApparaatOntbrekend"] = pd.array(
@@ -1504,6 +1509,15 @@ def generate_mapped_dataset(
     # household it excluded would be absent from every stage downstream.
     reviewed = index_df.loc[:, bsv_metadata_columns].copy()
     reviewed["Meenemen"] = pd.array([True] * len(reviewed), dtype="boolean")
+    # The household batch rides along beside the review columns, as
+    # build_bsv_metadata now carries it: the device declarations are made per
+    # household batch, so a reader resolving them has to find that key here.
+    # Taken from the household because that is how the synced table above
+    # numbers them in this generated dataset -- the index itself gains the
+    # column from that table when it is saved, which is after this point.
+    reviewed[ids.HOUSEHOLD_BATCH] = reviewed[ids.HOUSEHOLD].astype(
+        ids.DTYPES[ids.HOUSEHOLD_BATCH]
+    )
     # Declared empty rather than absent: the device-absence reader refuses
     # metadata with no such column at all.
     reviewed["ApparaatOntbrekend"] = pd.array(

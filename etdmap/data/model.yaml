@@ -1,0 +1,161 @@
+# The data model, written once.
+#
+# Keyed on etdmap.ids attribute names throughout; a reader resolves a column
+# name with getattr(ids, name). No column literal appears here. A self-check
+# asserts every name used here resolves on etdmap.ids and that ids.ALL is
+# covered.
+#
+# Read this file. Do not restate it, summarise it, or infer the model from
+# nearby code. Where a brief and this file could disagree, this file is right.
+
+unit_of_analysis: HOUSEHOLD_BATCH
+
+formal_names:            # more words is the feature: each one is unambiguous
+  BATCH:           delivery batch
+  PROJECT:         project
+  HOUSEHOLD_BATCH: household batch dataset
+  HOUSEHOLD:       household
+
+entities:                # keyed on the id that identifies the entity
+  BATCH:
+    is: one delivery of datasets from a supplier
+  PROJECT:
+    is: a group of household batch datasets, at most one per household
+    defines: [physical model]        # per the Grist table definition
+  HOUSEHOLD_BATCH:
+    is: one household over one period, scoped to its project and its
+        delivery batch
+    primary_key_of:
+      - the index
+      - the shard
+      - every mapping sidecar        # all five, per mapping_helpers.SIDECARS
+      - every computation along one time series
+      - every count, grouping, statistic and average
+      - the averaging eligibility floor
+      - device declarations          # the Grist HuisBatch table carries these
+    reaches_through_project: [physical model]
+  HOUSEHOLD:
+    is: the dwelling a household batch dataset describes
+    unit_of: nothing
+    key_use_allowed_in:                 # a key use anywhere else is a finding
+      - etdmap/etdmap/index_helpers.py  # the 1:1 guard groups on it to find a
+                                        # household with more than one
+                                        # household batch dataset
+      - etdmap/etdmap/storage.py        # the outer shard path level
+      - etdtransform/etdtransform/impute.py   # the same guard, raised again
+                                              # before imputation reads a
+                                              # concatenated series
+    attribute_use: >
+      anywhere it is carried, joined or reported as an attribute of a
+      household batch dataset -- that is not a key use and not a finding
+
+relationships:
+  # Each parent of the leaf is exactly one, and never absent.
+  one:
+    HOUSEHOLD_BATCH -> HOUSEHOLD: exactly_one
+    HOUSEHOLD_BATCH -> PROJECT:   exactly_one
+    HOUSEHOLD_BATCH -> BATCH:     exactly_one
+  # The inverses. All one-to-many, and the only one-to-many relations there are.
+  many:
+    HOUSEHOLD -> HOUSEHOLD_BATCH: one_to_many
+    PROJECT   -> HOUSEHOLD_BATCH: one_to_many
+    BATCH     -> HOUSEHOLD_BATCH: one_to_many
+    HOUSEHOLD_BATCH -> readings:  one_to_many   # ordered by READING_DATE
+  # The constraints that make the leaf's natural key exact. Each is a
+  # uniqueness assertion on the index, not a convention.
+  at_most_one:
+    - {of: HOUSEHOLD, within: PROJECT}
+    - {of: HOUSEHOLD, within: BATCH}
+  # Projects and delivery batches relate only through the leaf: a project's
+  # households may arrive in more than one delivery.
+  PROJECT <-> BATCH: many_to_many_through HOUSEHOLD_BATCH
+
+keys:
+  HOUSEHOLD_BATCH:
+    surrogate: HOUSEHOLD_BATCH          # one column, unique in the index
+    natural_key: [HOUSEHOLD, PROJECT, BATCH]
+    write: [HOUSEHOLD_BATCH]
+    never_write:
+      - [HOUSEHOLD]                     # alone: pools a dwelling's datasets
+      - [HOUSEHOLD, PROJECT]            # the natural key, the long way
+      - [HOUSEHOLD, BATCH]              # same
+    why: >
+      because of at_most_one, a HOUSEHOLD-plus-PROJECT key reaches the same
+      single row: correct today and still wrong, since it spells a one-column
+      key in two columns and leans on an invariant it does not state. Inside
+      one project or one delivery batch a HOUSEHOLD-keyed grouping is
+      indistinguishable from a correct one -- which is why mis-keying survives
+      review and why these checks exist.
+
+ids:                     # the remaining names in ids.py
+  HOUSEHOLD_SUPPLIER: {resolves_to: HOUSEHOLD, is: the supplier's own id, as delivered}
+  PROJECT_SUPPLIER:   {resolves_to: PROJECT,   is: the supplier's own id, as delivered}
+  SUPPLIER:           {is: the data supplier}
+  READING_DATE:       {is: the timestamp a series is ordered by, not an identifier}
+  SHARD_PATH_KEYS: {ordered: [HOUSEHOLD, HOUSEHOLD_BATCH], is: the on-disk layout, not the key}
+  DTYPES: >
+    every id is a nullable pandas dtype and missing is pd.NA, because a BSV id
+    is a whole number that may be absent; READING_DATE absent on purpose,
+    since its dtype depends on whether a supplier delivered it tz-aware
+  ALL: {is: every identifier column, for telling an id from a variable}
+
+prose:
+  HOUSEHOLD_BATCH:
+    say: household batch dataset
+    short_form: household batch       # once the dataset sense is established
+    never: [bare "batch", bare "dataset", "house", bare "household"]
+  BATCH:
+    say: delivery batch
+    never: [bare "batch"]
+  batch_rule: >
+    the word "batch" never stands alone. It carries "household" or "delivery"
+    in front of it, in prose and in identifiers alike: household_batch_*,
+    delivery_batch_*, never batch_*.
+  dataset_alone_allowed_for:    # other dataset kinds; these keep the word
+    - raw dataset
+    - mapped dataset
+    - generated/fixture/synthetic dataset
+    - project-level dataset
+    # The whole estate -- the EnergieTransitieDataset itself, which is what a
+    # sentence about renumbering or bootstrapping the collection is about.
+    - the whole dataset
+    - the entire dataset
+    - a new dataset
+    - a supplier dataset
+    - the cadence_source value 'dataset'
+    - the dataset_flag_conditions API name
+    - the generate_*_dataset function names
+  literals_allowed_in: [a quoted path, glob or hive partition name, because
+    the path on disk contains the literal]
+
+enforces:                # every rule above, with the check that holds it
+  code:                  # AST, etdmap/etdmap/conformance.py, run by
+                         # tests/test_fixture_conformance.py in all three repos
+    id_columns_in_construction: a test builds an id column by hand
+    sidecar_schema_restated: a sidecar's dtypes restated instead of read
+    numpy_dtypes_in_construction: a numpy dtype or np.nan on a data column
+    duplicate_dict_keys: ~
+    household_keyed_grouping: >
+      HOUSEHOLD in a key position -- a groupby, merge(on=), sort_values,
+      drop_duplicates or set_index argument -- outside
+      HOUSEHOLD.key_use_allowed_in, or any key matching keys.never_write
+      regardless of path. Carrying HOUSEHOLD as an attribute is not a finding
+  prose:
+    bare_batch: a "batch" token not preceded by "household" or "delivery"
+    bare_dataset: >
+      "dataset" meaning HOUSEHOLD_BATCH, minus prose.dataset_alone_allowed_for
+    raw_id_in_prose: a column literal outside prose.literals_allowed_in
+  data:                  # asserted against index.parquet
+    unique: [[HOUSEHOLD_BATCH], [PROJECT, HOUSEHOLD], [BATCH, HOUSEHOLD]]
+    # For a synced household batch. A pending one -- newly mapped, not yet
+    # added to the Grist HuisBatch table -- stays in the index with these
+    # fields absent, by design: it is warned about and a paste-ready proposal
+    # is written for the addition. A pending row is counted, not failed; any
+    # other row missing one of these is a failure.
+    not_null: [HOUSEHOLD_BATCH, HOUSEHOLD, PROJECT, BATCH]
+    pending_is_not_a_failure: a row with no synced household batch row
+    exactly_one_parent: >
+      per HOUSEHOLD_BATCH, nunique of HOUSEHOLD, PROJECT and BATCH is 1
+  self: >
+    every id name used in this file resolves on etdmap.ids, and ids.ALL is
+    covered

@@ -19,7 +19,9 @@ test_output.txt
 !etdmap/data/etdmodel.csv
 !etdmap/data/thresholds.csv
 !etdmap/data/catalog.parquet
+!etdmap/data/constraints.parquet
 !etdmap/data/Rule.csv
+!etdmap/data/model.yaml
 !config_test_template.yaml
 
 # Byte-compiled / optimized / DLL files

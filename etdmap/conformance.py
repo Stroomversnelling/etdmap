@@ -519,32 +519,90 @@ def _message_texts(tree, source) -> list:
     return out
 
 
-def _bare_batch_in(text, path, number) -> list:
-    """Findings for a bare "batch" in one piece of text."""
+#: How much of the previous line a lookbehind may see. One long word is
+#: enough: the qualifiers are "household" and "delivery".
+_CARRY = 12
+
+
+class ProseLine(NamedTuple):
+    """One prose line, prepared so both tests can read what they need.
+
+    *joined* is the line with the previous one's tail prepended and its own
+    indent and comment marker removed, which is what the LOOKBEHIND needs: a
+    phrase wrapped over two lines -- "household" ending one and "batch"
+    starting the next -- otherwise reads as a bare "batch".
+
+    *line* is the real text and *shift* maps a position in *joined* back into
+    it, which is what the CITATION test needs: it counts quote marks, so
+    prepending anything would flip the parity it reads.
+    """
+
+    number: int
+    joined: str
+    offset: int
+    line: str
+    shift: int
+
+
+def _prepared(prose) -> list:
+    """Every prose line as a :class:`ProseLine`, in order."""
+    out = []
+    previous = ""
+    for number in sorted(prose):
+        line = prose[number]
+        body = line.lstrip()
+        if body.startswith("#"):
+            body = body[1:].lstrip()
+        indent = len(line) - len(body)
+        carry = previous[-_CARRY:] if previous else ""
+        joined = f"{carry} {body}" if carry else body
+        offset = len(carry) + 1 if carry else 0
+        out.append(ProseLine(number, joined, offset, line, indent - offset))
+        previous = line.rstrip()
+    return out
+
+
+def _as_prose(text, number) -> ProseLine:
+    """A standalone piece of text -- a message -- as a prose line.
+
+    It has no indent, no comment marker and no previous line, so the two
+    views are the same string.
+    """
+    return ProseLine(number, text, 0, text, 0)
+
+
+def _bare_batch_in(prose, path) -> list:
+    """Findings for a bare "batch" in one prose line."""
     found = []
-    for match in _BARE_BATCH.finditer(text):
-        if _is_named_token(text, match.start(), match.end()):
-            continue
+    for match in _BARE_BATCH.finditer(prose.joined):
+        if match.start() < prose.offset:
+            continue                          # the previous line's business
+        where = match.start() + prose.shift
+        if _is_named_token(prose.line, where, where + len(match.group(0))):
+            continue                          # cited, not used in a sentence
         found.append(Finding(
-            path, number,
+            path, prose.number,
             f"bare {match.group(0)!r}: say \"delivery batch\" or "
             f"\"household batch\"",
         ))
     return found
 
 
-def _bare_dataset_in(text, path, number, allowed) -> list:
-    """Findings for a bare "dataset" in one piece of text."""
+def _bare_dataset_in(prose, path, allowed) -> list:
+    """Findings for a bare "dataset" in one prose line."""
     found = []
-    for match in _BARE_DATASET.finditer(text):
-        if _is_named_token(text, match.start(), match.end()):
+    for match in _BARE_DATASET.finditer(prose.joined):
+        if match.start() < prose.offset:
+            continue                          # the previous line's business
+        where = match.start() + prose.shift
+        if _is_named_token(prose.line, where, where + len(match.group(0))):
             continue                          # cited, not used in a sentence
-        before = text[:match.start()].rstrip()
+        before = prose.joined[:match.start()].rstrip()
         previous = re.search(r"([\w/-]+)$", before)
         if previous and previous.group(1).lower() in allowed:
             continue
         found.append(Finding(
-            path, number,
+            path, prose.number,
             f"bare {match.group(0)!r}: say which one, or "
             f"\"household batch dataset\"",
         ))
@@ -558,8 +616,8 @@ def bare_batch(tree, path, source) -> list:
     two a sentence means is never left to the reader. ``prose.batch_rule``.
     """
     found = []
-    for number, line in sorted(_prose_lines(tree, source).items()):
-        found.extend(_bare_batch_in(line, path, number))
+    for prose in _prepared(_prose_lines(tree, source)):
+        found.extend(_bare_batch_in(prose, path))
     return found
 
 
@@ -573,8 +631,8 @@ def bare_dataset(tree, path, source) -> list:
     """
     allowed = _word_before_dataset()
     found = []
-    for number, line in sorted(_prose_lines(tree, source).items()):
-        found.extend(_bare_dataset_in(line, path, number, allowed))
+    for prose in _prepared(_prose_lines(tree, source)):
+        found.extend(_bare_dataset_in(prose, path, allowed))
     return found
 
 
@@ -582,7 +640,7 @@ def bare_batch_in_message(tree, path, source) -> list:
     """The same rule, in a message rather than a docstring."""
     found = []
     for number, text in _message_texts(tree, source):
-        found.extend(_bare_batch_in(text, path, number))
+        found.extend(_bare_batch_in(_as_prose(text, number), path))
     return found
 
 
@@ -591,7 +649,7 @@ def bare_dataset_in_message(tree, path, source) -> list:
     allowed = _word_before_dataset()
     found = []
     for number, text in _message_texts(tree, source):
-        found.extend(_bare_dataset_in(text, path, number, allowed))
+        found.extend(_bare_dataset_in(_as_prose(text, number), path, allowed))
     return found
 
 
