@@ -6,7 +6,7 @@ Monotoon. A column that is allowed to fall carries its decreases as readings,
 so neither the classification nor the blanking may run on it.
 
 The threshold pass reports what it removed. Counts alone cannot say how much
-left the dataset: one large removal and one small one read as two. The report
+left the household batch: one large removal and one small one read as two. The report
 carries signed volumes so the size and direction of the loss is recoverable.
 """
 
@@ -27,8 +27,8 @@ from etdmap.testing import PAIRS_EMPTY, datasets_frame, household_batch_of
 COL = "ElektriciteitNetgebruik"
 DIFF = "ElektriciteitNetgebruikDiff"
 
-#: The dataset every frame here describes. A difference is taken along one
-#: dataset's series, so the dataset is what the correction is scoped to.
+#: The household batch every frame here describes. A difference is taken along one
+#: household batch's series, so the household batch is what the correction is scoped to.
 DATASET = household_batch_of(1)
 
 
@@ -40,7 +40,7 @@ def _flags(df, column):
 
 
 def _frame(values, column=COL):
-    """One dataset's readings of *column*, as the pipeline holds them: tz-naive
+    """One household batch's readings of *column*, as the pipeline holds them: tz-naive
     and carrying no project.
 
     PAIRS_EMPTY: where *column* is the interval one, its cumulative counterpart

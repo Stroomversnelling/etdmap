@@ -117,19 +117,19 @@ def mapped_household_files(household_id, mapped_folder_path=None) -> list:
 
 def mapped_household_paths(mapped_folder_path=None, fmt="auto") -> dict:
     """
-    Map every dataset in a mapped folder to one data file.
+    Map every household batch in a mapped folder to one data file.
 
-    Returns ``{ids.HOUSEHOLD_BATCH: path}``, keyed on the dataset, so a household
-    delivered as more than one dataset is several entries rather than a
-    collision. Use :func:`mapped_household_files` to read every dataset of one
+    Returns ``{ids.HOUSEHOLD_BATCH: path}``, keyed on the household batch, so a household
+    delivered as more than one household batch is several entries rather than a
+    collision. Use :func:`mapped_household_files` to read every household batch of one
     household.
 
     Tools that must read a SPECIFIC layout -- notably a comparison of the same
-    dataset stored flat on one side and sharded on the other -- pass ``fmt``
+    household batch stored flat on one side and sharded on the other -- pass ``fmt``
     explicitly instead of parsing shard paths themselves:
 
     - "flat"    -- ``household_<n>_table.parquet`` at the folder root. That
-      layout has no dataset level, so it reports the household id in its
+      layout has no household-batch level, so it reports the household id in its
       place, as :func:`read_source_frame` does.
     - "sharded" -- ``HuisIdBSV=<n>/HuisBatchIdBSV=<p>/*.parquet`` shards under
       ``<folder>/sharded/`` or directly under ``<folder>`` (so a ``.../sharded``
@@ -145,7 +145,7 @@ def mapped_household_paths(mapped_folder_path=None, fmt="auto") -> dict:
         raise ValueError(f"Unknown fmt {fmt!r}; expected 'auto', 'flat' or 'sharded'.")
 
     def _flat() -> dict:
-        # No dataset level in this layout, so the household id stands in for it.
+        # No household-batch level in this layout, so the household id stands in for it.
         out = {}
         for path in sorted(
             _glob.glob(os.path.join(root, "household_*_table.parquet"))
@@ -217,8 +217,8 @@ def read_mapped_households(
     household_batch_ids : iterable of int, optional
         Narrow the read to these household batch datasets. Pruning the
         directories is the household's job above; this selects exactly, so a
-        household delivered as several datasets yields only the ones asked
-        for. None reads every dataset of every household given.
+        household delivered as several household batches yields only the ones asked
+        for. None reads every household batch of every household given.
 
     Raises
     ------

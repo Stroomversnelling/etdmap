@@ -1,9 +1,9 @@
 """
 Per-entity data-stats producer for etdmap: the entity is the household batch
-dataset (:data:`etdmap.ids.HOUSEHOLD_BATCH`) in mapped mode and the source
+household batch (:data:`etdmap.ids.HOUSEHOLD_BATCH`) in mapped mode and the source
 file in raw mode. Mirrors ``etdtransform.data_stats`` so both repos expose the
 same public name (``get_data_stats``) at the same module path; ``etdmap``
-handles the raw and mapped stages (per-dataset or per-file fan-out),
+handles the raw and mapped stages (per-household-batch or per-file fan-out),
 ``etdtransform`` handles the wide-parquet stages (default / imputed /
 calculated).
 
@@ -384,11 +384,11 @@ def collect_mapped_data_stats(household_batch_id, seasonal=False, seasons=None):
     ----------
     household_batch_id : str or int
         The household batch dataset to process: one household over one
-        period. Keyed on the dataset rather than the dwelling, because two
-        datasets of one household are two series -- pooling them would give a
+        period. Keyed on the household batch rather than the dwelling, because two
+        household batches of one household are two series -- pooling them would give a
         min, a max and a mean over a concatenation of both.
     seasonal : bool, optional
-        If True, emit one row per (dataset, numeric column, season) where
+        If True, emit one row per (household batch, numeric column, season) where
         season includes 'annual' plus each entry in `seasons`. Non-numeric /
         non-bool columns only get the 'annual' row regardless. Default False
         (annual only).
@@ -500,7 +500,7 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
     Modes:
       raw_data_folder_path is None (default): mapped mode. Iterates
         the household batch datasets from read_index(), collecting stats
-        per dataset via collect_mapped_data_stats. The mode-driver
+        per household batch via collect_mapped_data_stats. The mode-driver
         identifier is the household batch dataset; the index DataFrame is
         merged in (the household, supplier, project, etc).
       raw_data_folder_path is a path-like: raw mode. Iterates the
@@ -519,7 +519,7 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
       source_file   -- always present; populated in raw mode, all NA
                        (string dtype) in mapped mode.
 
-    The statistics are per DATASET. Two datasets of one household are two
+    The statistics are per HOUSEHOLD BATCH. Two household batches of one household are two
     rows per column, because they are two series: a min, max, mean or
     percentile taken over both concatenated describes neither.
 
@@ -592,7 +592,7 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
         df[ids.HOUSEHOLD_BATCH] = df["Identifier"]
         df["source_file"] = pd.Series([pd.NA] * len(df), dtype="string")
         # The index join brings the household in as an attribute of the
-        # dataset, alongside its project and the rest of its row.
+        # household batch, alongside its project and the rest of its row.
         df = pd.merge(df, index_df, how="left", on=ids.HOUSEHOLD_BATCH)
         return df
 

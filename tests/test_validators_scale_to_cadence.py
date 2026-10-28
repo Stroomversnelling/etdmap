@@ -35,7 +35,7 @@ DECLARED_MAX = float(thresholds_dict[COL]["Max"])
 
 
 def _cadence(column, minutes, grid):
-    """The shape detect_column_cadence produces, including the dataset row."""
+    """The shape detect_column_cadence produces, including the household batch row."""
     return pd.DataFrame({
         "column": pd.array(["ReadingDate", column], dtype="string"),
         "cadence_minutes": pd.array([grid, minutes], dtype="Int64"),

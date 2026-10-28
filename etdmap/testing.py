@@ -163,11 +163,11 @@ def synthetic_model(
 
 #: Distance between a household id and the household batch id a test frame
 #: declares for it. The two are never equal in a frame: code reaching for the
-#: household where the dataset is meant then finds no rows rather than the
+#: household where the household batch is meant then finds no rows rather than the
 #: right ones.
 HOUSEHOLD_BATCH_OFFSET = 1000
 
-#: The dataset's shape, where a caller states none. Two projects, because a
+#: The household batch's shape, where a caller states none. Two projects, because a
 #: project aggregate needs more than one; enough households per project to meet
 #: the averaging floor; and three days, because the coarsest resample is daily
 #: and a single day gives it no interior slot.
@@ -187,7 +187,7 @@ def household_of_batch(household_batch_id: int) -> int:
     """The household a test frame's *household_batch_id* belongs to.
 
     The inverse of :func:`household_batch_of`, for a caller that names the
-    dataset -- which is the key -- and wants the household it rolls up to.
+    household batch -- which is the key -- and wants the household it rolls up to.
     """
     return int(household_batch_id) - HOUSEHOLD_BATCH_OFFSET
 
@@ -206,7 +206,7 @@ def _complete_pairs(frame, names, n_rows, how=PAIRS_RAMP):
     stages refuse it, so the counterpart is completed from the data model.
 
     *how* decides what it holds, and the choice is load-bearing wherever the
-    frame reaches the averaging engine: that engine takes a dataset's volume
+    frame reaches the averaging engine: that engine takes a household batch's volume
     from the cumulative column whenever it holds any value, so a RAMP
     counterpart becomes the source in place of the interval values the test
     stated. Use EMPTY to keep the pair present and the interval column the
@@ -238,7 +238,7 @@ def dataset_frame(
     pairs=PAIRS_RAMP,
     **columns,
 ):
-    """One dataset's rows: *columns*, plus the cumulative counterpart of every
+    """One household batch's rows: *columns*, plus the cumulative counterpart of every
     interval column given.
 
     Each value may be a scalar (repeated) or a list of length *n_rows*. The
@@ -255,7 +255,7 @@ def dataset_frame(
     project column off: that is the shape a mapper hands
     ``run_standard_pipeline``, which is what a supplier delivered.
 
-    No household or dataset id: the shard path carries them, which is where a
+    No household or household batch id: the shard path carries them, which is where a
     reader expects them. The project is a plain column and is included unless
     *project* is None. Use :func:`datasets_frame` for a frame that carries the
     ids itself.
@@ -294,28 +294,28 @@ def datasets_frame(
     n_rows: int | None = None,
     **columns,
 ):
-    """Several datasets' rows in one frame, carrying the id columns.
+    """Several household batches' rows in one frame, carrying the id columns.
 
     What a stage receives once the shard reader has injected the ids, so a test
     working on a frame rather than a shard tree -- a project average, a chunk,
-    a per-dataset groupby -- builds it here instead of spelling the id columns
+    a per-household-batch groupby -- builds it here instead of spelling the id columns
     out. Building them here is what keeps the two ids distinct and the dtypes
     nullable without every test restating either.
 
-    *per_dataset* is keyed on ``HuisBatchIdBSV``, because that is the key of a
-    dataset. It maps each one to its values for the columns in *columns*:
-    either ``{dataset: [values]}`` when one column is given, or
-    ``{dataset: {column: [values]}}`` for several. The row count per dataset is
+    *per_dataset* is keyed on ``ids.HOUSEHOLD_BATCH``, because that is the key of a
+    household batch. It maps each one to its values for the columns in *columns*:
+    either ``{household batch: [values]}`` when one column is given, or
+    ``{household batch: {column: [values]}}`` for several. The row count per household batch is
     the length of its values, or *n_rows* where there are none to count -- a
     frame of ids and timestamps alone. Every interval column's cumulative
     counterpart is completed as :func:`dataset_frame` does, unless *pairs* is
     cleared.
 
-    The household each dataset rolls up to is :func:`household_of_batch` unless
-    *household_of* names it. Two datasets of ONE household is therefore
+    The household each household batch rolls up to is :func:`household_of_batch` unless
+    *household_of* names it. Two household batches of ONE household is therefore
     ``{1001: [...], 2001: [...]}`` with ``household_of={2001: 1}``.
 
-    *project_of* gives a dataset its own project where they differ; *project*
+    *project_of* gives a household batch its own project where they differ; *project*
     is the one they share otherwise, and None leaves the project column off for
     a stage that knows nothing about projects. *tz* may be None for a tz-naive
     frame, which some stages' inputs are. *dtypes* names a nullable dtype per
@@ -518,7 +518,7 @@ def declare_synthetic_model(model: SyntheticModel = None):
         data_model.rebuild_model()
 
 
-#: The batch table's window columns, which the index write accepts both as
+#: The household batch table's window columns, which the index write accepts both as
 #: formatted strings and as epoch seconds.
 _BATCH_WINDOW_COLUMNS = ("Startdatum", "Einddatum")
 
@@ -534,19 +534,19 @@ class MetadataSet(NamedTuple):
 def batch_table_frame(household_batch_ids, *, household_of=None, project=1,
                       batch=1, grid="5min", start=DEFAULT_BASE_DATE,
                       days=DEFAULT_DAYS, columns=None, **overrides):
-    """The synced HuisBatch table: one row per household dataset.
+    """The synced HuisBatch table: one row per household batch.
 
     What ``etdmap.options.household_batch_csv_path`` points at, and what
     ``household_batch_for_household`` and ``grid_minutes_for_household``
-    resolve a dataset and its grid through.
+    resolve a household batch and its grid through.
 
     *columns* keeps only the named ones, for a test whose subject is a table
     missing a column -- the readers raise a specific error for an absent
     ``Gegevensfrequentie``, which cannot be exercised with a complete table.
     Any further keyword overrides a column with a scalar or a per-row list.
 
-    *start* and *days* set the window each dataset covers. A window that does
-    not contain the readings puts the batch at odds with the household files.
+    *start* and *days* set the window each household batch covers. A window that does
+    not contain the readings puts the household batch at odds with the household files.
     """
     datasets = [int(value) for value in household_batch_ids]
     households = [
@@ -605,7 +605,7 @@ def project_mapping_frame(project_ids, *, supplier="etdmap"):
     """The project mapping: a supplier's own project name to its BSV project.
 
     Covers exactly *project_ids*. A mapping that does not name a project leaves
-    ProjectIdBSV unresolved on its households rather than failing, so the set
+    ids.PROJECT unresolved on its households rather than failing, so the set
     is generated for the projects the test made.
     """
     project_ids = [int(value) for value in project_ids]
@@ -628,9 +628,9 @@ def metadata_set(folder, household_batch_ids, *, household_of=None,
     """Write the three metadata files a mapping run reads, and point at them.
 
     The BSV metadata, the synced HuisBatch table and the project mapping are
-    one set: they agree about which datasets exist, which households and
+    one set: they agree about which household batches exist, which households and
     projects they belong to, and which supplier delivered them. Built
-    together so a test cannot describe a dataset in one and not the others.
+    together so a test cannot describe a household batch in one and not the others.
 
     The caller sets the options; this writes the files and returns their
     paths, so a test that wants only one of them takes it from the result.
@@ -640,9 +640,9 @@ def metadata_set(folder, household_batch_ids, *, household_of=None,
     folder : path-like
         Where the three files are written.
     household_batch_ids : iterable of int
-        The datasets the set describes.
+        The household batches the set describes.
     household_of : mapping of int to int, optional
-        The household a dataset belongs to, where it is not the default.
+        The household a household batch belongs to, where it is not the default.
     projects : iterable of int, optional
         The projects the mapping covers. Defaults to *project* alone.
     include : bool
@@ -685,10 +685,10 @@ def metadata_set(folder, household_batch_ids, *, household_of=None,
 def index_frame(household_batch_ids, *, household_of=None, project=1,
                 batch=1, supplier="etdmap", batch_fields=True, partial=False,
                 **columns):
-    """The index: one row per household dataset.
+    """The index: one row per household batch.
 
-    The index is an index OF household datasets, so *household_batch_ids* is
-    its key. Each dataset's household is :func:`household_of_batch` unless
+    The index is an index OF household batches, so *household_batch_ids* is
+    its key. Each household batch's household is :func:`household_of_batch` unless
     *household_of* names it, and the supplier-side ids are derived from the two
     so a test never states a matching pair by hand.
 
@@ -697,7 +697,7 @@ def index_frame(household_batch_ids, *, household_of=None, project=1,
     :data:`etdmap.index_helpers.batch_field_dtypes` together, which is the
     shape :func:`etdmap.index_helpers.save_index_to_parquet` writes. Clear
     *batch_fields* for the review-metadata shape alone, which carries no
-    dataset column.
+    household batch column.
 
     Any further keyword overrides a column, as a scalar or a list as long as
     *household_batch_ids*. ``Meenemen=[True, False]`` is the common one.
@@ -705,13 +705,13 @@ def index_frame(household_batch_ids, *, household_of=None, project=1,
     Parameters
     ----------
     household_batch_ids : iterable of int
-        The datasets the index covers.
+        The household batches the index covers.
     household_of : mapping of int to int, optional
-        The household a dataset belongs to, where it is not the default.
+        The household a household batch belongs to, where it is not the default.
     project, batch, supplier
         Shared values for the columns of those names.
     batch_fields : bool
-        Carry the per-dataset batch columns, the dataset id among them.
+        Carry the household-batch columns, the household batch id among them.
     partial : bool or iterable of str
         False for the whole shape. An iterable keeps only those columns, for a
         test whose subject is an index MISSING one -- the strict read refuses
@@ -775,8 +775,8 @@ def sidecar_columns(kind, *, with_dataset=True):
     """A sidecar's columns in order, from the library's own map.
 
     Without *with_dataset* the result is the shape the producing step works in,
-    before the dataset is attached: ``detect_column_cadence`` returns a cadence
-    table with no ``HuisBatchIdBSV``, and ``cadence_to_rows`` adds it.
+    before the household batch is attached: ``detect_column_cadence`` returns a cadence
+    table with no ``ids.HOUSEHOLD_BATCH``, and ``cadence_to_rows`` adds it.
 
     Pass the result as :func:`sidecar_frame`'s *partial* where each row states
     its own measurements, which the *kind*-specific builders take as shared
@@ -819,7 +819,7 @@ def sidecar_frame(kind, rows=(), *, household_batch_id=None, partial=False):
     rows : iterable of mapping
         The rows, each over any subset of the sidecar's columns.
     household_batch_id : int, optional
-        The dataset every row belongs to, for rows that do not name it.
+        The household batch every row belongs to, for rows that do not name it.
     partial : bool or iterable of str
         False for the full schema. An iterable keeps only those columns.
     """
@@ -875,7 +875,7 @@ def cadence_sidecar(
     household_batch_id=None,
 ) -> pd.DataFrame:
     """
-    The per-column cadence table for one household dataset, as a test needs it.
+    The per-column cadence table for one household batch, as a test needs it.
 
     What :func:`etdmap.mapping_helpers.detect_column_cadence` produces, without
     running a detection: a test stating the cadence it means to exercise says so
@@ -887,8 +887,8 @@ def cadence_sidecar(
     without it resolves no grid at all.
 
     Give *household_batch_id* for the shape the sidecar FILE holds, which
-    carries the dataset each row belongs to. Without it the result is the
-    detection's own shape, for one dataset at a time.
+    carries the household batch each row belongs to. Without it the result is the
+    detection's own shape, for one household batch at a time.
 
     Parameters
     ----------
@@ -897,7 +897,7 @@ def cadence_sidecar(
     minutes : float
         Cadence for any column whose own value is not given.
     grid_minutes : float, optional
-        The interval the dataset is recorded on. Defaults to *minutes*.
+        The interval the household batch is recorded on. Defaults to *minutes*.
     source : str
         ``'declared'``, ``'detected'`` or ``'dataset'``. A mapping of column to
         value where they differ, as for *detected*.
@@ -910,7 +910,7 @@ def cadence_sidecar(
         Name of the timestamp column, whose row carries the grid. None omits
         that row, for a test whose subject is a table that resolves no grid.
     household_batch_id : int, optional
-        The dataset the rows belong to. Adds the id column.
+        The household batch the rows belong to. Adds the id column.
     """
     if isinstance(columns, str):
         raise TypeError(
@@ -961,7 +961,7 @@ def installed_fingerprint(*extra_files) -> str:
     Hashes the contents of every module in the installed package, not its
     version: a version number does not move during development, but a
     reinstall of changed code does. Any *extra_files* given are hashed too, so
-    a caller can include the metadata its dataset is generated from.
+    a caller can include the metadata its household batch is generated from.
     """
     digest = hashlib.sha256()
     root = Path(__file__).parent
@@ -977,7 +977,7 @@ def installed_fingerprint(*extra_files) -> str:
 
 
 def supplier_label(household_number: int) -> str:
-    """The HuisIdLeverancier the fixture gives household *household_number*.
+    """The ids.HOUSEHOLD_SUPPLIER the fixture gives household *household_number*.
 
     The generator writes it onto the raw data and the mapping reads it back off
     the filename, so both sides spell it through here.
@@ -1095,7 +1095,7 @@ def synthetic_supplier_metadata(household_keys) -> pd.DataFrame:
     Parameters
     ----------
     household_keys : iterable of (str, str)
-        ``(HuisIdLeverancier, ProjectIdLeverancier)`` per household.
+        ``(ids.HOUSEHOLD_SUPPLIER, ids.PROJECT_SUPPLIER)`` per household.
     """
     from etdmap.data_model import (
         allowed_supplier_metadata_columns,
@@ -1177,7 +1177,7 @@ def generate_raw_dataset(
     """
     Raw supplier-shaped household data, with a minimal index file.
 
-    A clean, complete dataset: every cumulative column present, non-decreasing
+    A clean, complete household batch: every cumulative column present, non-decreasing
     from zero, on an unbroken grid, with every value inside its declared bound.
     No fault is injected; a stage's handling of one is tested on a frame that
     test builds.
@@ -1220,7 +1220,7 @@ def generate_raw_dataset(
     # Generate data for each household
     for project_id in project_ids:
         for household_idx in range(1, households_per_project + 1):
-            # Generate unique HuisIdBSV
+            # Generate unique ids.HOUSEHOLD
             household_id = (project_id - 1) * households_per_project + household_idx
 
             # Preconstruct the prefixed strings
@@ -1268,7 +1268,7 @@ def generate_raw_dataset(
 def _list_files_data_fixture(folder_path):
     """The raw household files, keyed by stem, in household-number order.
 
-    HuisIdBSV is assigned in the order this yields. Sorting on the number in
+    ids.HOUSEHOLD is assigned in the order this yields. Sorting on the number in
     the name rather than on the name keeps household_10 after household_1 and
     makes the assignment the same on any platform.
     """
@@ -1290,7 +1290,7 @@ def _process_data_fixture_file(
     The pipeline writes the household batch's file, so nothing here names its
     path.
     """
-    # The dataset being mapped. It keys the output shard and every sidecar row;
+    # The household batch being mapped. It keys the output shard and every sidecar row;
     # the index entry the pipeline returns is the household's.
     household_batch_id = index_helpers.household_batch_for_household(
         int(household_id)
@@ -1400,7 +1400,7 @@ def generate_mapped_dataset(
     etdmap.options.bsv_metadata_file = Path(bsv_metadata_file)
 
     # The generated metadata sits inside the generated tree. The real index
-    # write path populates index.parquet's batch columns from the sync CSV, so
+    # write path populates index.parquet's household-batch columns from the sync CSV, so
     # fixtures exercise production code rather than a fixture-only derivation.
     # Writing it beside the supplied metadata instead would put it in a folder
     # the caller owns and two suites configured alike would share one copy.
@@ -1452,7 +1452,7 @@ def generate_mapped_dataset(
     cadence_rows = []
     for household_id, file_name in household_id_pairs:
         logging.info(f"Starting {file_name}")
-        # Read from the batch CSV written just above, the same way a mapper
+        # Read from the household batch CSV written just above, the same way a mapper
         # resolves it, rather than repeating the fixture's own interval here.
         new_entry, cadence, household_batch_id = _process_data_fixture_file(
             household_id, file_name, raw_folder,
@@ -1470,9 +1470,9 @@ def generate_mapped_dataset(
     # fixture is not something the pipeline can be run against.
     mapping.write_column_cadence(cadence_rows, str(etdmap.options.mapped_folder_path))
 
-    # The project mapping covers every project this dataset generated. A
-    # supplied file covers whatever it was written for, so a dataset with more
-    # projects than that leaves ProjectIdBSV unresolved on the rest.
+    # The project mapping covers every project this household batch generated. A
+    # supplied file covers whatever it was written for, so a household batch with more
+    # projects than that leaves ids.PROJECT unresolved on the rest.
     generated_project_mapping = fixtures_dir / "project_mapping.csv"
     project_mapping_frame(range(1, projects + 1)).to_csv(
         generated_project_mapping, index=False
@@ -1496,7 +1496,7 @@ def generate_mapped_dataset(
 
     # The reviewed metadata, derived from the index this run just built rather
     # than from the file the caller supplied. A supplied file fixes the
-    # household count, so the shape could not be the caller's and a dataset
+    # household count, so the shape could not be the caller's and a household batch
     # shaped for a behaviour -- a project large enough to meet the averaging
     # floor, say -- would fail the household-key comparison in update_include.
     # Meenemen is True throughout: the review has happened by this point, and a

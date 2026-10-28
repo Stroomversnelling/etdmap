@@ -167,7 +167,7 @@ class TestCadenceSidecar:
 
 
 class TestCadenceResolution:
-    """Declared beats detected beats the dataset's own cadence."""
+    """Declared beats detected beats the household batch's own cadence."""
 
     def _resolved(self, df, declared=None, **kwargs):
         kwargs.setdefault('grid_minutes', GRID)
@@ -299,7 +299,7 @@ class TestFillAtDeviceCadence:
         assert out['x'].notna().all()
 
     def test_the_fallback_grid_is_declared_not_measured(self):
-        """The readings arrive every 15 minutes but the batch declares 5. A
+        """The readings arrive every 15 minutes but the household batch declares 5. A
         column too short to measure takes the declared grid, and the
         disagreement is reported rather than silently resolved."""
         grid = pd.date_range(START, periods=2, freq='15min')
@@ -310,7 +310,7 @@ class TestFillAtDeviceCadence:
         assert out.loc['x', 'cadence_minutes'] == 5
 
     def test_a_coarser_grid_is_measured_not_assumed(self):
-        """A 15-minute dataset has no 5-minute rows. The fallback is the grid's
+        """A 15-minute household batch has no 5-minute rows. The fallback is the grid's
         own cadence, so a device at the grid cadence still fills every row."""
         grid = pd.date_range(START, periods=96, freq='15min')
         df = pd.DataFrame({'ReadingDate': grid})
@@ -409,7 +409,7 @@ class TestFillIsLosslessWhateverTheCadence:
 
     def test_scattered_in_between_readings_lower_confidence_to_the_grid(self):
         # Irregular readings make the modal gap a weak claim, so resolution
-        # falls back to the dataset cadence and nothing is sparsened at all.
+        # falls back to the household batch cadence and nothing is sparsened at all.
         values = [float(i) if i % 12 == 0 else pd.NA for i in range(48)]
         for i in (5, 19, 33):
             values[i] = 500.0 + i

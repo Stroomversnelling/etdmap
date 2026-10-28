@@ -24,7 +24,7 @@ over a timeperiod. It checks for example:
 
 def validate_columns(df: DataFrame, columns: list, condition_func) -> bool:
     """
-    Validate a dataset based on specified columns in a DataFrame based on a given condition function.
+    Validate a household batch based on specified columns in a DataFrame based on a given condition function.
 
     Parameters
     ----------
@@ -309,8 +309,8 @@ def validate_no_readingdate_gap(df: DataFrame) -> bool:
     Notes
     -----
     The spacing checked against is the most common spacing in *df*, not a fixed
-    interval: a dataset is recorded on the grid its household batch declares. A
-    fixed interval reports every row of a coarser dataset as a gap.
+    interval: a household batch is recorded on the grid it declares. A
+    fixed interval reports every row of a coarser household batch as a gap.
     """
     time_diffs = df["ReadingDate"].diff().dt.total_seconds()[1:]
     if time_diffs.empty:
@@ -461,7 +461,7 @@ _FIXED_FLAG_CONDITIONS = dict(dataset_flag_conditions)
 
 def rebuild_flag_conditions() -> None:
     """
-    Rebuild the per-column dataset checks in place from the model as it stands.
+    Rebuild the per-column household batch checks in place from the model as it stands.
 
     Called by :func:`etdmap.data_model.rebuild_model`, which owns when the
     model changes. The per-column entries are rebuilt rather than added to, so

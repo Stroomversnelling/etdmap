@@ -146,7 +146,7 @@ def mapped(tmp_path_factory):
             # the timestamp row. Measured throughout -- a detected value equal
             # to the cadence, full confidence, and the readings each column
             # actually delivers -- so a step reading any of the three gets a
-            # number rather than pd.NA. No dataset id, which is the shape
+            # number rather than pd.NA. No household batch id, which is the shape
             # detect_column_cadence returns and the pipeline expects.
             cadence=cadence_sidecar(
                 COLUMN_MINUTES,

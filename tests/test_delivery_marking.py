@@ -21,14 +21,14 @@ DIFF = "ElektriciteitNetgebruikDiff"
 
 
 def _cadence(entries):
-    """The table detect_column_cadence produces for one household dataset: a
+    """The table detect_column_cadence produces for one household batch: a
     row per column of *entries* at its cadence in minutes, the grid on the
-    timestamp row, and no dataset id."""
+    timestamp row, and no household batch id."""
     return cadence_sidecar(entries, grid_minutes=GRID)
 
 
 def _frame(values, column=CUM, **extra):
-    """One dataset's rows: *values* for *column*, plus any further column named.
+    """One household batch's rows: *values* for *column*, plus any further column named.
 
     Naive timestamps, and no cumulative counterpart is completed: the column
     under test stands alone here, and a completed counterpart would carry a

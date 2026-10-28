@@ -21,7 +21,7 @@ from etdmap.mapping_helpers import CADENCE_FILENAME
 from etdmap.storage import mapped_household_files
 from etdmap.testing import INFREQUENT_DEVICE_COLUMNS
 
-#: Read from both datasets. Household 1 also carries the declared gap, which is
+#: Read from both household batches. Household 1 also carries the declared gap, which is
 #: in another column.
 HOUSEHOLD = 1
 
@@ -42,7 +42,7 @@ def raw_household(raw_data_fixture):
 def mapped_household(mapped_fixtures):
     """The household's mapped data, read through its household batch.
 
-    A mapped dataset is keyed on HuisBatchIdBSV; the generator writes one
+    A mapped dataset is keyed on ids.HOUSEHOLD_BATCH; the generator writes one
     household batch per household.
     """
     files = mapped_household_files(HOUSEHOLD, mapped_folder_path=mapped_fixtures)
@@ -56,7 +56,7 @@ def mapped_household(mapped_fixtures):
 
 @pytest.fixture(scope="module")
 def cadence(mapped_fixtures):
-    """The dataset's rows of the sidecar the mapping measured and wrote.
+    """The household batch's rows of the sidecar the mapping measured and wrote.
 
     Keyed on the household batch, which the generator numbers with the
     household id.

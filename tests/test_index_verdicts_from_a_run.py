@@ -1,4 +1,4 @@
-"""The dataset validators' verdicts reach index.parquet from a real run.
+"""The household batch validators' verdicts reach index.parquet from a real run.
 
 ``test_dataset_validators.py`` covers each validator as a function, both ways,
 on frames it builds. ``test_index_helpers.py`` covers that the columns are
@@ -6,7 +6,7 @@ written and hold ``bool`` or NA. Neither covers the step between: that the value
 written is the validator's verdict. A write of all-True, or all-NA, would
 satisfy both and be caught here.
 
-It also states what the fixture's shape implies. The dataset is shaped for
+It also states what the fixture's shape implies. The household batch is shaped for
 integration -- enough households per project to meet the averaging floor, over a
 span of days -- so the checks written against a production year of data fail on
 it, and correctly. A change of span moves those verdicts, and these say which
@@ -26,7 +26,7 @@ SHAPE_INDEPENDENT_TRUE = (
 )
 
 #: Written against a production year. The fixture spans DEFAULT_DAYS, so these
-#: refuse it -- the dataset is not a year of monitoring data and does not claim
+#: refuse it -- the household batch is not a year of monitoring data and does not claim
 #: to be.
 REFUSED_AT_THIS_SPAN = (
     "validate_approximately_one_year_of_records",

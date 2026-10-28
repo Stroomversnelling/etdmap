@@ -1,14 +1,14 @@
 """Reading ONE household batch dataset, and statistics keyed on it.
 
-A household delivered twice is two datasets: two series over two periods,
+A household delivered twice is two household batches: two series over two periods,
 possibly overlapping. ``get_mapped_data`` returns both concatenated, which is
 right for a question about the dwelling's files and wrong for every statistic
 -- a min, max, mean or percentile over the concatenation describes neither
 period. ``get_mapped_dataset`` reads one.
 
-Every test here uses a household with TWO datasets, because that is the only
+Every test here uses a household with TWO household batches, because that is the only
 shape in which the two keys differ. On a household with one, the pooled and
-the per-dataset read return the same frame, which is why keying on the
+the per-household-batch read return the same frame, which is why keying on the
 dwelling went unnoticed.
 """
 
@@ -27,7 +27,7 @@ from etdmap.mapping_helpers import save_household_shard
 from etdmap.storage import read_mapped_households
 from etdmap.testing import index_frame
 
-#: One household, two datasets. The values differ per dataset so a pooled read
+#: One household, two household batches. The values differ per household batch so a pooled read
 #: is visible in any statistic rather than only in the row count.
 HOUSEHOLD = 42
 EARLY, LATE = 7, 9
@@ -51,7 +51,7 @@ def _dataset_frame(values, start):
 
 @pytest.fixture
 def mapped_folder(tmp_path):
-    """A mapped folder holding one household's two datasets, plus its index."""
+    """A mapped folder holding one household's two household batches, plus its index."""
     root = tmp_path / "mapped"
     shard_root = root / "sharded"
     save_household_shard(
@@ -71,8 +71,8 @@ def mapped_folder(tmp_path):
 
 
 class TestReadMappedHouseholds:
-    """The reader prunes directories by household and selects datasets
-    exactly, because the shard path has a household level and the dataset is
+    """The reader prunes directories by household and selects household batches
+    exactly, because the shard path has a household level and the household batch is
     the key."""
 
     def test_without_a_dataset_filter_every_dataset_is_read(self, mapped_folder):
@@ -88,7 +88,7 @@ class TestReadMappedHouseholds:
         assert frame["ElektriciteitNetgebruikHoog"].tolist() == VALUES[LATE]
 
     def test_a_dataset_the_households_do_not_hold_raises(self, mapped_folder):
-        """Rather than returning the other datasets, which reads as success."""
+        """Rather than returning the other household batches, which reads as success."""
         with pytest.raises(FileNotFoundError, match=str(ids.HOUSEHOLD_BATCH)):
             read_mapped_households([HOUSEHOLD], household_batch_ids=[LATE, 999])
 
@@ -135,7 +135,7 @@ class TestStatisticsAreKeyedOnTheDataset:
         assert set(measured["count"]) == {3}
 
     def test_the_household_arrives_as_an_attribute(self, mapped_folder):
-        """Keyed on the dataset; the dwelling comes in with the index row."""
+        """Keyed on the household batch; the dwelling comes in with the index row."""
         stats = get_data_stats()
 
         assert set(stats[ids.HOUSEHOLD].dropna()) == {HOUSEHOLD}

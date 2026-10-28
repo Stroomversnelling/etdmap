@@ -1,14 +1,14 @@
-"""The metadata the generator writes agrees with the dataset it wrote.
+"""The metadata the generator writes agrees with the household batch it wrote.
 
 Three files are generated beside the mapped households: the household-batch sync
-CSV the index's batch columns are read from, the reviewed BSV metadata the
-Meenemen stamp is read from, and the project mapping ProjectIdBSV is resolved
-through. Each states something about the dataset, and these compare them
+CSV the index's household-batch columns are read from, the reviewed BSV metadata the
+Meenemen stamp is read from, and the project mapping ids.PROJECT is resolved
+through. Each states something about the household batch, and these compare them
 against it.
 
 They are not interchangeable with a supplied file: one written for a given shape
 covers the households and projects it names, and leaves the rest of a
-differently shaped dataset unresolved.
+differently shaped household batch unresolved.
 """
 
 import pandas as pd
@@ -58,8 +58,8 @@ class TestTheBatchSyncDescribesTheDataset:
         )
 
     def test_its_window_contains_the_readings(self, generated):
-        """A batch whose window excludes the readings describes a different
-        dataset from the one on disk."""
+        """A household batch whose window excludes the readings describes a different
+        household batch from the one on disk."""
         paths = mapped_household_paths(generated["folder"])
         readings = pd.read_parquet(
             paths[min(paths)], columns=["ReadingDate"],
@@ -94,6 +94,6 @@ class TestTheProjectMappingCoversEveryProject:
         )
 
     def test_no_household_is_left_without_a_project(self, generated):
-        """ProjectIdBSV is joined through this mapping, so a project missing
+        """ids.PROJECT is joined through this mapping, so a project missing
         from it leaves its households unresolved rather than failing."""
         assert generated["index"][ids.PROJECT].notna().all()

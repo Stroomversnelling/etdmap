@@ -381,7 +381,7 @@ def _detect_negative_diff_cases(group, col):
     Parameters
     ----------
     group : pd.DataFrame
-        One dataset's DataFrame, sorted by ReadingDate, containing ``col``.
+        One household batch's DataFrame, sorted by ReadingDate, containing ``col``.
     col : str
         Name of the cumulative column being classified.
 
@@ -465,7 +465,7 @@ def _apply_negative_diff_corrections(group, col, cases, context_string):
     Parameters
     ----------
     group : pd.DataFrame
-        One dataset's DataFrame, sorted by ReadingDate. Must already contain
+        One household batch's DataFrame, sorted by ReadingDate. Must already contain
         ``col`` and the interval column linked to it.
     col : str
         Name of the cumulative column being corrected.
@@ -1021,7 +1021,7 @@ def add_diff_columns(
                 _col_stats = _apply_negative_diff_corrections(
                     group, col, cases, context_string,
                 )
-                # Accumulated across groups: one call may cover many datasets
+                # Accumulated across groups: one call may cover many household batches
                 # when a groupby is passed, and a column may be corrected in
                 # each of them.
                 if _col_stats is not None:
@@ -1497,7 +1497,7 @@ def fill_down_infrequent_devices(
     Notes
     -----
     Fill order: forward fill, then backward fill. A column that remains
-    all-NA (sensor never seen in this dataset) stays all-NA -- device
+    all-NA (sensor never seen in this household batch) stays all-NA -- device
     absence is a metadata declaration, not something this function may infer
     from missingness.
     Only meaningful for cumulative variables -- do not apply to instantaneous sensors.
@@ -1610,7 +1610,7 @@ def _declaration_owner(household_id) -> str:
     """Name whose declaration is at fault, for the error message.
 
     A declaration is corrected in Grist, found by supplier and project, and
-    it belongs to one household's dataset -- ``ids.HOUSEHOLD_BATCH``, not the
+    it belongs to one household's household batch -- ``ids.HOUSEHOLD_BATCH``, not the
     delivery batch. ``index.parquet`` is the registry carrying all three
     beside ``ids.HOUSEHOLD``.
 
@@ -1894,13 +1894,13 @@ def snap_readings_to_grid(
     offsets into a single row per grid slot. Handles any number of streams
     automatically via per-column characteristic offset detection.
 
-    Use this whenever a dataset has columns that arrive at different timestamps
+    Use this whenever a household batch has columns that arrive at different timestamps
     within the same grid period (e.g. columns A-C arrive at HH:MM:22 every
     5 minutes while columns D-F arrive at HH:MM:00 every 15 minutes).
     Both sets of rows snap to the same 5-minute slot and their column values
     are merged by taking the first non-NA value per column.
 
-    For datasets with multiple separate input files per sensor group, concatenate
+    For household batches with multiple separate input files per sensor group, concatenate
     all files into one DataFrame first (leaving columns from other files as NaN),
     then call this function. This is equivalent to a Timestep-based
     sheet merge, but works on datetime columns rather than integer offsets.
@@ -2580,7 +2580,7 @@ def apply_threshold_to_col(
 
     if n_below or n_above:
         removed = df.loc[mask, col]
-        # Signed volumes, so a removal report says how much left the dataset
+        # Signed volumes, so a removal report says how much left the household batch
         # and in which direction. A count alone cannot: one large positive and
         # one large negative removal read the same as two small ones.
         negative = removed[removed < 0]
@@ -2610,7 +2610,7 @@ def apply_threshold_to_col(
 
 
 # Sidecar written next to the mapped household batches (one row per household
-# batch + column that lost values in the threshold pass; keyed as
+# household batch + column that lost values in the threshold pass; keyed as
 # _write_sidecar notes).
 THRESHOLD_REMOVALS_FILENAME = "mapping_threshold_removals.parquet"
 
@@ -2636,7 +2636,7 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
     Merge accumulated sidecar rows into the typed parquet beside the mapped data.
 
     A sidecar row describes one household batch: it is measured on that
-    dataset, against the grid that household batch declares.
+    household batch's readings, against the grid it declares.
     ``ids.HOUSEHOLD_BATCH`` is therefore the key, and ``ids.HOUSEHOLD`` is not
     -- on the household, two household batches of one household cannot be told
     apart and re-mapping one would replace the other's rows. Join to the household through
@@ -2704,7 +2704,7 @@ def threshold_stats_to_rows(household_batch_id, threshold_stats):
     Parameters
     ----------
     household_batch_id : int
-        The household batch the dataset is.
+        The household batch.
     threshold_stats : dict
         {column: {"n_below", "n_above", "sum_removed_negative",
         "sum_removed_positive", "balance_removed", "min_removed",
@@ -2786,7 +2786,7 @@ def negative_diff_stats_to_rows(household_batch_id, dip_stats):
     Parameters
     ----------
     household_batch_id : int
-        The household batch the dataset is.
+        The household batch.
     dip_stats : dict
         {column: figures} as produced by
         ``add_diff_columns(return_stats=True)``. May be empty or None.
@@ -2843,7 +2843,7 @@ def grid_collisions_to_rows(household_batch_id, collisions):
     Parameters
     ----------
     household_batch_id : int
-        The household batch the dataset is.
+        The household batch.
     collisions : dict
         {column: figures} as produced by
         ``snap_readings_to_grid(return_stats=True)``. May be empty or None.
@@ -2895,7 +2895,7 @@ def cadence_to_rows(household_batch_id, cadence_df):
     Parameters
     ----------
     household_batch_id : int
-        The household batch the dataset is.
+        The household batch.
     cadence_df : pd.DataFrame or None
         The output of detect_column_cadence. May be empty or None.
 
@@ -2959,7 +2959,7 @@ def frozen_spans_to_rows(
     """
     Flatten one column's frozen spans into sidecar rows.
 
-    *reading_dates* is the dataset's ReadingDate series; when given, each span
+    *reading_dates* is the household batch's ReadingDate series; when given, each span
     also carries the timestamps it starts and ends at, which is what makes the
     artifact readable without going back to the data.
 
@@ -3014,7 +3014,7 @@ class Sidecar(NamedTuple):
 
 #: The mapping sidecars by name. A caller that handles them alike -- reading
 #: them all, or building one in a test -- reads this rather than repeating a
-#: filename or restating a schema. Each is keyed on the household dataset.
+#: filename or restating a schema. Each is keyed on the household batch.
 SIDECARS = {
     "cadence": Sidecar(
         CADENCE_FILENAME, _COLUMN_CADENCE_DTYPES,
@@ -3048,10 +3048,10 @@ def save_household_shard(df, household_id, household_batch_id, sharded_folder_pa
     partition columns (the ids) live in the PATH, not the file -- hive convention,
     and consistent with the flat mapped file which also carries no id columns.
 
-    Per-dataset and idempotent: re-running one household batch overwrites only its
+    Per-household-batch and idempotent: re-running one household batch overwrites only its
     shard (exactly one part file, never stale duplicates), so a single changed
-    dataset can be re-mapped without touching the rest. Different household
-    batches of the same household coexist as sibling ``HuisBatchIdBSV=*``
+    household batch can be re-mapped without touching the rest. Different household
+    household batches of the same household coexist as sibling ``HuisBatchIdBSV=*``
     partitions.
 
     Parameters
@@ -3103,7 +3103,7 @@ def save_mapped_household(
     - "sharded" (default): hive shard under
       ``<mapped_folder_path>/sharded/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/``;
     - "flat": the legacy ``household_<n>_table.parquet``, which has no
-      household-batch level and so cannot hold a household's second dataset
+      household-batch level and so cannot hold a household's second household batch
       (tests / legacy escape hatch via the map scripts' --flat flag).
 
     run_standard_pipeline calls this internally; mapper scripts that write
@@ -3304,8 +3304,8 @@ def _detect_frozen_spans_for_household_batch(
 
         # Which form the column holds, read from the cell findings rather than
         # re-derived: add_diff_columns records an outcome on every cell it
-        # wrote, and the branch is per dataset per column -- the same column
-        # is derived for one dataset and delivered in the next -- so no
+        # wrote, and the branch is per household batch per column -- the same column
+        # is derived for one household batch and delivered in the next -- so no
         # column-level rule can replace it. Later steps mutate the frame and a
         # second source would drift from it.
         #
@@ -3694,7 +3694,7 @@ def mark_cadence(
 
     A column carrying no delivery record is skipped. That is a column created
     after delivery was marked -- the all-NA placeholders
-    ``rearrange_model_columns`` adds for model columns the dataset does not have
+    ``rearrange_model_columns`` adds for model columns the household batch does not have
     -- so there is no first reading to anchor on and nothing to say about its
     gaps.
 
@@ -3839,7 +3839,7 @@ def run_standard_pipeline(
     household_batch_id: int | None = None,
 ) -> dict:
     """
-    Standard per-dataset processing pipeline shared by all ETD supplier mappers.
+    Standard per-household-batch processing pipeline shared by all ETD supplier mappers.
 
     Call this after all supplier-specific preprocessing is complete: column rename,
     unit conversion, ReadingDate derived, identifier columns dropped, and any
@@ -3893,7 +3893,7 @@ def run_standard_pipeline(
         The grid to place the data on. Resolved from the household batch's
         declared ``Gegevensfrequentie`` when not given.
     household_batch_id : int, optional
-        ``ids.HOUSEHOLD_BATCH`` -- the dataset being mapped. It keys the output shard
+        ``ids.HOUSEHOLD_BATCH`` -- the household batch being mapped. It keys the output shard
         and every sidecar row. Resolved from the household batch table when not
         given, which refuses a household that has several.
 

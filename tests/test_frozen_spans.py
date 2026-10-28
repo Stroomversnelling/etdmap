@@ -35,7 +35,7 @@ GRID = 5
 #: A plausible 5-minute bound for a tap water variable, in litres.
 MAX_PER_INTERVAL = 100.0
 
-#: The household dataset these frames describe. It is the key every sidecar
+#: The household batch these frames describe. It is the key every sidecar
 #: row is recorded under, and the household it belongs to is derived from it.
 HOUSEHOLD_BATCH_ID = household_batch_of(1)
 

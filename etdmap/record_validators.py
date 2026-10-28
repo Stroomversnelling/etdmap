@@ -55,7 +55,7 @@ def _bounds_for(col: str, cadence) -> tuple:
         Per-column cadence for this household batch, from
         :func:`etdmap.mapping_helpers.detect_column_cadence`: one row per
         column, ``cadence_minutes`` holding the interval its readings cover. A
-        column absent from it falls back to the interval the dataset itself is
+        column absent from it falls back to the interval the household batch itself is
         recorded on.
     """
     by_column = cadence_minutes_by_column(cadence)
@@ -207,8 +207,8 @@ def validate_observed_spacing(df: DataFrame) -> Series:
     Validate that each row sits one grid interval after the one before it.
 
     The interval checked against is the most common spacing in *df*, measured
-    rather than assumed: a dataset is recorded on the grid its household batch
-    declares, so a fixed interval would mark every row of a coarser dataset
+    rather than assumed: a household batch is recorded on the grid it
+    declares, so a fixed interval would mark every row of a coarser household batch
     invalid.
 
     Parameters

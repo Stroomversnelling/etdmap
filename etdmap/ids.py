@@ -9,26 +9,25 @@ use it.
 
 The data model
 --------------
-Batches hold projects, which hold household datasets. A **household dataset**
-(:data:`HOUSEHOLD_BATCH`) describes one household over a particular period,
-scoped to its project and its batch. It is the primary key of the index and of
-every mapped artifact: the shard, the rows in every mapping sidecar, and every
-computation that runs along one time series.
+Stated once, in ``data/model.yaml``: the entities, their relations, which key
+to write, and how to name each one in prose. Read that file. What follows says
+only enough to use the names below.
 
-A **household** (:data:`HOUSEHOLD`) is the dwelling a dataset describes. It is
-an ATTRIBUTE of a dataset, not a key: one household has as many datasets as it
-has periods.
+Delivery batches hold projects, which hold household batch datasets. A
+**household batch dataset** (:data:`HOUSEHOLD_BATCH`) is one household over one
+period, scoped to its project and its delivery batch. It is the unit of
+analysis and the primary key of the index and of every mapped artifact: the
+shard, the rows in every mapping sidecar, and every computation that runs along
+one time series. Every count, grouping, statistic, average and eligibility
+floor keys on it.
 
-**The household batch is the unit of analysis; the household is not a unit of
-anything.** Every count, grouping, statistic, average and eligibility floor
-keys on the household batch -- a household delivered as two datasets
-contributes two series, and counting the dwelling would count it once. There is
-no count that keys on the household.
-
-Four things name it, all about attribution or storage rather than analysis: the
-index retains it so a dataset can be attributed to a dwelling, the guards whose
-subject is a household having more than one dataset, the shard path and reader
-which carry both levels, and the index entry a mapping run returns.
+A **household** (:data:`HOUSEHOLD`) is the dwelling a household batch
+describes. It is an ATTRIBUTE, carried and reported, and **the unit of
+nothing** -- no count keys on it. A household delivered twice contributes two
+series, and counting the dwelling would count it once. ``data/model.yaml``
+names the only two places it is still a key: the guard whose subject is a
+household with more than one household batch, and the outer level of the shard
+path.
 
 Writing the axis rather than the column
 ---------------------------------------
@@ -44,19 +43,22 @@ judgement per site.
 
 import pandas as pd
 
-#: The household dataset: one household over one period, scoped to a project
-#: and a batch. Primary key of the index and of every mapped artifact.
+#: The household batch dataset: one household over one period, scoped to a
+#: project and a delivery batch. The unit of analysis, and the primary key of
+#: the index and of every mapped artifact.
 HOUSEHOLD_BATCH = "HuisBatchIdBSV"
 
-#: The household a dataset describes -- an attribute of the dataset, not a key.
-#: For counting households and for joining household-level metadata.
+#: The dwelling a household batch describes -- an attribute of it, never a key.
+#: For joining household-level metadata onto a household batch.
 HOUSEHOLD = "HuisIdBSV"
 
-#: The delivery. A batch holds projects, which hold household datasets.
+#: The delivery batch: one delivery of household batch datasets from a supplier. Holds
+#: projects, which hold household batches. Never means a household batch.
 BATCH = "BatchIdBSV"
 
-#: The project a household dataset belongs to. A household's datasets in
-#: different periods may sit in different projects.
+#: The project a household batch belongs to. A household's household batches
+#: may sit in different projects, which is how a renovation is represented:
+#: the project defines the physical model.
 PROJECT = "ProjectIdBSV"
 
 #: The supplier's own identifiers, as delivered, before any are resolved to a
@@ -73,7 +75,9 @@ READING_DATE = "ReadingDate"
 #: same period, so keying any of those on the household pools them.
 DATASET_AXIS = HOUSEHOLD_BATCH
 
-#: The hive partition keys of a sharded dataset, outermost first.
+#: The hive partition keys of the sharded layout, outermost first. The layout
+#: on disk, not a key: a shard holds one household batch, under a directory
+#: level for its household.
 SHARD_PATH_KEYS = (HOUSEHOLD, HOUSEHOLD_BATCH)
 
 #: The dtype each identifier column carries, as the pandas dtype object the

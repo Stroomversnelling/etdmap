@@ -74,7 +74,7 @@ def declared(model, column):
 
 
 def _frame(values, column):
-    """One dataset's rows as a supplier delivered them, holding *values*.
+    """One household batch's rows as a supplier delivered them, holding *values*.
 
     ``PAIRS_EMPTY``: the interval column stands alone as the subject, so its
     cumulative counterpart is present -- a frame holding half a pair is not a
@@ -144,7 +144,7 @@ class TestCadenceLookup:
 
     def test_no_cadence_table_resolves_nothing(self):
         """Empty means unresolved, not unscaled: the caller then falls back to
-        the dataset's own interval, or raises."""
+        the household batch's own interval, or raises."""
         assert cadence_minutes_by_column(None) == {}
 
     def test_a_columns_own_row_beats_the_one_it_is_paired_with(

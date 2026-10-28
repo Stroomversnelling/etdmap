@@ -53,10 +53,10 @@ def test_creation_validation_columns_index_data_files(mapped_fixtures, request):
     0. The mapped_fixtures fixture (in conftest.py) creates the household
        parquet files and index.parquet.
     Then Checks if:
-    1. Appropirate columns are created in datafiles (record_validators) and index file (dataset validators)
+    1. Appropirate columns are created in datafiles (record_validators) and index file (``dataset_validators``)
     2. If True/False values are found as expected.
     """
-    # The count the dataset was generated with. The shape is a parameter of
+    # The count the household batch was generated with. The shape is a parameter of
     # the generator, so a literal here would contradict any other shape.
     limit_houses = DEFAULT_HOUSEHOLDS_PER_PROJECT * DEFAULT_PROJECTS
     folder_path = mapped_fixtures
@@ -196,7 +196,7 @@ class TestUpdateMeenemen:
             index_helpers.update_include()
 
     def test_raises_on_key_value_mismatch(self, tmp_path, monkeypatch):
-        # Same HuisIdBSV set (so the missing-household check passes) but a key
+        # Same ids.HOUSEHOLD set (so the missing-household check passes) but a key
         # column value differs -> reaches and trips the compare/merge branch.
         _setup_include(
             tmp_path, monkeypatch,

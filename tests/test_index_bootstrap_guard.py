@@ -1,10 +1,10 @@
 """read_index refuses an absent index unless asked to bootstrap.
 
-The index is the household-id registry: assign_ids looks HuisIdBSV up by
-(Dataleverancier, ProjectIdLeverancier, HuisIdLeverancier) and invents an
+The index is the household-id registry: assign_ids looks ids.HOUSEHOLD up by
+(ids.SUPPLIER, ids.PROJECT_SUPPLIER, ids.HOUSEHOLD_SUPPLIER) and invents an
 id only for a key it cannot find. An empty index therefore makes every
 household look new, so mapping into a folder without one renumbers the
-whole dataset in mapper execution order -- silently, while HuisIdBSV is the
+whole dataset in mapper execution order -- silently, while ids.HOUSEHOLD is the
 join key of every comparison against an earlier run.
 
 Returning an empty frame is still correct for a genuinely new dataset, so
@@ -79,7 +79,7 @@ class TestMissingIndexIsRefused:
         assert "reassigned" in message
         # Remedy 1: seed the canonical index (the remap case).
         assert "copy the canonical index.parquet" in message
-        # Remedy 2: the explicit opt-in (the new-dataset case).
+        # Remedy 2: the explicit opt-in (the new-household-batch case).
         assert "allow_missing=True" in message
         assert "--allow-new-index" in message
 

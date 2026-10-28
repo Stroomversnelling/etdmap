@@ -2,10 +2,10 @@
 
 Two validators used to compare consecutive readings against a fixed 300
 seconds. A household recorded on a fifteen-minute grid then failed on every
-row: the finding said "gap" where the data was complete, and the dataset-level
+row: the finding said "gap" where the data was complete, and the household-batch
 flag said the series was broken when it was intact.
 
-The spacing a household is recorded on is the grid its batch declares, which
+The spacing a household is recorded on is the grid its household batch declares, which
 mapping pads to before these run. So the interval to compare against is the one
 in the data, and a gap is a spacing that departs from it.
 """

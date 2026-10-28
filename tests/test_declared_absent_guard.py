@@ -229,16 +229,16 @@ class TestEveryColumnOfTheDeviceFalsifiesTheDeclaration:
             assert_no_delivered_in_declared_absent(df, {model.high})
 
 
-#: The dataset the declaration belongs to, a second dataset, and the household
+#: The household batch the declaration belongs to, a second household batch, and the household
 #: the first describes.
 DATASET = 1001
 SECOND_DATASET = 2001
 HOUSEHOLD = household_of_batch(DATASET)
 
-#: The supplier and project the raise has to name beside the dataset, so the
+#: The supplier and project the raise has to name beside the household batch, so the
 #: declaration can be found and corrected in Grist, and the delivery batch it
 #: must not be confused with. Each differs in value from the household and
-#: from the dataset, so a message naming the wrong one cannot read as right.
+#: from the household batch, so a message naming the wrong one cannot read as right.
 SUPPLIER = "Watch-E"
 PROJECT = 7
 DELIVERY_BATCH = 2
@@ -246,7 +246,7 @@ DELIVERY_BATCH = 2
 
 class TestTheRaiseNamesWhoseDeclarationItIs:
     """The fix is a Grist edit, found by supplier and project, and the
-    declaration belongs to one household's dataset -- HuisBatchIdBSV, not the
+    declaration belongs to one household's household batch -- ids.HOUSEHOLD_BATCH, not the
     delivery batch. A message carrying only the mapper's own label cannot be
     acted on.
     """
@@ -289,7 +289,7 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
     def test_a_household_with_two_datasets_names_both_batches(
         self, model, tmp_path, monkeypatch
     ):
-        """One household can have several datasets, and a declaration belongs
+        """One household can have several household batches, and a declaration belongs
         to one of them. Naming every candidate beats naming one at random."""
         self._write_index(
             tmp_path,
@@ -338,7 +338,7 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
             assert_no_delivered_in_declared_absent(
                 df,
                 {model.device},
-                # The household the second dataset belongs to, which the index
+                # The household the second household batch belongs to, which the index
                 # written above does not cover.
                 household_id=household_of_batch(SECOND_DATASET),
             )

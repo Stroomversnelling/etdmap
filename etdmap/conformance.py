@@ -131,7 +131,7 @@ def sidecar_distinctive_columns() -> frozenset:
     """The columns that belong to one mapping sidecar and nothing else.
 
     Derived from the sidecar registry so it tracks the data model. Every
-    sidecar carries the dataset id and ``column``, so those two say nothing
+    sidecar carries the household batch id and ``column``, so those two say nothing
     about which sidecar a dict is restating and are excluded.
     """
     from etdmap.mapping_helpers import SIDECARS
@@ -196,7 +196,7 @@ def _takes_numpy_dtype(node) -> bool:
 def id_columns_in_construction(tree, path) -> list:
     """An id written as a COLUMN of values.
 
-    The dataset id names which dataset a row belongs to, which is how
+    The household batch id names which household batch a row belongs to, which is how
     ``sidecar_frame`` is called and is fine. Writing a LIST of ids is building
     the key by hand, which is what the builders exist to do -- they keep the
     two ids distinct, so code reaching for the wrong one finds no rows.
@@ -341,7 +341,7 @@ def household_keyed_grouping(tree, path) -> list:
 
     A key that is exactly ``ids.SHARD_PATH_KEYS`` is the on-disk layout rather
     than a key, and groups identically to the household batch dataset alone
-    because the dataset determines its household.
+    because the household batch determines its household.
     """
     model_ = model()
     allowed = model_["entities"]["HOUSEHOLD"]["key_use_allowed_in"]
@@ -403,10 +403,15 @@ def duplicate_dict_keys(tree, path) -> list:
 # ---------------------------------------------------------------------------
 
 #: A word standing alone, not part of an identifier: ``batch`` matches in
-#: "per batch" but not in ``batch_table_frame`` or "HuisBatch", because the
-#: character beside it there is a word character.
-_BARE_BATCH = re.compile(r"(?<!household )(?<!delivery )\bbatch(es)?\b",
-                         re.IGNORECASE)
+#: "per household batch" but not in ``batch_table_frame`` or "HuisBatch", because the
+#: character beside it there is a word character. Hyphenated forms count as
+#: qualified -- "household-batch flag" says which one as plainly as the
+#: spaced form does.
+_BARE_BATCH = re.compile(
+    r"(?<!household )(?<!household-)(?<!delivery )(?<!delivery-)"
+    r"\bbatch(es)?\b",
+    re.IGNORECASE,
+)
 _BARE_DATASET = re.compile(r"\bdatasets?\b", re.IGNORECASE)
 _QUOTED = ("'", '"', "`")
 
@@ -444,6 +449,21 @@ def _word_before_dataset() -> frozenset:
     return frozenset(allowed)
 
 
+def _is_named_token(line, start, end) -> bool:
+    """True where the word is being NAMED rather than used in a sentence.
+
+    Two forms: a reference to the constant (``ids.BATCH``), and the word in
+    quotes or backticks, which is how prose about the naming rule itself has
+    to write it. Neither leaves a reader wondering which one is meant.
+    """
+    before = line[:start]
+    if re.search(r"\bids\.$", before):
+        return True
+    opens = before[-1:] in ("'", '"', "`")
+    closes = line[end:end + 1] in ("'", '"', "`")
+    return opens and closes
+
+
 def bare_batch(tree, path, source) -> list:
     """"batch" standing alone where it does not mean the delivery.
 
@@ -453,6 +473,8 @@ def bare_batch(tree, path, source) -> list:
     found = []
     for number, line in sorted(_prose_lines(tree, source).items()):
         for match in _BARE_BATCH.finditer(line):
+            if _is_named_token(line, match.start(), match.end()):
+                continue
             found.append(Finding(
                 path, number,
                 f"bare {match.group(0)!r}: say \"delivery batch\" or "
@@ -465,7 +487,7 @@ def bare_dataset(tree, path, source) -> list:
     """"dataset" standing for a household batch dataset.
 
     Raw, mapped, generated and project-level datasets all exist, so a bare
-    "the dataset" leaves which one unsaid. ``prose.dataset_alone_allowed_for``
+    "the household batch" leaves which one unsaid. ``prose.dataset_alone_allowed_for``
     holds the senses that keep the plain word.
     """
     allowed = _word_before_dataset()

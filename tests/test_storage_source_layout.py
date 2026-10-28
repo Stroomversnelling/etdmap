@@ -9,7 +9,7 @@ produced three failures from one cause:
    the partitioned ones, and the reader rejected the mixture.
 2. Selecting households looked for `HuisIdBSV=` directories at the root, found
    none, and raised as though the households had no data.
-3. A purely flat directory read as shards returned rows with no `HuisIdBSV` at
+3. A purely flat directory read as shards returned rows with no `ids.HOUSEHOLD` at
    all, and raised nothing. That one is the dangerous case.
 
 `data/mapped` is the mixed shape: flat files at the root, partitions under
@@ -167,7 +167,7 @@ class TestAFlatDirectoryKeepsItsHouseholdIdentity:
         assert {ids.HOUSEHOLD, ids.HOUSEHOLD_BATCH} <= source_schema_names(flat)
 
     def test_sql_over_it_refuses_rather_than_dropping_the_id(self, flat):
-        """A fragment with no HuisIdBSV and no error is how failure 3 hid."""
+        """A fragment with no ids.HOUSEHOLD and no error is how failure 3 hid."""
         with pytest.raises(ValueError, match="flat directory"):
             source_sql(flat)
 

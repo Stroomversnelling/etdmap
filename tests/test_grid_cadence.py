@@ -1,8 +1,8 @@
 """The grid is per household batch, not a constant.
 
-Each batch declares the interval its data sits on as ``Gegevensfrequentie``.
+Each household batch declares the interval its data sits on as ``Gegevensfrequentie``.
 Everything that pads, fills or judges a value against "one slot" has to use that
-batch's grid: on any other grid a five-minute assumption pads the wrong slots and
+household batch's grid: on any other grid a five-minute assumption pads the wrong slots and
 judges a plausible reading impossible.
 """
 
@@ -31,15 +31,15 @@ from etdmap.testing import (
     household_batch_of,
 )
 
-#: The dataset each household here is described through. The grid is declared
-#: per dataset, so each one is derived from its household rather than stated
+#: The household batch each household here is described through. The grid is declared
+#: per household batch, so each one is derived from its household rather than stated
 #: beside it.
 _DATASETS = {
     household_id: household_batch_of(household_id)
     for household_id in (1, 2, 3, 5, 7, 8)
 }
 
-#: A second dataset of household 7, for a household delivered twice at two
+#: A second household batch of household 7, for a household delivered twice at two
 #: different grids. No offset derives it: a household's further deliveries are
 #: numbered by the metadata, not by arithmetic on the household.
 _SECOND_DATASET = 1070
@@ -75,7 +75,7 @@ class TestFrequencyToMinutes:
 class TestGridMinutesForHousehold:
     @pytest.fixture
     def batch_table(self, tmp_path):
-        """Three datasets, the third declaring no grid at all."""
+        """Three household batches, the third declaring no grid at all."""
         path = tmp_path / "huisbatch.csv"
         batch_table_frame(
             [_DATASETS[1], _DATASETS[2], _DATASETS[3]],
@@ -96,7 +96,7 @@ class TestGridMinutesForHousehold:
             grid_minutes_for_household(3)
 
     def test_a_household_not_in_the_table_raises(self, batch_table):
-        """Mapping a household whose batch row is not yet synced would pad it to
+        """Mapping a household whose household-batch row is not yet synced would pad it to
         a grid nobody declared, and the index would then say otherwise."""
         with pytest.raises(ValueError, match="not in the household batch table"):
             grid_minutes_for_household(99)
@@ -122,15 +122,15 @@ class TestGridMinutesForHousehold:
 
 
 class TestTheGridIsKeyedOnTheBatch:
-    """``Gegevensfrequentie`` is declared per ``HuisBatchIdBSV``, so the lookup
-    is keyed on the batch. One ``HuisIdBSV`` may have several datasets, each
+    """``Gegevensfrequentie`` is declared per ``ids.HOUSEHOLD_BATCH``, so the lookup
+    is keyed on the household batch. One ``ids.HOUSEHOLD`` may have several household batches, each
     declaring its own grid, and filtering on the household cannot tell them
     apart.
     """
 
     @pytest.fixture
     def two_batches(self, tmp_path):
-        """Household 7 has two datasets at different grids; household 8 has one."""
+        """Household 7 has two household batches at different grids; household 8 has one."""
         path = tmp_path / "huisbatch_multi.csv"
         batch_table_frame(
             [_DATASETS[7], _SECOND_DATASET, _DATASETS[8]],
@@ -149,8 +149,8 @@ class TestTheGridIsKeyedOnTheBatch:
         assert grid_minutes_for_household_batch(_DATASETS[8]) == 60.0
 
     def test_a_household_with_two_batches_refuses_to_answer(self, two_batches):
-        """The grid is a property of the dataset. Returning the first listed
-        batch's frequency pads the other dataset to a grid nobody declared for
+        """The grid is a property of the household batch. Returning the first listed
+        household batch's frequency pads the other household batch to a grid nobody declared for
         it."""
         with pytest.raises(HouseBatchOverlapError) as excinfo:
             grid_minutes_for_household(7)
@@ -189,8 +189,8 @@ class TestTheGridIsKeyedOnTheBatch:
             etdmap.options.household_batch_csv_path = previous
 
     def test_a_table_with_no_batch_column_raises(self, tmp_path):
-        """An older synced table has no HuisBatchIdBSV. Resolving the grid off
-        HuisIdBSV instead would answer for a key the data model does not use."""
+        """An older synced table has no ids.HOUSEHOLD_BATCH. Resolving the grid off
+        ids.HOUSEHOLD instead would answer for a key the data model does not use."""
         path = tmp_path / "huisbatch_legacy.csv"
         batch_table_frame(
             [_DATASETS[1]], columns=[ids.HOUSEHOLD, "Gegevensfrequentie"]
@@ -207,7 +207,7 @@ class TestTheGridIsKeyedOnTheBatch:
             etdmap.options.household_batch_csv_path = previous
 
     def test_a_duplicated_batch_row_raises(self, tmp_path):
-        """A batch id names one dataset, so two rows for it is a metadata
+        """A household batch id names one household batch, so two rows for it is a metadata
         fault rather than a choice to make."""
         path = tmp_path / "huisbatch_dup.csv"
         batch_table_frame(
@@ -294,7 +294,7 @@ class TestFillingStepsInTheGridItIsGiven:
             tz=None,
             pairs=False,
         )
-        # The shape detect_column_cadence returns: no dataset id, and the grid
+        # The shape detect_column_cadence returns: no household batch id, and the grid
         # on the timestamp row.
         cadence = cadence_sidecar(
             {self.CUM: column_minutes}, grid_minutes=grid_minutes

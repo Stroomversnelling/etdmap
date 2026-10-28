@@ -89,7 +89,7 @@ class TestMixedAndFullReads:
     def test_a_stray_parquet_among_real_shards_raises(self, tmp_path):
         # The original point, on a directory that IS sharded: a parquet sitting
         # outside the partition directories has no id to read, and a quiet 1:1
-        # fallback would mask multi-batch data.
+        # fallback would mask multi-household-batch data.
         _write_shard(tmp_path, 1, 1, 3, store_id_in_file=False)
         pd.DataFrame({"value": [1]}).to_parquet(tmp_path / "stray.parquet")
         with pytest.raises(ValueError, match="household id"):

@@ -2,20 +2,20 @@
 Contract for save_index_to_parquet as THE single index write.
 
 One path, one function, one file: index.parquet is the whole index.
-index.parquet holds one row per household batch (HuisBatchIdBSV).
+index.parquet holds one row per household batch (ids.HOUSEHOLD_BATCH).
 
 1. Meenemen is stamped onto the index from the combined BSV metadata (the one
    intermediate for Meenemen). Households not in the metadata get NA:
    Meenemen starts empty when a household is first mapped; the researcher
    fills it in afterwards in the metadata administration.
-2. The household-batch columns are added: HuisBatchIdBSV (assigned locally --
+2. The household-batch columns are added: ids.HOUSEHOLD_BATCH (assigned locally --
    the external HuisBatch table is a hand-maintained copy of these ids,
-   never a source of new rows) plus the batch fields (BatchIdBSV,
+   never a source of new rows) plus the household-batch fields (ids.BATCH,
    Gegevensfrequentie, Leverancierfrequentie, Startdatum/Einddatum) joined
    from the synced HuisBatch CSV.
 3. index.parquet is written.
 
-Pending households (no synced row yet) keep NA batch fields, are warned
+Pending households (no synced row yet) keep NA household-batch fields, are warned
 about, and listed in a paste-ready proposal CSV. Cadence
 (Gegevensfrequentie) is required only for rows with Meenemen == True.
 """
@@ -38,23 +38,23 @@ _END = "2025-05-01 00:00:00 UTC"
 _START_EPOCH = 1714521600
 _END_EPOCH = 1746057600
 
-#: The dataset each household here is indexed through. This write resolves
+#: The household batch each household here is indexed through. This write resolves
 #: everything by household -- the Meenemen stamp, the synced join, the pending
-#: list and the synced-only warning -- so the datasets are derived from the
+#: list and the synced-only warning -- so the household batches are derived from the
 #: household rather than stated beside it.
 _DATASETS = {
     household_id: household_batch_of(household_id)
     for household_id in (1, 2, 3, 99)
 }
 
-#: A second dataset of household 1, for a synced table holding two deliveries
+#: A second household batch of household 1, for a synced table holding two deliveries
 #: of one household.
 _SECOND_DATASET = 2001
 
 
 def _write_bsv_metadata(folder, household_batch_ids, include):
     """Write the combined BSV metadata CSV. The Meenemen stamp reads
-    HuisIdBSV and Meenemen from it."""
+    ids.HOUSEHOLD and Meenemen from it."""
     path = folder / "metadata.csv"
     index_frame(
         household_batch_ids, batch_fields=False, Meenemen=include
@@ -126,7 +126,7 @@ class TestSingleIndexWrite:
 
         idx = _read_index(tmp)
         assert idx.set_index(ids.HOUSEHOLD)["Meenemen"].to_dict() == {1: True, 2: False}
-        # The dataset id comes from the synced CSV, not from the household: the
+        # The household batch id comes from the synced CSV, not from the household: the
         # two differ here, so a derived key would fail this.
         assert sorted(idx[ids.HOUSEHOLD_BATCH]) == [_DATASETS[1], _DATASETS[2]]
         assert not (idx[ids.HOUSEHOLD_BATCH] == idx[ids.HOUSEHOLD]).any()
@@ -161,7 +161,7 @@ class TestSingleIndexWrite:
 
     def test_pending_household_present_with_na_fields(self, index_options, caplog):
         """No synced HuisBatch row yet: the household is still IN the index
-        (rows come from the index), with NA batch fields, a warning, and a
+        (rows come from the index), with NA household-batch fields, a warning, and a
         paste-ready proposal CSV."""
         tmp = index_options
         _write_bsv_metadata(tmp, [_DATASETS[1]], True)
@@ -250,7 +250,7 @@ class TestSingleIndexWrite:
         # must not raise
         save_index_to_parquet(index_frame([_DATASETS[1]], batch_fields=False))
         idx = _read_index(tmp)
-        # The dataset id is a synced batch field, so without the synced table it
+        # The household batch id is a synced household-batch field, so without the synced table it
         # is omitted with the rest rather than invented from the household.
         assert ids.HOUSEHOLD_BATCH not in idx.columns
         assert "Gegevensfrequentie" not in idx.columns
@@ -303,7 +303,7 @@ class TestDatasetFrequencyValidator:
         validate_data_frequency_present(df)  # must not raise
 
     def test_absent_column_passes(self):
-        # An older dataset's index without batch fields passes unchecked.
+        # An older household batch's index without household-batch fields passes unchecked.
         validate_data_frequency_present(
             index_frame([_DATASETS[1]], batch_fields=False, Meenemen=True))
 

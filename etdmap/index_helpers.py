@@ -64,10 +64,10 @@ class HouseBatchOverlapError(ValueError):
     household batch (``ids.HOUSEHOLD_BATCH``) in a context that can only
     represent one household batch per household -- for example the
     per-household index file, a single-file read for one household, or a
-    computation that would silently combine two datasets. A household appearing
+    computation that would silently combine two household batches. A household appearing
     in more than one household batch is valid in the data model but not
     supported by these code paths, so they stop loudly instead of mixing
-    datasets.
+    household batches.
 
     Subclasses ValueError so an ``except ValueError`` site catches it.
     """
@@ -81,7 +81,7 @@ def validate_data_frequency_present(index_df):
     may legitimately have NA household-batch fields: Meenemen starts empty when
     a household is first mapped, and a household may not have its synced
     HuisBatch row yet. An index without a Gegevensfrequentie column (an
-    older dataset) is not checked.
+    older household batch) is not checked.
     """
     if "Gegevensfrequentie" not in index_df.columns:
         return
@@ -106,8 +106,8 @@ def validate_data_frequency_present(index_df):
         )
 
 
-# The index's household-dataset columns: one row per dataset, carrying the
-# batch it was delivered in and the frequencies declared for it. All nullable
+# The index's household-batch columns: one row per household batch, carrying the
+# delivery batch it was delivered in and the frequencies declared for it. All nullable
 # pandas dtypes (ADR-005), the identifier ones from etdmap.ids;
 # Startdatum/Einddatum are parsed to tz-aware UTC datetimes when the index is
 # written.
@@ -185,9 +185,9 @@ def _batch_table_for_grid(context):
 
 def household_batch_for_household(household_id):
     """
-    The household batch a household's single dataset is.
+    The household batch of a household that has exactly one.
 
-    ``ids.HOUSEHOLD_BATCH`` identifies a dataset and is what the mapped
+    ``ids.HOUSEHOLD_BATCH`` identifies a household batch and is what the mapped
     artifacts and their sidecars are keyed on; ``ids.HOUSEHOLD`` identifies the
     household it belongs to. This resolves one to the other through the
     household batch table, for callers that start from a household.
@@ -206,7 +206,7 @@ def household_batch_for_household(household_id):
     ------
     HouseBatchOverlapError
         When the household has more than one household batch. There is then no
-        single dataset to return, and the caller has to say which one it means.
+        single household batch to return, and the caller has to say which one it means.
     ValueError
         When the household batch table is absent or unconfigured, does not hold
         the household, or holds it with no household batch.
@@ -239,14 +239,14 @@ def household_batch_for_household(household_id):
 
 def grid_minutes_for_household_batch(household_batch_id):
     """
-    The grid a dataset is recorded on, in minutes.
+    The grid a household batch is recorded on, in minutes.
 
     The grid is declared per household batch as ``Gegevensfrequentie``: it is
     the interval the mapped data sits on, not the interval any one column
     reports at. It is what ``ensure_intervals`` pads to, and what every later
     stage reads back off the index to scale a threshold with.
 
-    ``ids.HOUSEHOLD_BATCH`` is the key. One household may have several datasets
+    ``ids.HOUSEHOLD_BATCH`` is the key. One household may have several household batches
     and each declares its own frequency, so the household does not identify a
     grid.
 
@@ -302,11 +302,11 @@ def grid_minutes_for_household_batch(household_batch_id):
 
 def grid_minutes_for_household(household_id):
     """
-    The grid a household's single dataset is recorded on, in minutes.
+    The grid a household's single household batch is recorded on, in minutes.
 
     Resolves the household's ``ids.HOUSEHOLD_BATCH`` from the household batch
     table and delegates to :func:`grid_minutes_for_household_batch`, which is the
-    model-keyed form. Callers that know which dataset they are processing
+    model-keyed form. Callers that know which household batch they are processing
     should use that one directly.
 
     Parameters
@@ -323,7 +323,7 @@ def grid_minutes_for_household(household_id):
     ------
     HouseBatchOverlapError
         When the household has more than one household batch. The grid is a
-        property of the dataset, so there is no household-wide answer to return.
+        property of the household batch, so there is no household-wide answer to return.
     ValueError
         As :func:`grid_minutes_for_household_batch`, plus when the household is
         not in the household batch table.
@@ -469,7 +469,7 @@ def read_index(
     """
     Read index.parquet.
 
-    One row per household batch (``ids.HOUSEHOLD_BATCH``). Older datasets carry
+    One row per household batch (``ids.HOUSEHOLD_BATCH``). An older mapped dataset carries
     one row per household without the household-batch columns; they are read
     unchanged. Raises when an included row (Meenemen == True) lacks a
     Gegevensfrequentie while the household-batch fields are present.
@@ -680,7 +680,7 @@ def update_index(
     data_provider: str,
     save: bool = True,
 ) -> pd.DataFrame:
-    """Update the index with new entries and recalculate or add flag columns for dataset validators.
+    """Update the index with new entries and recalculate or add flag columns for ``dataset_validators``.
 
     Parameters
     ----------
@@ -732,7 +732,7 @@ def update_index(
     # (sharded/HuisIdBSV=<id>/HuisBatchIdBSV=<n>/*.parquet), and sharded is the
     # default. A flat filename built here and guarded on os.path.exists would
     # never match under the sharded layout, leaving every household with no
-    # dataset-level flag and no error to say so.
+    # household-batch flag and no error to say so.
     #
     # read_mapped_households resolves either layout and concatenates a
     # household's several household batches into one frame, which is the grain
@@ -1185,22 +1185,22 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
        first mapped, and the researcher fills it in afterwards in the
        metadata administration after reviewing the mapping. Without a
        metadata file the index values are left unchanged. Meenemen is
-       defined per household within each batch (see the README,
-       "Households, batches, and the index").
+       defined per household within each household batch (see the README,
+       "Households, household batches, and the index").
     2. The household-batch columns are joined from the synced HuisBatch CSV:
-       ``ids.HOUSEHOLD_BATCH`` -- the dataset each row IS, and the key the
+       ``ids.HOUSEHOLD_BATCH`` -- the household batch each row IS, and the key the
        mapped artifacts and their sidecars are written under -- plus
        ``ids.BATCH``, Gegevensfrequentie, Leverancierfrequentie, Startdatum
        and Einddatum.
-       The synced table is the source of the dataset id, which is what
+       The synced table is the source of the household batch id, which is what
        ``household_batch_for_household`` resolves for a mapper before it
        writes anything. Households without a synced row yet are PENDING: they
        keep NA household-batch fields, a warning is logged, and a paste-ready
        ``pending_household_batch_additions.csv`` is written to support adding
        them to the metadata administration. When the synced CSV is absent
-       entirely (datasets with no synced household batch row, test fixtures)
+       entirely (household batches with no synced row, test fixtures)
        the household-batch fields are omitted with a warning, the household
-       batch among them.
+       household batch id among them.
     3. index.parquet is written.
 
     Raises
@@ -1312,9 +1312,9 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     )
 
     n = len(index_df)
-    # The dataset each row IS, read from the synced table rather than derived
+    # The household batch each row IS, read from the synced table rather than derived
     # from the household: a household may be delivered as more than one
-    # dataset, and the mapped artifacts are already keyed on the synced id
+    # household batch, and the mapped artifacts are already keyed on the synced id
     # (household_batch_for_household is what the mappers resolve it through).
     index_df[ids.HOUSEHOLD_BATCH] = (
         merged[ids.HOUSEHOLD_BATCH].astype("Int64")
@@ -1507,7 +1507,7 @@ def households_of_household_batches(household_batch_ids) -> list:
 
     From the index, which is the only place the two are related. A read prunes
     directories by household because that is the level the shard path has;
-    selecting the datasets themselves is a separate, exact step.
+    selecting the household batches themselves is a separate, exact step.
     """
     wanted = {int(batch_id) for batch_id in household_batch_ids}
     index_df, _ = read_index()
@@ -1529,18 +1529,18 @@ def get_mapped_dataset(household_batch_id: int) -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        The dataset's mapped columns, with no identifier columns, so a caller
+        The household batch's mapped columns, with no identifier columns, so a caller
         iterating columns does not count an id as a measured variable.
 
     Raises
     ------
     FileNotFoundError
-        If the index does not place the dataset, or the shard holds no data.
+        If the index does not place the household batch, or the shard holds no data.
 
     Notes
     -----
-    The dataset-keyed read. :func:`get_mapped_data` returns a household's
-    datasets concatenated, which pools two periods of one dwelling into one
+    The household-batch-keyed read. :func:`get_mapped_data` returns a household's
+    household batches concatenated, which pools two periods of one dwelling into one
     series -- right for a question about the dwelling's files, wrong for any
     statistic, because the household batch dataset is the unit.
     """

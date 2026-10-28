@@ -82,10 +82,10 @@ def mapped_fixtures(tmp_path_factory):
     """The synthetic mapped dataset, generated into this session's own folder.
 
     Generation lives in `etdmap.testing` so downstream suites can build the
-    same dataset for themselves. Tests that read the mapped files request this
+    same mapped dataset for themselves. Tests that read the mapped files request this
     fixture, so they run in any order or in isolation.
 
-    Into a temporary folder rather than the configured one: the dataset is
+    Into a temporary folder rather than the configured one: the household batch is
     written and rewritten by the stages that read it, so a folder shared with
     another suite or another run is state they pass between them.
     """

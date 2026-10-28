@@ -63,7 +63,7 @@ class TestPruneStaleShards:
         assert sorted((r[ids.HOUSEHOLD], r[ids.HOUSEHOLD_BATCH]) for r in removed) == [(3, 3)]
 
     def test_prunes_stale_batch_keeps_other_batch_same_household(self, tmp_path):
-        # Household 5 has two batches; keep only (5, 5) -> the (5, 9) shard is stale.
+        # Household 5 has two household batches; keep only (5, 5) -> the (5, 9) shard is stale.
         self._make_shard(tmp_path, 5, 5)
         self._make_shard(tmp_path, 5, 9)
 

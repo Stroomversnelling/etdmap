@@ -11,7 +11,7 @@ Contract:
   and consistent with the flat mapped file which also carries no id columns.
 - Round-trips the mapped DataFrame identically (nullable dtypes preserved, ADR-005).
 - Per-household + idempotent: re-running one household overwrites only its shard
-  (no stale duplicate part files); different batches of the same household coexist.
+  (no stale duplicate part files); different household batches of the same household coexist.
 """
 
 import os
@@ -209,7 +209,7 @@ class TestDatasetValidatorsReadBothLayouts:
 
     update_index used to build the flat filename `household_<id>_table.parquet`
     and guard on os.path.exists. Under the sharded default that guard was always
-    False, so NO dataset-level flag was computed for any household -- and the
+    False, so NO household-batch flag was computed for any household -- and the
     omission was silent, which is why it survived. These tests fail against that
     version under "sharded" and pass under "flat".
     """
@@ -232,7 +232,7 @@ class TestDatasetValidatorsReadBothLayouts:
 
     @pytest.fixture
     def _declared_batch(self, tmp_path, monkeypatch):
-        """The batch this household is recorded in. The dataset validators read
+        """The household batch this household is recorded in. ``dataset_validators`` read
         the declared grid from it to know how many rows a year should hold."""
         path = tmp_path / "huisbatch.csv"
         batch_table_frame(
@@ -288,7 +288,7 @@ class TestDatasetValidatorsReadBothLayouts:
         """A household with no mapped data is a hard failure, not a silent skip.
 
         update_index cannot do half its job: without the data there are no
-        dataset-level flags, and an index row that merely lacks them is
+        household-batch flags, and an index row that merely lacks them is
         indistinguishable from one whose validators all returned NA.
         """
         from etdmap.index_helpers import update_index

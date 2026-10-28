@@ -68,7 +68,7 @@ class MappingFlag(IntFlag):
     # measurement was taken; a zero set here is not a reported zero.
     FILLED_ZERO = auto()
 
-    # The zero seeded at a dataset's first interval. Differencing has no
+    # The zero seeded at a household batch's first interval. Differencing has no
     # predecessor there, so the value is structural rather than measured.
     FIRST_ZERO = auto()
 

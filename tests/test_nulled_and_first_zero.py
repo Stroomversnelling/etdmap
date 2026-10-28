@@ -76,7 +76,7 @@ class TestNulledIsAnAction:
 
 
 class TestFirstZeroMarksTheSeed:
-    """add_diff_columns writes 0 at each dataset's first interval because
+    """add_diff_columns writes 0 at each household batch's first interval because
     differencing has no predecessor there. That zero is structural."""
 
     def test_the_seed_carries_the_flag(self):
@@ -109,8 +109,8 @@ class TestFirstZeroMarksTheSeed:
     def test_each_dataset_gets_its_own_seed(self):
         from etdmap.mapping_helpers import add_diff_columns
 
-        # Both datasets in ONE household, which is what makes the count
-        # discriminate: two seeds can only come from grouping on the dataset,
+        # Both household batches in ONE household, which is what makes the count
+        # discriminate: two seeds can only come from grouping on the household batch,
         # since grouping on the household would seed the pair once.
         df = datasets_frame(
             {

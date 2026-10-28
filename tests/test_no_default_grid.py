@@ -1,6 +1,6 @@
 """No stage invents a grid.
 
-The interval a household is recorded on is declared per batch as
+The interval a household is recorded on is declared per household batch as
 ``Gegevensfrequentie``. A stage that places readings on a grid, pads one, fills
 onto one, or judges a value against one needs that interval, and a stage handed
 nothing raises rather than choosing a number.
@@ -35,8 +35,8 @@ from etdmap.testing import (
 GRID = 5
 COL = "ElektriciteitsgebruikBoilervat"
 
-#: The dataset each household here is described through. The grid is declared
-#: per dataset, so each one is derived from its household rather than stated
+#: The household batch each household here is described through. The grid is declared
+#: per household batch, so each one is derived from its household rather than stated
 #: beside it.
 _DATASETS = {
     household_id: household_batch_of(household_id)
@@ -97,7 +97,7 @@ class TestTheGridCanComeFromMetadata:
 
     @pytest.fixture
     def batch_table(self, tmp_path):
-        """Two datasets, the second declaring no grid at all."""
+        """Two household batches, the second declaring no grid at all."""
         path = tmp_path / "huisbatch.csv"
         batch_table_frame(
             [_DATASETS[1], _DATASETS[2]],
@@ -223,7 +223,7 @@ class TestAnIntervalTheTableCannotRecord:
     sub-minute interval has no representation in it.
 
     Reachable from metadata: ``frequency_to_minutes`` parses '30s' as 0.5, so a
-    batch or a Meetfrequentie row written that way reaches here. The refusal is
+    household batch or a Meetfrequentie row written that way reaches here. The refusal is
     explicit because the Int64 cast alone raises a TypeError naming neither
     column nor value, and rounding makes it a zero-minute cadence.
     """

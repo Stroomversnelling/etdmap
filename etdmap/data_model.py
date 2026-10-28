@@ -340,7 +340,7 @@ def _build_derived_structures(df=None):
         (df["Momentaan"] == "ja") & (df["Type variabele"] != "date")
     ]["Variabele"].tolist()
 
-    # Dataset-cadence delta columns (Diff="ja"). These are interval
+    # Household-batch-cadence delta columns (Diff="ja"). These are interval
     # deltas of cumulative meter readings; their raw values depend on
     # row cadence, so profile plots require conversion to an
     # instantaneous sibling (e.g. kWh-per-row -> kW) before rendering.
@@ -742,7 +742,7 @@ def cadence_minutes_by_column(cadence) -> dict:
 
 def dataset_cadence_minutes(cadence, date_column: str = "ReadingDate"):
     """
-    The interval the dataset itself is recorded on, from its cadence table.
+    The interval the household batch itself is recorded on, from its cadence table.
 
     :func:`etdmap.mapping_helpers.detect_column_cadence` measures the timestamp
     column alongside the data columns and resolves it the same way, so this row
@@ -860,7 +860,7 @@ def resolve_bounds(declared: dict, cadence_minutes, column: str = "") -> tuple:
 # Production code paths must NOT import this. Production aggregation pulls
 # from get_aggregation_config() (sourced from etdmodel.csv via
 # AggregatieMeenemen=True), and consumer entry points filter by what is
-# actually present in the dataset via active_aggregation_variables(df) in
+# actually present in the household batch via active_aggregation_variables(df) in
 # etdtransform/aggregate.py. Using this list in production would lock the
 # scope to whatever was last manually curated here, not what the data model
 # currently says.

@@ -105,7 +105,7 @@ class TestTheDeclaredValueIsUsed:
 class TestEteckShapedDeclarations:
     """The rows that actually carry Meetfrequentie today: three variables at
     '1h' and one at '15min', all Eteck. Their shape is a column delivering far
-    more coarsely than the grid the batch is recorded on."""
+    more coarsely than the grid the household batch is recorded on."""
 
     def test_an_hourly_column_on_a_five_minute_grid(self):
         declared = {COL: int(frequency_to_minutes("1h"))}

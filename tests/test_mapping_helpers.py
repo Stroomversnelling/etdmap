@@ -1147,7 +1147,7 @@ class TestCollectMappedDataStatsSeasonal:
     three rows per numeric / bool column, one row per non-numeric."""
 
     def _patched_get_mapped_data(self, df):
-        # The dataset read lives in etdmap.data_stats' namespace, so patch it
+        # The household batch read lives in etdmap.data_stats' namespace, so patch it
         # there: that is the call site the collector reaches.
         return patch(
             "etdmap.data_stats.get_mapped_dataset",
@@ -1895,7 +1895,7 @@ class TestNegativeDiffMagnitudesAreRecorded:
     COL = "ElektriciteitNetgebruik"
 
     # Local: where the dips fall in the one cumulative column is the subject,
-    # and these calls difference the frame as one series rather than per dataset.
+    # and these calls difference the frame as one series rather than per household batch.
     def _frame(self, values):
         return pd.DataFrame({
             "ReadingDate": pd.date_range(
