@@ -42,14 +42,14 @@ _END_EPOCH = 1746057600
 #: everything by household -- the Meenemen stamp, the synced join, the pending
 #: list and the synced-only warning -- so the household batches are derived from the
 #: household rather than stated beside it.
-_DATASETS = {
+_HOUSEHOLD_BATCHES = {
     household_id: household_batch_of(household_id)
     for household_id in (1, 2, 3, 99)
 }
 
 #: A second household batch of household 1, for a synced table holding two deliveries
 #: of one household.
-_SECOND_DATASET = 2001
+_SECOND_HOUSEHOLD_BATCH = 2001
 
 
 def _write_bsv_metadata(folder, household_batch_ids, include):
@@ -64,7 +64,7 @@ def _write_bsv_metadata(folder, household_batch_ids, include):
 
 # Local: the synced DateTime columns in both forms the write accepts --
 # formatted strings and epoch seconds -- are the subject of these tests.
-def _sync_row(household_batch_id, household_id=None, batch=1, freq="5min",
+def _sync_row(household_batch_id, household_id=None, delivery_batch=1, freq="5min",
               start=_START, end=_END):
     return {
         ids.HOUSEHOLD: (
@@ -73,7 +73,7 @@ def _sync_row(household_batch_id, household_id=None, batch=1, freq="5min",
             else household_id
         ),
         ids.HOUSEHOLD_BATCH: household_batch_id,
-        ids.BATCH: batch,
+        ids.BATCH: delivery_batch,
         ids.PROJECT: 1,
         "Meenemen": True,  # ignored: Meenemen comes via the BSV metadata only
         "Gegevensfrequentie": freq,
@@ -115,11 +115,11 @@ def index_options(tmp_path):
 class TestSingleIndexWrite:
     def test_one_save_writes_index_with_batch_columns(self, index_options):
         tmp = index_options
-        _write_bsv_metadata(tmp, [_DATASETS[1], _DATASETS[2]], [True, False])
-        _write_sync_csv(tmp, [_sync_row(_DATASETS[1]), _sync_row(_DATASETS[2])])
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]], [True, False])
+        _write_sync_csv(tmp, [_sync_row(_HOUSEHOLD_BATCHES[1]), _sync_row(_HOUSEHOLD_BATCHES[2])])
         # index carries STALE Meenemen; the save must stamp from the metadata
         save_index_to_parquet(index_frame(
-            [_DATASETS[1], _DATASETS[2]],
+            [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]],
             batch_fields=False,
             Meenemen=[False, True],
         ))
@@ -128,7 +128,7 @@ class TestSingleIndexWrite:
         assert idx.set_index(ids.HOUSEHOLD)["Meenemen"].to_dict() == {1: True, 2: False}
         # The household batch id comes from the synced CSV, not from the household: the
         # two differ here, so a derived key would fail this.
-        assert sorted(idx[ids.HOUSEHOLD_BATCH]) == [_DATASETS[1], _DATASETS[2]]
+        assert sorted(idx[ids.HOUSEHOLD_BATCH]) == [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]]
         assert not (idx[ids.HOUSEHOLD_BATCH] == idx[ids.HOUSEHOLD]).any()
         assert (idx[ids.BATCH] == 1).all()
         assert (idx["Gegevensfrequentie"] == "5min").all()
@@ -137,11 +137,11 @@ class TestSingleIndexWrite:
 
     def test_epoch_second_dates_also_accepted(self, index_options):
         tmp = index_options
-        _write_bsv_metadata(tmp, [_DATASETS[1]], True)
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1]], True)
         _write_sync_csv(tmp, [
-            _sync_row(_DATASETS[1], start=_START_EPOCH, end=_END_EPOCH),
+            _sync_row(_HOUSEHOLD_BATCHES[1], start=_START_EPOCH, end=_END_EPOCH),
         ])
-        save_index_to_parquet(index_frame([_DATASETS[1]], batch_fields=False))
+        save_index_to_parquet(index_frame([_HOUSEHOLD_BATCHES[1]], batch_fields=False))
         idx = _read_index(tmp)
         assert idx["Startdatum"].iloc[0] == pd.Timestamp(_START_EPOCH, unit="s", tz="UTC")
 
@@ -149,12 +149,12 @@ class TestSingleIndexWrite:
         """Meenemen starts empty when a household is first mapped -- a
         household absent from the BSV metadata gets NA and nothing raises."""
         tmp = index_options
-        _write_bsv_metadata(tmp, [_DATASETS[1]], True)  # HH2 not reviewed yet
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1]], True)  # HH2 not reviewed yet
         _write_sync_csv(tmp, [
-            _sync_row(_DATASETS[1]), _sync_row(_DATASETS[2], freq=pd.NA),
+            _sync_row(_HOUSEHOLD_BATCHES[1]), _sync_row(_HOUSEHOLD_BATCHES[2], freq=pd.NA),
         ])
         save_index_to_parquet(index_frame(
-            [_DATASETS[1], _DATASETS[2]], batch_fields=False
+            [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]], batch_fields=False
         ))
         idx = _read_index(tmp)
         assert idx.set_index(ids.HOUSEHOLD)["Meenemen"].isna().to_dict() == {1: False, 2: True}
@@ -164,10 +164,10 @@ class TestSingleIndexWrite:
         (rows come from the index), with NA household-batch fields, a warning, and a
         paste-ready proposal CSV."""
         tmp = index_options
-        _write_bsv_metadata(tmp, [_DATASETS[1]], True)
-        _write_sync_csv(tmp, [_sync_row(_DATASETS[1])])  # HH2 + HH3 pending
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1]], True)
+        _write_sync_csv(tmp, [_sync_row(_HOUSEHOLD_BATCHES[1])])  # HH2 + HH3 pending
         save_index_to_parquet(index_frame(
-            [_DATASETS[1], _DATASETS[2], _DATASETS[3]], batch_fields=False
+            [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2], _HOUSEHOLD_BATCHES[3]], batch_fields=False
         ))
         idx = _read_index(tmp)
         assert set(int(x) for x in idx[ids.HOUSEHOLD]) == {1, 2, 3}
@@ -185,25 +185,25 @@ class TestSingleIndexWrite:
         # HH2 pending: absent from BOTH intermediates (Meenemen lives on the
         # external HuisBatch table, so a household without its row cannot have
         # a Meenemen value either).
-        _write_bsv_metadata(tmp, [_DATASETS[1]], True)
-        _write_sync_csv(tmp, [_sync_row(_DATASETS[1])])
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1]], True)
+        _write_sync_csv(tmp, [_sync_row(_HOUSEHOLD_BATCHES[1])])
         save_index_to_parquet(index_frame(
-            [_DATASETS[1], _DATASETS[2]], batch_fields=False
+            [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]], batch_fields=False
         ))
         assert (tmp / "pending_household_batch_additions.csv").exists()
         # researcher adds the row + Meenemen externally; the next sync updates both
-        _write_bsv_metadata(tmp, [_DATASETS[1], _DATASETS[2]], True)
-        _write_sync_csv(tmp, [_sync_row(_DATASETS[1]), _sync_row(_DATASETS[2])])
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]], True)
+        _write_sync_csv(tmp, [_sync_row(_HOUSEHOLD_BATCHES[1]), _sync_row(_HOUSEHOLD_BATCHES[2])])
         save_index_to_parquet(index_frame(
-            [_DATASETS[1], _DATASETS[2]], batch_fields=False
+            [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]], batch_fields=False
         ))
         assert not (tmp / "pending_household_batch_additions.csv").exists()
 
     def test_synced_only_households_warned(self, index_options, caplog):
         tmp = index_options
-        _write_bsv_metadata(tmp, [_DATASETS[1]], True)
-        _write_sync_csv(tmp, [_sync_row(_DATASETS[1]), _sync_row(_DATASETS[99])])
-        save_index_to_parquet(index_frame([_DATASETS[1]], batch_fields=False))
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1]], True)
+        _write_sync_csv(tmp, [_sync_row(_HOUSEHOLD_BATCHES[1]), _sync_row(_HOUSEHOLD_BATCHES[99])])
+        save_index_to_parquet(index_frame([_HOUSEHOLD_BATCHES[1]], batch_fields=False))
         warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
         assert any("99" in w for w in warnings)
         idx = _read_index(tmp)
@@ -211,44 +211,44 @@ class TestSingleIndexWrite:
 
     def test_two_batches_in_synced_table_raises(self, index_options):
         tmp = index_options
-        _write_bsv_metadata(tmp, [_DATASETS[1], _DATASETS[2]], True)
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]], True)
         _write_sync_csv(tmp, [
-            _sync_row(_DATASETS[1]),
-            _sync_row(_DATASETS[2]),
+            _sync_row(_HOUSEHOLD_BATCHES[1]),
+            _sync_row(_HOUSEHOLD_BATCHES[2]),
             _sync_row(
-                _SECOND_DATASET,
-                household_id=household_of_batch(_DATASETS[1]),
-                batch=2,
+                _SECOND_HOUSEHOLD_BATCH,
+                household_id=household_of_batch(_HOUSEHOLD_BATCHES[1]),
+                delivery_batch=2,
             ),
         ])
         with pytest.raises(HouseBatchOverlapError):
             save_index_to_parquet(index_frame(
-                [_DATASETS[1], _DATASETS[2]], batch_fields=False
+                [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]], batch_fields=False
             ))
 
     def test_missing_cadence_for_included_household_raises(self, index_options):
         tmp = index_options
         # included -> cadence required
-        _write_bsv_metadata(tmp, [_DATASETS[1]], True)
-        _write_sync_csv(tmp, [_sync_row(_DATASETS[1], freq=pd.NA)])
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1]], True)
+        _write_sync_csv(tmp, [_sync_row(_HOUSEHOLD_BATCHES[1], freq=pd.NA)])
         with pytest.raises(ValueError):
-            save_index_to_parquet(index_frame([_DATASETS[1]], batch_fields=False))
+            save_index_to_parquet(index_frame([_HOUSEHOLD_BATCHES[1]], batch_fields=False))
 
     def test_missing_cadence_tolerated_when_not_included(self, index_options):
         tmp = index_options
         # reviewed and excluded
-        _write_bsv_metadata(tmp, [_DATASETS[1]], False)
-        _write_sync_csv(tmp, [_sync_row(_DATASETS[1], freq=pd.NA)])
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1]], False)
+        _write_sync_csv(tmp, [_sync_row(_HOUSEHOLD_BATCHES[1], freq=pd.NA)])
         # must not raise
-        save_index_to_parquet(index_frame([_DATASETS[1]], batch_fields=False))
+        save_index_to_parquet(index_frame([_HOUSEHOLD_BATCHES[1]], batch_fields=False))
         idx = _read_index(tmp)
         assert idx["Gegevensfrequentie"].isna().all()
 
     def test_no_sync_csv_omits_batch_fields_with_warning(self, index_options, caplog):
         tmp = index_options
-        _write_bsv_metadata(tmp, [_DATASETS[1]], True)
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1]], True)
         # must not raise
-        save_index_to_parquet(index_frame([_DATASETS[1]], batch_fields=False))
+        save_index_to_parquet(index_frame([_HOUSEHOLD_BATCHES[1]], batch_fields=False))
         idx = _read_index(tmp)
         # The household batch id is a synced household-batch field, so without the synced table it
         # is omitted with the rest rather than invented from the household.
@@ -261,9 +261,9 @@ class TestSingleIndexWrite:
         """Legacy / fixture datasets without a BSV metadata file: the index
         Meenemen values pass through unchanged."""
         tmp = index_options
-        _write_sync_csv(tmp, [_sync_row(_DATASETS[1]), _sync_row(_DATASETS[2])])
+        _write_sync_csv(tmp, [_sync_row(_HOUSEHOLD_BATCHES[1]), _sync_row(_HOUSEHOLD_BATCHES[2])])
         save_index_to_parquet(index_frame(
-            [_DATASETS[1], _DATASETS[2]],
+            [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]],
             batch_fields=False,
             Meenemen=[True, False],
         ))
@@ -272,10 +272,10 @@ class TestSingleIndexWrite:
 
     def test_idempotent_rerun(self, index_options):
         tmp = index_options
-        _write_bsv_metadata(tmp, [_DATASETS[1]], True)
-        _write_sync_csv(tmp, [_sync_row(_DATASETS[1])])
-        save_index_to_parquet(index_frame([_DATASETS[1]], batch_fields=False))
-        save_index_to_parquet(index_frame([_DATASETS[1]], batch_fields=False))
+        _write_bsv_metadata(tmp, [_HOUSEHOLD_BATCHES[1]], True)
+        _write_sync_csv(tmp, [_sync_row(_HOUSEHOLD_BATCHES[1])])
+        save_index_to_parquet(index_frame([_HOUSEHOLD_BATCHES[1]], batch_fields=False))
+        save_index_to_parquet(index_frame([_HOUSEHOLD_BATCHES[1]], batch_fields=False))
         idx = _read_index(tmp)
         assert len(idx) == 1
 
@@ -283,29 +283,29 @@ class TestSingleIndexWrite:
 class TestDatasetFrequencyValidator:
     def test_all_present_passes(self):
         validate_data_frequency_present(
-            index_frame([_DATASETS[1], _DATASETS[2]], Meenemen=True))
+            index_frame([_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]], Meenemen=True))
 
     def test_missing_na_for_included_raises(self):
-        df = index_frame([_DATASETS[1], _DATASETS[2]], Meenemen=True)
+        df = index_frame([_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]], Meenemen=True)
         df.loc[1, "Gegevensfrequentie"] = pd.NA
         with pytest.raises(ValueError):
             validate_data_frequency_present(df)
 
     def test_empty_string_for_included_raises(self):
-        df = index_frame([_DATASETS[1]], Meenemen=True)
+        df = index_frame([_HOUSEHOLD_BATCHES[1]], Meenemen=True)
         df.loc[0, "Gegevensfrequentie"] = ""
         with pytest.raises(ValueError):
             validate_data_frequency_present(df)
 
     def test_missing_tolerated_when_not_included(self):
-        df = index_frame([_DATASETS[1], _DATASETS[2]],
+        df = index_frame([_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]],
                          Meenemen=[False, pd.NA], Gegevensfrequentie=pd.NA)
         validate_data_frequency_present(df)  # must not raise
 
     def test_absent_column_passes(self):
         # An older household batch's index without household-batch fields passes unchecked.
         validate_data_frequency_present(
-            index_frame([_DATASETS[1]], batch_fields=False, Meenemen=True))
+            index_frame([_HOUSEHOLD_BATCHES[1]], batch_fields=False, Meenemen=True))
 
 
 class TestReadIndexGuard:
@@ -313,7 +313,7 @@ class TestReadIndexGuard:
         tmp = index_options
         # Bypass the save-time guard: write a corrupt index directly.
         index_frame(
-            [_DATASETS[1]], Meenemen=True, Gegevensfrequentie=pd.NA
+            [_HOUSEHOLD_BATCHES[1]], Meenemen=True, Gegevensfrequentie=pd.NA
         ).to_parquet(tmp / "index.parquet")
         with pytest.raises(ValueError):
             read_index(tmp)
@@ -321,7 +321,7 @@ class TestReadIndexGuard:
     def test_read_accepts_index_without_batch_columns(self, index_options):
         tmp = index_options
         index_frame(
-            [_DATASETS[1], _DATASETS[2]],
+            [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]],
             batch_fields=False,
             Meenemen=[True, False],
         ).to_parquet(tmp / "index.parquet")

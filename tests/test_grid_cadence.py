@@ -25,16 +25,16 @@ from etdmap.mapping_helpers import (
     fill_down_infrequent_devices,
 )
 from etdmap.testing import (
-    batch_table_frame,
     cadence_sidecar,
-    datasets_frame,
     household_batch_of,
+    household_batch_table_frame,
+    household_batches_frame,
 )
 
 #: The household batch each household here is described through. The grid is declared
 #: per household batch, so each one is derived from its household rather than stated
 #: beside it.
-_DATASETS = {
+_HOUSEHOLD_BATCHES = {
     household_id: household_batch_of(household_id)
     for household_id in (1, 2, 3, 5, 7, 8)
 }
@@ -42,7 +42,7 @@ _DATASETS = {
 #: A second household batch of household 7, for a household delivered twice at two
 #: different grids. No offset derives it: a household's further deliveries are
 #: numbered by the metadata, not by arithmetic on the household.
-_SECOND_DATASET = 1070
+_SECOND_HOUSEHOLD_BATCH = 1070
 
 
 @pytest.fixture(autouse=True)
@@ -77,8 +77,8 @@ class TestGridMinutesForHousehold:
     def batch_table(self, tmp_path):
         """Three household batches, the third declaring no grid at all."""
         path = tmp_path / "huisbatch.csv"
-        batch_table_frame(
-            [_DATASETS[1], _DATASETS[2], _DATASETS[3]],
+        household_batch_table_frame(
+            [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2], _HOUSEHOLD_BATCHES[3]],
             Gegevensfrequentie=["5min", "15min", None],
         ).to_csv(path, index=False)
 
@@ -132,9 +132,9 @@ class TestTheGridIsKeyedOnTheBatch:
     def two_batches(self, tmp_path):
         """Household 7 has two household batches at different grids; household 8 has one."""
         path = tmp_path / "huisbatch_multi.csv"
-        batch_table_frame(
-            [_DATASETS[7], _SECOND_DATASET, _DATASETS[8]],
-            household_of={_SECOND_DATASET: 7},
+        household_batch_table_frame(
+            [_HOUSEHOLD_BATCHES[7], _SECOND_HOUSEHOLD_BATCH, _HOUSEHOLD_BATCHES[8]],
+            household_of={_SECOND_HOUSEHOLD_BATCH: 7},
             Gegevensfrequentie=["5min", "15min", "1h"],
         ).to_csv(path, index=False)
 
@@ -144,9 +144,9 @@ class TestTheGridIsKeyedOnTheBatch:
         etdmap.options.household_batch_csv_path = previous
 
     def test_each_batch_resolves_its_own_grid(self, two_batches):
-        assert grid_minutes_for_household_batch(_DATASETS[7]) == 5.0
-        assert grid_minutes_for_household_batch(_SECOND_DATASET) == 15.0
-        assert grid_minutes_for_household_batch(_DATASETS[8]) == 60.0
+        assert grid_minutes_for_household_batch(_HOUSEHOLD_BATCHES[7]) == 5.0
+        assert grid_minutes_for_household_batch(_SECOND_HOUSEHOLD_BATCH) == 15.0
+        assert grid_minutes_for_household_batch(_HOUSEHOLD_BATCHES[8]) == 60.0
 
     def test_a_household_with_two_batches_refuses_to_answer(self, two_batches):
         """The grid is a property of the household batch. Returning the first listed
@@ -156,8 +156,8 @@ class TestTheGridIsKeyedOnTheBatch:
             grid_minutes_for_household(7)
 
         message = str(excinfo.value)
-        assert str(_DATASETS[7]) in message
-        assert str(_SECOND_DATASET) in message
+        assert str(_HOUSEHOLD_BATCHES[7]) in message
+        assert str(_SECOND_HOUSEHOLD_BATCH) in message
 
     def test_a_household_with_one_batch_still_resolves(self, two_batches):
         assert grid_minutes_for_household(8) == 60.0
@@ -176,15 +176,15 @@ class TestTheGridIsKeyedOnTheBatch:
 
     def test_a_batch_with_no_declared_grid_raises(self, tmp_path):
         path = tmp_path / "huisbatch_blank.csv"
-        batch_table_frame(
-            [_DATASETS[5]], Gegevensfrequentie=None
+        household_batch_table_frame(
+            [_HOUSEHOLD_BATCHES[5]], Gegevensfrequentie=None
         ).to_csv(path, index=False)
 
         previous = etdmap.options.household_batch_csv_path
         etdmap.options.household_batch_csv_path = str(path)
         try:
             with pytest.raises(ValueError, match="Gegevensfrequentie"):
-                grid_minutes_for_household_batch(_DATASETS[5])
+                grid_minutes_for_household_batch(_HOUSEHOLD_BATCHES[5])
         finally:
             etdmap.options.household_batch_csv_path = previous
 
@@ -192,8 +192,8 @@ class TestTheGridIsKeyedOnTheBatch:
         """An older synced table has no ids.HOUSEHOLD_BATCH. Resolving the grid off
         ids.HOUSEHOLD instead would answer for a key the data model does not use."""
         path = tmp_path / "huisbatch_legacy.csv"
-        batch_table_frame(
-            [_DATASETS[1]], columns=[ids.HOUSEHOLD, "Gegevensfrequentie"]
+        household_batch_table_frame(
+            [_HOUSEHOLD_BATCHES[1]], columns=[ids.HOUSEHOLD, "Gegevensfrequentie"]
         ).to_csv(path, index=False)
 
         previous = etdmap.options.household_batch_csv_path
@@ -210,8 +210,8 @@ class TestTheGridIsKeyedOnTheBatch:
         """A household batch id names one household batch, so two rows for it is a metadata
         fault rather than a choice to make."""
         path = tmp_path / "huisbatch_dup.csv"
-        batch_table_frame(
-            [_DATASETS[3], _DATASETS[3]],
+        household_batch_table_frame(
+            [_HOUSEHOLD_BATCHES[3], _HOUSEHOLD_BATCHES[3]],
             Gegevensfrequentie=["5min", "15min"],
         ).to_csv(path, index=False)
 
@@ -219,7 +219,7 @@ class TestTheGridIsKeyedOnTheBatch:
         etdmap.options.household_batch_csv_path = str(path)
         try:
             with pytest.raises(ValueError, match="2 rows"):
-                grid_minutes_for_household_batch(_DATASETS[3])
+                grid_minutes_for_household_batch(_HOUSEHOLD_BATCHES[3])
         finally:
             etdmap.options.household_batch_csv_path = previous
 
@@ -287,7 +287,7 @@ class TestFillingStepsInTheGridItIsGiven:
         ]
         # Naive timestamps, and no cumulative counterpart: the column under
         # test is the cumulative one and the fill is given it alone.
-        df = datasets_frame(
+        df = household_batches_frame(
             {household_batch_of(1): {self.CUM: values}},
             start="2026-01-01",
             freq=f"{grid_minutes}min",

@@ -312,7 +312,7 @@ GRID = 5
 #: The cadence table as a detection produces it: the sidecar's own schema
 #: without the household batch id, which cadence_to_rows adds when the rows are
 #: written. A table carrying the id already would override the one given there.
-_CADENCE_COLUMNS = sidecar_columns("cadence", with_dataset=False)
+_CADENCE_COLUMNS = sidecar_columns("cadence", with_household_batch=False)
 
 
 def _cadence(rows):

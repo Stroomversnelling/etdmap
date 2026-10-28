@@ -22,14 +22,14 @@ from etdmap.mapping_helpers import (
     threshold_stats_to_rows,
     write_threshold_removals,
 )
-from etdmap.testing import PAIRS_EMPTY, datasets_frame, household_batch_of
+from etdmap.testing import PAIRS_EMPTY, household_batch_of, household_batches_frame
 
 COL = "ElektriciteitNetgebruik"
 DIFF = "ElektriciteitNetgebruikDiff"
 
 #: The household batch every frame here describes. A difference is taken along one
 #: household batch's series, so the household batch is what the correction is scoped to.
-DATASET = household_batch_of(1)
+HOUSEHOLD_BATCH_ID = household_batch_of(1)
 
 
 def _flags(df, column):
@@ -47,8 +47,8 @@ def _frame(values, column=COL):
     is present but states no total of its own, so the interval values stand as
     given.
     """
-    return datasets_frame(
-        {DATASET: {column: list(values)}},
+    return household_batches_frame(
+        {HOUSEHOLD_BATCH_ID: {column: list(values)}},
         start="2026-01-01", tz=None, project=None, pairs=PAIRS_EMPTY,
     )
 
@@ -162,7 +162,7 @@ class TestTheVolumesReachTheSidecar:
     def _rows(self):
         df = _frame([-99.0, 99.0, 0.5], column=DIFF)
         _, stats = apply_threshold_to_col(df, DIFF, 0.0, 1.5)
-        return threshold_stats_to_rows(DATASET, {DIFF: stats})
+        return threshold_stats_to_rows(HOUSEHOLD_BATCH_ID, {DIFF: stats})
 
     @pytest.mark.parametrize("key", [
         "sum_removed_negative", "sum_removed_positive", "balance_removed",

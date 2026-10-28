@@ -216,7 +216,7 @@ def id_columns_in_construction(tree, path) -> list:
                     found.append(Finding(
                         path, key.lineno,
                         f"{name} built as a column of ids; the builders assign "
-                        f"ids (etdmap.testing.datasets_frame, index_frame)",
+                        f"ids (etdmap.testing.household_batches_frame, index_frame)",
                     ))
     return found
 
@@ -407,7 +407,7 @@ def duplicate_dict_keys(tree, path) -> list:
 # ---------------------------------------------------------------------------
 
 #: A word standing alone, not part of an identifier: ``batch`` matches in
-#: "per household batch" but not in ``batch_table_frame`` or "HuisBatch", because the
+#: "per household batch" but not in ``household_batch_table_frame`` or "HuisBatch", because the
 #: character beside it there is a word character. Hyphenated forms count as
 #: qualified -- "household-batch flag" says which one as plainly as the
 #: spaced form does.

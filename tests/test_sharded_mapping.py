@@ -22,7 +22,7 @@ import pytest
 import etdmap
 from etdmap import ids
 from etdmap.mapping_helpers import run_standard_pipeline, save_household_shard
-from etdmap.testing import batch_table_frame, index_frame, supplier_label
+from etdmap.testing import household_batch_table_frame, index_frame, supplier_label
 
 #: The grid these frames are built on and declared to sit on. Passed
 #: explicitly: there is no default grid.
@@ -235,7 +235,7 @@ class TestDatasetValidatorsReadBothLayouts:
         """The household batch this household is recorded in. ``dataset_validators`` read
         the declared grid from it to know how many rows a year should hold."""
         path = tmp_path / "huisbatch.csv"
-        batch_table_frame(
+        household_batch_table_frame(
             [self.HOUSEHOLD_BATCH_ID],
             household_of={self.HOUSEHOLD_BATCH_ID: self.HOUSEHOLD_ID},
             grid=f"{GRID}min",

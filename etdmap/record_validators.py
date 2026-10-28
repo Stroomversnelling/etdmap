@@ -7,7 +7,7 @@ from pandas import DataFrame, Series
 from etdmap.data_model import (
     cadence_minutes_by_column,
     cumulative_columns,
-    dataset_cadence_minutes,
+    household_batch_cadence_minutes,
     interval_column,
     load_thresholds,
     resolve_bounds,
@@ -61,7 +61,7 @@ def _bounds_for(col: str, cadence) -> tuple:
     by_column = cadence_minutes_by_column(cadence)
     return resolve_bounds(
         thresholds_dict[col],
-        by_column.get(col, dataset_cadence_minutes(cadence)),
+        by_column.get(col, household_batch_cadence_minutes(cadence)),
         col,
     )
 

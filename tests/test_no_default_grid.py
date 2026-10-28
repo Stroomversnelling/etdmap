@@ -27,9 +27,9 @@ from etdmap.mapping_helpers import (
 )
 from etdmap.testing import (
     PAIRS_EMPTY,
-    batch_table_frame,
-    dataset_frame,
+    household_batch_frame,
     household_batch_of,
+    household_batch_table_frame,
 )
 
 GRID = 5
@@ -38,7 +38,7 @@ COL = "ElektriciteitsgebruikBoilervat"
 #: The household batch each household here is described through. The grid is declared
 #: per household batch, so each one is derived from its household rather than stated
 #: beside it.
-_DATASETS = {
+_HOUSEHOLD_BATCHES = {
     household_id: household_batch_of(household_id)
     for household_id in (1, 2)
 }
@@ -48,7 +48,7 @@ def _frame(n=12, freq="5min"):
     """A frame as a supplier delivered it: tz-naive, carrying no ids and no
     project. COL is a cumulative variable, so there is no interval counterpart
     to complete."""
-    return dataset_frame(
+    return household_batch_frame(
         n_rows=n, freq=freq, tz=None, project=None,
         **{COL: [float(i) for i in range(n)]},
     )
@@ -99,8 +99,8 @@ class TestTheGridCanComeFromMetadata:
     def batch_table(self, tmp_path):
         """Two household batches, the second declaring no grid at all."""
         path = tmp_path / "huisbatch.csv"
-        batch_table_frame(
-            [_DATASETS[1], _DATASETS[2]],
+        household_batch_table_frame(
+            [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]],
             Gegevensfrequentie=["15min", pd.NA],
         ).to_csv(path, index=False)
         previous = etdmap.options.household_batch_csv_path
@@ -189,7 +189,7 @@ class TestAResolvedCadenceScalesTheBound:
     def test_the_pipeline_refuses_without_a_cadence(self, tmp_path):
         with pytest.raises(ValueError, match="no cadence was given"):
             run_standard_pipeline(
-                _frame(), household_id=1, household_batch_id=_DATASETS[1],
+                _frame(), household_id=1, household_batch_id=_HOUSEHOLD_BATCHES[1],
                 household_id_supplier="H1",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
             )
@@ -197,7 +197,7 @@ class TestAResolvedCadenceScalesTheBound:
     def test_the_threshold_pass_refuses_without_a_cadence(self):
         # PAIRS_EMPTY: the bound looked up is the interval column's, so the
         # cumulative counterpart is present but states no total of its own.
-        df = dataset_frame(
+        df = household_batch_frame(
             n_rows=1, tz=None, project=None, pairs=PAIRS_EMPTY,
             ElektriciteitNetgebruikHoogDiff=1.0,
         )
@@ -230,7 +230,7 @@ class TestAnIntervalTheTableCannotRecord:
 
     def _frame(self):
         """The same supplier-shaped frame on a sub-minute grid."""
-        return dataset_frame(
+        return household_batch_frame(
             n_rows=10, freq="30s", tz=None, project=None, **{COL: 1.0}
         )
 

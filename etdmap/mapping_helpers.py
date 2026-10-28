@@ -25,8 +25,8 @@ from etdmap.data_model import (
     complement_column,
     cumulative_column,
     cumulative_columns,
-    dataset_cadence_minutes,
     diff_columns,
+    household_batch_cadence_minutes,
     interval_column,
     model_column_order,
     model_column_type,
@@ -2500,7 +2500,7 @@ def apply_thresholds_to_df(
     minutes_by_column = cadence_minutes_by_column(cadence)
     # A column built during the pipeline was placed on the grid, so that is the
     # interval it reports at -- it was not delivered, so nothing measured it.
-    grid = dataset_cadence_minutes(cadence)
+    grid = household_batch_cadence_minutes(cadence)
     for col in df.columns:
         # A column with no values has nothing to judge, so it needs no bound and
         # no cadence. The model columns added during mapping are empty exactly
@@ -3293,7 +3293,7 @@ def _detect_frozen_spans_for_household_batch(
     # during the pipeline is not there under its own name.
     cadence_minutes = cadence_minutes_by_column(cadence)
     # A column built during the pipeline reports at the grid it was placed on.
-    grid = dataset_cadence_minutes(cadence)
+    grid = household_batch_cadence_minutes(cadence)
 
     reading_dates = df.get("ReadingDate")
     rows = []
@@ -3744,7 +3744,7 @@ def mark_cadence(
             for row in cadence.itertuples()
             if pd.notna(row.cadence_minutes)
         }
-    grid = grid_minutes if grid_minutes is not None else dataset_cadence_minutes(cadence)
+    grid = grid_minutes if grid_minutes is not None else household_batch_cadence_minutes(cadence)
 
     # Mapping runs per household batch on one frame sorted by ReadingDate, and
     # ensure_intervals has given it one row per grid slot, so a row's position is

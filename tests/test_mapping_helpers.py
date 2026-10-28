@@ -44,7 +44,7 @@ from etdmap.mapping_helpers import (
     threshold_stats_to_rows,
     write_threshold_removals,
 )
-from etdmap.testing import datasets_frame, household_batch_of
+from etdmap.testing import household_batch_of, household_batches_frame
 
 #: The grid these frames are built on and declared to sit on. Passed
 #: explicitly: there is no default grid.
@@ -1150,7 +1150,7 @@ class TestCollectMappedDataStatsSeasonal:
         # The household batch read lives in etdmap.data_stats' namespace, so patch it
         # there: that is the call site the collector reaches.
         return patch(
-            "etdmap.data_stats.get_mapped_dataset",
+            "etdmap.data_stats.get_mapped_household_batch",
             return_value=df,
         )
 
@@ -1944,7 +1944,7 @@ class TestNegativeDiffMagnitudesAreRecorded:
         each. The counts add; the extremes take the outer value."""
         from etdmap.mapping_helpers import add_diff_columns
         _, stats = add_diff_columns(
-            datasets_frame(
+            household_batches_frame(
                 {
                     household_batch_of(1): {
                         self.COL: [100.0, 110.0, 105.0, 120.0],

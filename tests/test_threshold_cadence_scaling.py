@@ -20,8 +20,8 @@ from etdmap.mapping_helpers import apply_thresholds_to_df, cadence_minutes_by_co
 from etdmap.testing import (
     PAIRS_EMPTY,
     cadence_sidecar,
-    dataset_frame,
     declare_synthetic_model,
+    household_batch_frame,
     synthetic_model,
 )
 
@@ -81,7 +81,7 @@ def _frame(values, column):
     household artifact -- but empty, and the threshold pass skips a column with
     no values rather than judging a second one.
     """
-    return dataset_frame(
+    return household_batch_frame(
         n_rows=len(values),
         start="2026-01-01",
         freq=f"{GRID}min",

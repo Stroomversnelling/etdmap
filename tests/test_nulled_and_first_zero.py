@@ -11,13 +11,13 @@ import pandas as pd
 from etdmap import ids
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import apply_threshold_to_col
-from etdmap.testing import PAIRS_EMPTY, datasets_frame, household_of_batch
+from etdmap.testing import PAIRS_EMPTY, household_batches_frame, household_of_batch
 
 COL = "ElektriciteitNetgebruik"
 DIFF = "ElektriciteitNetgebruikDiff"
 
-DATASET = 1001
-SECOND_DATASET = 2001
+HOUSEHOLD_BATCH_ID = 1001
+SECOND_HOUSEHOLD_BATCH = 2001
 
 
 def _flags(df, column):
@@ -31,8 +31,8 @@ class TestThresholdRemovalRecordsTheBlanking:
     def _frame(self):
         # PAIRS_EMPTY: the readings under test are the interval column's, so
         # the cumulative counterpart is present but states no total of its own.
-        return datasets_frame(
-            {DATASET: {DIFF: [0.5, 99.0, 0.5, 0.5]}},
+        return household_batches_frame(
+            {HOUSEHOLD_BATCH_ID: {DIFF: [0.5, 99.0, 0.5, 0.5]}},
             start="2026-01-01",
             tz=None,
             pairs=PAIRS_EMPTY,
@@ -82,8 +82,8 @@ class TestFirstZeroMarksTheSeed:
     def test_the_seed_carries_the_flag(self):
         from etdmap.mapping_helpers import add_diff_columns
 
-        df = datasets_frame(
-            {DATASET: {COL: [10.0, 10.5, 11.0, 11.5]}},
+        df = household_batches_frame(
+            {HOUSEHOLD_BATCH_ID: {COL: [10.0, 10.5, 11.0, 11.5]}},
             start="2026-01-01",
             tz=None,
         )
@@ -96,8 +96,8 @@ class TestFirstZeroMarksTheSeed:
     def test_later_rows_are_not_marked(self):
         from etdmap.mapping_helpers import add_diff_columns
 
-        df = datasets_frame(
-            {DATASET: {COL: [10.0, 10.5, 11.0, 11.5]}},
+        df = household_batches_frame(
+            {HOUSEHOLD_BATCH_ID: {COL: [10.0, 10.5, 11.0, 11.5]}},
             start="2026-01-01",
             tz=None,
         )
@@ -106,18 +106,18 @@ class TestFirstZeroMarksTheSeed:
         for row in (1, 2, 3):
             assert not (flags[row] & MappingFlag.FIRST_ZERO.value)
 
-    def test_each_dataset_gets_its_own_seed(self):
+    def test_each_household_batch_gets_its_own_seed(self):
         from etdmap.mapping_helpers import add_diff_columns
 
         # Both household batches in ONE household, which is what makes the count
         # discriminate: two seeds can only come from grouping on the household batch,
         # since grouping on the household would seed the pair once.
-        df = datasets_frame(
+        df = household_batches_frame(
             {
-                DATASET: {COL: [10.0, 10.5]},
-                SECOND_DATASET: {COL: [20.0, 20.5]},
+                HOUSEHOLD_BATCH_ID: {COL: [10.0, 10.5]},
+                SECOND_HOUSEHOLD_BATCH: {COL: [20.0, 20.5]},
             },
-            household_of={SECOND_DATASET: household_of_batch(DATASET)},
+            household_of={SECOND_HOUSEHOLD_BATCH: household_of_batch(HOUSEHOLD_BATCH_ID)},
             start="2026-01-01",
             tz=None,
         )

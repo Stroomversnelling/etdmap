@@ -1517,7 +1517,7 @@ def households_of_household_batches(household_batch_ids) -> list:
     return sorted(int(household) for household in match.dropna().unique())
 
 
-def get_mapped_dataset(household_batch_id: int) -> pd.DataFrame:
+def get_mapped_household_batch(household_batch_id: int) -> pd.DataFrame:
     """
     Retrieve ONE household batch dataset's mapped data.
 

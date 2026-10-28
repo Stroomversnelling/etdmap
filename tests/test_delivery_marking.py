@@ -13,7 +13,7 @@ import pandas as pd
 from etdmap import ids
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import mark_cadence, mark_delivered
-from etdmap.testing import cadence_sidecar, datasets_frame, household_batch_of
+from etdmap.testing import cadence_sidecar, household_batch_of, household_batches_frame
 
 GRID = 5
 CUM = "ElektriciteitNetgebruik"
@@ -34,7 +34,7 @@ def _frame(values, column=CUM, **extra):
     under test stands alone here, and a completed counterpart would carry a
     delivery record of its own.
     """
-    return datasets_frame(
+    return household_batches_frame(
         {household_batch_of(1): {column: list(values), **extra}},
         start="2026-01-01",
         tz=None,

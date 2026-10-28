@@ -31,7 +31,7 @@ import pandas as pd
 
 from etdmap import ids
 from etdmap.data_model import tariff_root_to_splits
-from etdmap.index_helpers import get_mapped_dataset, read_index
+from etdmap.index_helpers import get_mapped_household_batch, read_index
 from etdmap.timestamp_helpers import derive_and_normalize_reading_date
 
 # ---------------------------------------------------------------------------
@@ -410,7 +410,7 @@ def collect_mapped_data_stats(household_batch_id, seasonal=False, seasons=None):
     )
     file_summary_data = []
     try:
-        df = get_mapped_dataset(household_batch_id)
+        df = get_mapped_household_batch(household_batch_id)
         # Fill in any Hoog/Laag tariff-pair root columns that are missing
         # or empty so downstream stats compare projects on the root name
         # apples-to-apples regardless of how a supplier reports the data.

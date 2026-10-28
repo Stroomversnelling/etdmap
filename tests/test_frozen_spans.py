@@ -23,9 +23,9 @@ from etdmap.flags import (
 from etdmap.testing import (
     PAIRS_EMPTY,
     cadence_sidecar,
-    dataset_frame,
-    datasets_frame,
+    household_batch_frame,
     household_batch_of,
+    household_batches_frame,
 )
 
 #: The grid these frames are built on and declared to sit on. Passed
@@ -259,7 +259,7 @@ class TestIntervalColumnsInheritTheirCumulativeCadence:
         # why the cadence table carries a row for it and none for this column,
         # so it stands as mapping leaves it -- present and empty.
         n = 200
-        return dataset_frame(
+        return household_batch_frame(
             n_rows=n,
             start="2024-01-01",
             freq=f"{GRID}min",
@@ -318,7 +318,7 @@ class TestTreatment:
         # treatment.
         from etdmap.mapping_helpers import add_diff_columns
         return add_diff_columns(
-            dataset_frame(
+            household_batch_frame(
                 n_rows=n,
                 start="2026-01-01",
                 freq=f"{GRID}min",
@@ -383,7 +383,7 @@ class TestOnlyAccumulatingVariables:
     def _frame(self, column):
         # The shape that fires for a cumulative variable: flat, then an implausible jump.
         n = 30
-        df = dataset_frame(
+        df = household_batch_frame(
             n_rows=n,
             start="2026-01-01",
             freq=f"{GRID}min",
@@ -439,7 +439,7 @@ class TestARegisterIsNotScanned:
     # what an interval column derived from it is derived from.
     def _register_frame(self, column, over_bound):
         n = 12
-        return dataset_frame(
+        return household_batch_frame(
             n_rows=n,
             start="2026-01-01",
             freq=f"{GRID}min",
@@ -513,7 +513,7 @@ class TestFlagsSurviveTheColumnFilter:
     def _filled_frame(self, n=40):
         from etdmap.mapping_helpers import fill_down_infrequent_devices
         col = "ElektriciteitsgebruikBoilervat"
-        df = dataset_frame(
+        df = household_batch_frame(
             n_rows=n,
             start="2026-01-01",
             freq=f"{GRID}min",
@@ -570,7 +570,7 @@ class TestNullingIsBoundedToTheSpan:
         # cumulative column is what the derived treatment hands the span's
         # energy back to, and the interval column is what it blanks.
         n = len(span_values)
-        return datasets_frame(
+        return household_batches_frame(
             {HOUSEHOLD_BATCH_ID: {
                 self.CUM: [100.0 + i for i in range(n)],
                 self.DIFF: list(span_values),

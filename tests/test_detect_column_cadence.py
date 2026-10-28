@@ -111,7 +111,7 @@ class TestDetectColumnCadence:
         df = _frame({'a': 5, 'b': 60})
         assert _cadence(df, columns=['b', 'absent']) == {'b': 60}
 
-    def test_the_dataset_cadence_is_measured_as_its_own_row(self):
+    def test_the_household_batch_cadence_is_measured_as_its_own_row(self):
         # The grid the data sits on, detected in the same pass, so nothing
         # downstream has to measure it again.
         df = _frame({'x': 60})
@@ -201,7 +201,7 @@ class TestCadenceResolution:
             self._resolved(_frame({'x': 60}), declared={'x': 60})
         assert caplog.text == ''
 
-    def test_an_irregular_column_falls_back_to_the_dataset(self):
+    def test_an_irregular_column_falls_back_to_the_household_batch(self):
         # Readings at scattered intervals: the mode means little.
         df = _frame({'x': 5})
         keep = {0, 1, 7, 8, 30, 61, 95, 96, 150}
@@ -214,7 +214,7 @@ class TestCadenceResolution:
         assert r.loc['x', 'cadence_minutes'] == 5
         assert r.loc['x', 'cadence_source'] == 'dataset'
 
-    def test_an_unmeasurable_column_falls_back_to_the_dataset(self):
+    def test_an_unmeasurable_column_falls_back_to_the_household_batch(self):
         df = _frame({'x': 5})
         df['x'] = pd.array([pd.NA] * len(df), dtype='Float64')
         r = self._resolved(df)

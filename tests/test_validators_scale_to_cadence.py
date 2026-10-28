@@ -124,15 +124,15 @@ def _run_pipeline(tmp_path, grid, household_id, steps, household_batch_id=None):
         CUM: cumulative,
     })
     cadence = detect_column_cadence(df, grid_minutes=grid)
-    dataset = household_batch_id or household_batch_of(household_id)
+    household_batch = household_batch_id or household_batch_of(household_id)
     run_standard_pipeline(
         df, household_id=household_id,
-        household_batch_id=dataset,
+        household_batch_id=household_batch,
         household_id_supplier=supplier_label(household_id),
         mapped_folder_path=tmp_path, grid_minutes=grid, cadence=cadence,
     )
     paths = mapped_household_paths(tmp_path)
-    return pd.read_parquet(paths[dataset], dtype_backend="numpy_nullable")
+    return pd.read_parquet(paths[household_batch], dtype_backend="numpy_nullable")
 
 
 class TestThroughTheWholePipeline:

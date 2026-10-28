@@ -20,8 +20,8 @@ from etdmap.data_model import parse_device_declaration
 from etdmap.flags import MappingFlag, set_flags
 from etdmap.mapping_helpers import assert_no_delivered_in_declared_absent
 from etdmap.testing import (
-    dataset_frame,
     declare_synthetic_model,
+    household_batch_frame,
     household_of_batch,
     index_frame,
 )
@@ -54,7 +54,7 @@ def _frame(columns, n_rows=None):
     """
     if n_rows is None:
         n_rows = max(len(values) for values in columns.values())
-    return dataset_frame(
+    return household_batch_frame(
         n_rows=n_rows,
         start="2026-01-01",
         tz=None,
@@ -231,9 +231,9 @@ class TestEveryColumnOfTheDeviceFalsifiesTheDeclaration:
 
 #: The household batch the declaration belongs to, a second household batch, and the household
 #: the first describes.
-DATASET = 1001
-SECOND_DATASET = 2001
-HOUSEHOLD = household_of_batch(DATASET)
+HOUSEHOLD_BATCH_ID = 1001
+SECOND_HOUSEHOLD_BATCH = 2001
+HOUSEHOLD = household_of_batch(HOUSEHOLD_BATCH_ID)
 
 #: The supplier and project the raise has to name beside the household batch, so the
 #: declaration can be found and corrected in Grist, and the delivery batch it
@@ -258,7 +258,7 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
             household_batch_ids,
             household_of=household_of,
             project=PROJECT,
-            batch=DELIVERY_BATCH,
+            delivery_batch=DELIVERY_BATCH,
             supplier=SUPPLIER,
             Meenemen=True,
         ).to_parquet(folder / "index.parquet", engine="pyarrow")
@@ -266,7 +266,7 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
     def test_supplier_project_and_household_batch_are_named(
         self, model, tmp_path, monkeypatch
     ):
-        self._write_index(tmp_path, [DATASET])
+        self._write_index(tmp_path, [HOUSEHOLD_BATCH_ID])
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", tmp_path)
         df = _frame({model.high: [pd.NA, 4.0]})
 
@@ -281,20 +281,20 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
         message = str(err.value)
         assert SUPPLIER in message
         assert f"{ids.PROJECT} {PROJECT}" in message
-        assert f"{ids.HOUSEHOLD_BATCH} {DATASET}" in message
+        assert f"{ids.HOUSEHOLD_BATCH} {HOUSEHOLD_BATCH_ID}" in message
         # The violation detail is unchanged by the decoration.
         assert model.high in message
         assert "1 delivered reading(s)" in message
 
-    def test_a_household_with_two_datasets_names_both_batches(
+    def test_a_household_with_two_household_batches_names_both_batches(
         self, model, tmp_path, monkeypatch
     ):
         """One household can have several household batches, and a declaration belongs
         to one of them. Naming every candidate beats naming one at random."""
         self._write_index(
             tmp_path,
-            [DATASET, SECOND_DATASET],
-            household_of={SECOND_DATASET: HOUSEHOLD},
+            [HOUSEHOLD_BATCH_ID, SECOND_HOUSEHOLD_BATCH],
+            household_of={SECOND_HOUSEHOLD_BATCH: HOUSEHOLD},
         )
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", tmp_path)
         df = _frame({model.high: [pd.NA, 4.0]})
@@ -305,7 +305,7 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
             )
 
         message = str(err.value)
-        assert str(DATASET) in message and str(SECOND_DATASET) in message
+        assert str(HOUSEHOLD_BATCH_ID) in message and str(SECOND_HOUSEHOLD_BATCH) in message
 
     def test_an_absent_index_still_raises_on_the_violation(
         self, model, tmp_path, monkeypatch
@@ -330,7 +330,7 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
     def test_a_household_absent_from_the_index_still_raises(
         self, model, tmp_path, monkeypatch
     ):
-        self._write_index(tmp_path, [DATASET])
+        self._write_index(tmp_path, [HOUSEHOLD_BATCH_ID])
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", tmp_path)
         df = _frame({model.high: [pd.NA, 4.0]})
 
@@ -340,7 +340,7 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
                 {model.device},
                 # The household the second household batch belongs to, which the index
                 # written above does not cover.
-                household_id=household_of_batch(SECOND_DATASET),
+                household_id=household_of_batch(SECOND_HOUSEHOLD_BATCH),
             )
 
     def test_without_a_household_id_the_message_is_unchanged(self, model):

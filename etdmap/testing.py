@@ -31,15 +31,15 @@ __all__ = [
     "PAIRS_RAMP",
     "MetadataSet",
     "SyntheticModel",
-    "batch_table_frame",
     "cadence_sidecar",
     "cumulative_pair",
-    "dataset_frame",
-    "datasets_frame",
     "declare_synthetic_model",
     "generate_mapped_dataset",
     "generate_raw_dataset",
+    "household_batch_frame",
     "household_batch_of",
+    "household_batch_table_frame",
+    "household_batches_frame",
     "household_of_batch",
     "index_frame",
     "installed_fingerprint",
@@ -229,7 +229,7 @@ def _complete_pairs(frame, names, n_rows, how=PAIRS_RAMP):
             frame[counterpart] = pd.array(values, dtype="Float64")
 
 
-def dataset_frame(
+def household_batch_frame(
     n_rows: int = 4,
     start="2024-01-01",
     project: int | None = 1,
@@ -257,7 +257,7 @@ def dataset_frame(
 
     No household or household batch id: the shard path carries them, which is where a
     reader expects them. The project is a plain column and is included unless
-    *project* is None. Use :func:`datasets_frame` for a frame that carries the
+    *project* is None. Use :func:`household_batches_frame` for a frame that carries the
     ids itself.
     """
     df = pd.DataFrame({
@@ -280,8 +280,8 @@ def dataset_frame(
     return df
 
 
-def datasets_frame(
-    per_dataset: dict,
+def household_batches_frame(
+    per_household_batch: dict,
     *,
     start="2024-01-01",
     freq: str = "5min",
@@ -302,13 +302,13 @@ def datasets_frame(
     out. Building them here is what keeps the two ids distinct and the dtypes
     nullable without every test restating either.
 
-    *per_dataset* is keyed on ``ids.HOUSEHOLD_BATCH``, because that is the key of a
+    *per_household_batch* is keyed on ``ids.HOUSEHOLD_BATCH``, because that is the key of a
     household batch. It maps each one to its values for the columns in *columns*:
     either ``{household batch: [values]}`` when one column is given, or
     ``{household batch: {column: [values]}}`` for several. The row count per household batch is
     the length of its values, or *n_rows* where there are none to count -- a
     frame of ids and timestamps alone. Every interval column's cumulative
-    counterpart is completed as :func:`dataset_frame` does, unless *pairs* is
+    counterpart is completed as :func:`household_batch_frame` does, unless *pairs* is
     cleared.
 
     The household each household batch rolls up to is :func:`household_of_batch` unless
@@ -325,13 +325,13 @@ def datasets_frame(
     names = list(columns)
     dtypes = dtypes or {}
     parts = []
-    for household_batch_id, value in per_dataset.items():
+    for household_batch_id, value in per_household_batch.items():
         household_id = (household_of or {}).get(
             household_batch_id, household_of_batch(household_batch_id)
         )
         if not isinstance(value, dict) and not names:
             raise ValueError(
-                f"datasets_frame: dataset {household_batch_id} was given "
+                f"household_batches_frame: dataset {household_batch_id} was given "
                 f"values with no column to put them in. Name the column as a "
                 f"keyword, or map the dataset to {{column: values}}."
             )
@@ -365,7 +365,7 @@ def datasets_frame(
         for name, values in per_column.items():
             if isinstance(values, (pd.Series, pd.api.extensions.ExtensionArray)):
                 raise TypeError(
-                    f"datasets_frame: column {name!r} was given a "
+                    f"household_batches_frame: column {name!r} was given a "
                     f"{type(values).__name__}, which is read as one scalar "
                     f"repeated. Pass a plain list and name its dtype in "
                     f"dtypes= if Float64 is wrong."
@@ -383,7 +383,7 @@ def datasets_frame(
         parts.append(part)
     if not parts:
         raise ValueError(
-            "datasets_frame: no datasets given, so there is no frame to build. "
+            "household_batches_frame: no datasets given, so there is no frame to build. "
             "Name at least one HuisBatchIdBSV."
         )
     return pd.concat(parts, ignore_index=True)
@@ -531,8 +531,8 @@ class MetadataSet(NamedTuple):
     project_mapping_csv: Path
 
 
-def batch_table_frame(household_batch_ids, *, household_of=None, project=1,
-                      batch=1, grid="5min", start=DEFAULT_BASE_DATE,
+def household_batch_table_frame(household_batch_ids, *, household_of=None, project=1,
+                      delivery_batch=1, grid="5min", start=DEFAULT_BASE_DATE,
                       days=DEFAULT_DAYS, columns=None, **overrides):
     """The synced HuisBatch table: one row per household batch.
 
@@ -548,21 +548,21 @@ def batch_table_frame(household_batch_ids, *, household_of=None, project=1,
     *start* and *days* set the window each household batch covers. A window that does
     not contain the readings puts the household batch at odds with the household files.
     """
-    datasets = [int(value) for value in household_batch_ids]
+    household_batches = [int(value) for value in household_batch_ids]
     households = [
-        int((household_of or {}).get(dataset, household_of_batch(dataset)))
-        for dataset in datasets
+        int((household_of or {}).get(household_batch, household_of_batch(household_batch)))
+        for household_batch in household_batches
     ]
-    n = len(datasets)
+    n = len(household_batches)
     begins = pd.Timestamp(start)
     ends = begins + pd.Timedelta(days=days)
 
     built = {
         ids.HOUSEHOLD: pd.array(households, dtype=ids.DTYPES[ids.HOUSEHOLD]),
         ids.HOUSEHOLD_BATCH: pd.array(
-            datasets, dtype=ids.DTYPES[ids.HOUSEHOLD_BATCH]
+            household_batches, dtype=ids.DTYPES[ids.HOUSEHOLD_BATCH]
         ),
-        ids.BATCH: pd.array([batch] * n, dtype=ids.DTYPES[ids.BATCH]),
+        ids.BATCH: pd.array([delivery_batch] * n, dtype=ids.DTYPES[ids.BATCH]),
         ids.PROJECT: pd.array([project] * n, dtype=ids.DTYPES[ids.PROJECT]),
         "Meenemen": pd.array([pd.NA] * n, dtype="boolean"),
         "Gegevensfrequentie": pd.array([grid] * n, dtype="string"),
@@ -577,7 +577,7 @@ def batch_table_frame(household_batch_ids, *, household_of=None, project=1,
     unknown = [name for name in overrides if name not in built]
     if unknown:
         raise ValueError(
-            f"batch_table_frame: the batch table has no column(s) {unknown}. "
+            f"household_batch_table_frame: the batch table has no column(s) {unknown}. "
             f"Its columns are {list(built)}."
         )
     for name, value in overrides.items():
@@ -594,7 +594,7 @@ def batch_table_frame(household_batch_ids, *, household_of=None, project=1,
         missing = [name for name in columns if name not in frame.columns]
         if missing:
             raise ValueError(
-                f"batch_table_frame: the batch table has no column(s) "
+                f"household_batch_table_frame: the batch table has no column(s) "
                 f"{missing}."
             )
         frame = frame[list(columns)]
@@ -622,7 +622,7 @@ def project_mapping_frame(project_ids, *, supplier="etdmap"):
 
 
 def metadata_set(folder, household_batch_ids, *, household_of=None,
-                 projects=None, project=1, batch=1, grid="5min",
+                 projects=None, project=1, delivery_batch=1, grid="5min",
                  start=DEFAULT_BASE_DATE, days=DEFAULT_DAYS,
                  supplier="etdmap", include=True) -> MetadataSet:
     """Write the three metadata files a mapping run reads, and point at them.
@@ -652,12 +652,12 @@ def metadata_set(folder, household_batch_ids, *, household_of=None,
 
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
-    datasets = [int(value) for value in household_batch_ids]
+    household_batches = [int(value) for value in household_batch_ids]
     project_ids = sorted(set(projects)) if projects else [project]
 
     batch_csv = folder / "household_batch_sync.csv"
-    batch_table_frame(
-        datasets, household_of=household_of, project=project, batch=batch,
+    household_batch_table_frame(
+        household_batches, household_of=household_of, project=project, delivery_batch=delivery_batch,
         grid=grid, start=start, days=days,
     ).to_csv(batch_csv, index=False)
 
@@ -668,7 +668,7 @@ def metadata_set(folder, household_batch_ids, *, household_of=None,
 
     metadata_csv = folder / "metadata_reviewed.csv"
     index = index_frame(
-        datasets, household_of=household_of, project=project, batch=batch,
+        household_batches, household_of=household_of, project=project, delivery_batch=delivery_batch,
         supplier=supplier, Meenemen=include,
     )
     reviewed = index.loc[:, bsv_metadata_columns].copy()
@@ -683,7 +683,7 @@ def metadata_set(folder, household_batch_ids, *, household_of=None,
 
 
 def index_frame(household_batch_ids, *, household_of=None, project=1,
-                batch=1, supplier="etdmap", batch_fields=True, partial=False,
+                delivery_batch=1, supplier="etdmap", batch_fields=True, partial=False,
                 **columns):
     """The index: one row per household batch.
 
@@ -708,7 +708,7 @@ def index_frame(household_batch_ids, *, household_of=None, project=1,
         The household batches the index covers.
     household_of : mapping of int to int, optional
         The household a household batch belongs to, where it is not the default.
-    project, batch, supplier
+    project, delivery_batch, supplier
         Shared values for the columns of those names.
     batch_fields : bool
         Carry the household-batch columns, the household batch id among them.
@@ -719,12 +719,12 @@ def index_frame(household_batch_ids, *, household_of=None, project=1,
     """
     from etdmap.index_helpers import batch_field_dtypes, metadata_dtypes
 
-    datasets = [int(value) for value in household_batch_ids]
+    household_batches = [int(value) for value in household_batch_ids]
     households = [
-        int((household_of or {}).get(dataset, household_of_batch(dataset)))
-        for dataset in datasets
+        int((household_of or {}).get(household_batch, household_of_batch(household_batch)))
+        for household_batch in household_batches
     ]
-    n = len(datasets)
+    n = len(household_batches)
 
     dtypes = dict(metadata_dtypes)
     if batch_fields:
@@ -732,11 +732,11 @@ def index_frame(household_batch_ids, *, household_of=None, project=1,
 
     defaults = {
         ids.HOUSEHOLD: households,
-        ids.HOUSEHOLD_BATCH: datasets,
+        ids.HOUSEHOLD_BATCH: household_batches,
         ids.HOUSEHOLD_SUPPLIER: [f"L{household}" for household in households],
         ids.PROJECT: project,
         ids.PROJECT_SUPPLIER: f"P{project}",
-        ids.BATCH: batch,
+        ids.BATCH: delivery_batch,
         ids.SUPPLIER: supplier,
         "Meenemen": pd.NA,
         "Notities": "",
@@ -771,10 +771,10 @@ def index_frame(household_batch_ids, *, household_of=None, project=1,
     return frame
 
 
-def sidecar_columns(kind, *, with_dataset=True):
+def sidecar_columns(kind, *, with_household_batch=True):
     """A sidecar's columns in order, from the library's own map.
 
-    Without *with_dataset* the result is the shape the producing step works in,
+    Without *with_household_batch* the result is the shape the producing step works in,
     before the household batch id is attached: ``detect_column_cadence``
     returns a cadence table with no ``ids.HOUSEHOLD_BATCH``, and
     ``cadence_to_rows`` adds it.
@@ -791,7 +791,7 @@ def sidecar_columns(kind, *, with_dataset=True):
         )
     return [
         name for name in sidecar.dtypes
-        if with_dataset or name != ids.HOUSEHOLD_BATCH
+        if with_household_batch or name != ids.HOUSEHOLD_BATCH
     ]
 
 
@@ -952,7 +952,7 @@ def cadence_sidecar(
         "cadence", rows,
         household_batch_id=household_batch_id,
         partial=(False if household_batch_id is not None
-                 else sidecar_columns("cadence", with_dataset=False)),
+                 else sidecar_columns("cadence", with_household_batch=False)),
     )
 
 
@@ -1420,7 +1420,7 @@ def generate_mapped_dataset(
     # One household batch per household, numbered with the household id, which
     # is what save_mapped_household writes. A household can have several
     # household batches; the mapping cannot produce them yet.
-    batch_table_frame(
+    household_batch_table_frame(
         household_ids,
         household_of={household_id: household_id
                       for household_id in household_ids},

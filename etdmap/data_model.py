@@ -741,7 +741,7 @@ def cadence_minutes_by_column(cadence) -> dict:
     return resolved
 
 
-def dataset_cadence_minutes(cadence, date_column: str = "ReadingDate"):
+def household_batch_cadence_minutes(cadence, date_column: str = "ReadingDate"):
     """
     The interval the household batch itself is recorded on, from its cadence table.
 
