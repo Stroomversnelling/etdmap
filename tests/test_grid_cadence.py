@@ -26,16 +26,16 @@ from etdmap.mapping_helpers import (
 )
 from etdmap.testing import (
     cadence_sidecar,
-    household_batch_of,
     household_batch_table_frame,
     household_batches_frame,
+    one_to_one_test_household_batch_of,
 )
 
 #: The household batch each household here is described through. The grid is declared
 #: per household batch, so each one is derived from its household rather than stated
 #: beside it.
 _HOUSEHOLD_BATCHES = {
-    household_id: household_batch_of(household_id)
+    household_id: one_to_one_test_household_batch_of(household_id)
     for household_id in (1, 2, 3, 5, 7, 8)
 }
 
@@ -288,7 +288,7 @@ class TestFillingStepsInTheGridItIsGiven:
         # Naive timestamps, and no cumulative counterpart: the column under
         # test is the cumulative one and the fill is given it alone.
         df = household_batches_frame(
-            {household_batch_of(1): {self.CUM: values}},
+            {one_to_one_test_household_batch_of(1): {self.CUM: values}},
             start="2026-01-01",
             freq=f"{grid_minutes}min",
             tz=None,

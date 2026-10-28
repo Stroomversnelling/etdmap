@@ -4118,6 +4118,10 @@ def run_standard_pipeline(
     return {
         ids.HOUSEHOLD_SUPPLIER: household_id_supplier,
         ids.HOUSEHOLD: household_id,
+        # The household batch the shard above was actually written as. The index
+        # has one row per household batch, so an entry that named only the
+        # household would leave update_index unable to say which row it is for.
+        ids.HOUSEHOLD_BATCH: household_batch_id,
         # The cadence the pipeline ran on, which is the measured table plus any
         # tariff-root row step 6a derived. The sidecar is written from this, not
         # from the mapper's own copy, or the derived rows would be dropped.

@@ -22,14 +22,18 @@ from etdmap.mapping_helpers import (
     threshold_stats_to_rows,
     write_threshold_removals,
 )
-from etdmap.testing import PAIRS_EMPTY, household_batch_of, household_batches_frame
+from etdmap.testing import (
+    PAIRS_EMPTY,
+    household_batches_frame,
+    one_to_one_test_household_batch_of,
+)
 
 COL = "ElektriciteitNetgebruik"
 DIFF = "ElektriciteitNetgebruikDiff"
 
 #: The household batch every frame here describes. A difference is taken along one
 #: household batch's series, so the household batch is what the correction is scoped to.
-HOUSEHOLD_BATCH_ID = household_batch_of(1)
+HOUSEHOLD_BATCH_ID = one_to_one_test_household_batch_of(1)
 
 
 def _flags(df, column):

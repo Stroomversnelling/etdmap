@@ -31,7 +31,11 @@ from etdmap.index_helpers import (
     save_index_to_parquet,
     validate_data_frequency_present,
 )
-from etdmap.testing import household_batch_of, household_of_batch, index_frame
+from etdmap.testing import (
+    index_frame,
+    one_to_one_test_household_batch_of,
+    one_to_one_test_household_of_household_batch,
+)
 
 _START = "2024-05-01 00:00:00 UTC"
 _END = "2025-05-01 00:00:00 UTC"
@@ -43,7 +47,7 @@ _END_EPOCH = 1746057600
 #: list and the synced-only warning -- so the household batches are derived from the
 #: household rather than stated beside it.
 _HOUSEHOLD_BATCHES = {
-    household_id: household_batch_of(household_id)
+    household_id: one_to_one_test_household_batch_of(household_id)
     for household_id in (1, 2, 3, 99)
 }
 
@@ -68,7 +72,7 @@ def _sync_row(household_batch_id, household_id=None, delivery_batch=1, freq="5mi
               start=_START, end=_END):
     return {
         ids.HOUSEHOLD: (
-            household_of_batch(household_batch_id)
+            one_to_one_test_household_of_household_batch(household_batch_id)
             if household_id is None
             else household_id
         ),
@@ -222,7 +226,7 @@ class TestSingleIndexWrite:
             _sync_row(_HOUSEHOLD_BATCHES[2]),
             _sync_row(
                 _SECOND_HOUSEHOLD_BATCH,
-                household_id=household_of_batch(_HOUSEHOLD_BATCHES[1]),
+                household_id=one_to_one_test_household_of_household_batch(_HOUSEHOLD_BATCHES[1]),
                 delivery_batch=2,
             ),
         ])

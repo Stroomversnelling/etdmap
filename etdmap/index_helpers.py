@@ -16,7 +16,7 @@ from etdmap.data_model import (
     supplier_metadata_dtypes,
 )
 from etdmap.dataset_validators import dataset_flag_conditions
-from etdmap.storage import read_mapped_households
+from etdmap.storage import detect_mapped_format, read_mapped_households
 
 
 class HouseholdKey(NamedTuple):
@@ -682,12 +682,17 @@ def update_index(
 ) -> pd.DataFrame:
     """Update the index with new entries and recalculate or add flag columns for ``dataset_validators``.
 
+    The index has one row per household batch, so *new_entry* names its row by
+    the index's own key: ``ids.HOUSEHOLD_BATCH`` is required. Its flags are then
+    computed from that household batch's readings alone.
+
     Parameters
     ----------
     index_df : pd.DataFrame
         The index DataFrame.
     new_entry : dict
-        The new entry to be added or updated in the index.
+        The new entry to be added or updated in the index. Must carry
+        ``ids.HOUSEHOLD_BATCH``, which ``run_standard_pipeline`` returns.
     data_provider : str
         The name of the data provider.
 
@@ -695,6 +700,13 @@ def update_index(
     -------
     pd.DataFrame
         The updated index DataFrame.
+
+    Raises
+    ------
+    ValueError
+        When *new_entry* names no household batch, when it names no supplier
+        project, or when the supplier pair matches more than one row that does
+        not yet name its household batch.
     """
 
     # The lookup mask below matches the supplier ids as strings.
@@ -703,27 +715,70 @@ def update_index(
         new_entry[ids.PROJECT_SUPPLIER] = str(new_entry[ids.PROJECT_SUPPLIER])
     new_entry[ids.SUPPLIER] = data_provider
 
-    household_id = new_entry[ids.HOUSEHOLD_SUPPLIER]
-    project_id = new_entry.get(ids.PROJECT_SUPPLIER)
-    if not project_id:
+    household_id_supplier = new_entry[ids.HOUSEHOLD_SUPPLIER]
+    project_id_supplier = new_entry.get(ids.PROJECT_SUPPLIER)
+    if not project_id_supplier:
         raise ValueError(
             f"update_index: ids.PROJECT_SUPPLIER is required but missing or empty "
-            f"for {ids.HOUSEHOLD_SUPPLIER}='{household_id}'. All mappers must supply it."
+            f"for {ids.HOUSEHOLD_SUPPLIER}='{household_id_supplier}'. "
+            f"All mappers must supply it."
         )
 
-    mask = (
-        (index_df[ids.HOUSEHOLD_SUPPLIER] == household_id)
-        & (index_df[ids.PROJECT_SUPPLIER] == project_id)
-    )
+    household_batch_id = new_entry.get(ids.HOUSEHOLD_BATCH)
+    if household_batch_id is None or pd.isna(household_batch_id):
+        raise ValueError(
+            f"update_index: {ids.HOUSEHOLD_BATCH} is required but missing or "
+            f"empty for {ids.HOUSEHOLD_SUPPLIER}='{household_id_supplier}' in "
+            f"{ids.PROJECT_SUPPLIER}='{project_id_supplier}'. It is the key of "
+            f"the row this entry is for, and of the readings its flags are "
+            f"computed from. run_standard_pipeline returns it; a mapper "
+            f"building its own entry resolves it with "
+            f"household_batch_for_household."
+        )
+    household_batch_id = int(household_batch_id)
+    new_entry[ids.HOUSEHOLD_BATCH] = household_batch_id
 
-    if mask.any():
-        index_df.loc[mask, [ids.HOUSEHOLD, ids.SUPPLIER]] = (
+    if ids.HOUSEHOLD_BATCH not in index_df.columns:
+        index_df[ids.HOUSEHOLD_BATCH] = pd.array(
+            [pd.NA] * len(index_df), dtype="Int64"
+        )
+
+    batch_mask = index_df[ids.HOUSEHOLD_BATCH] == household_batch_id
+    if batch_mask.any():
+        mask = batch_mask
+    else:
+        # The row for this supplier pair that does not yet name its household
+        # batch: written before HuisBatch was synced, or by a mapper that could
+        # not resolve it. Two such rows cannot be told apart; no such row
+        # appends instead.
+        unassigned = (
+            (index_df[ids.HOUSEHOLD_SUPPLIER] == household_id_supplier)
+            & (index_df[ids.PROJECT_SUPPLIER] == project_id_supplier)
+            & index_df[ids.HOUSEHOLD_BATCH].isna()
+        )
+        n_unassigned = int(unassigned.sum())
+        if n_unassigned > 1:
+            raise ValueError(
+                f"update_index: {n_unassigned} index rows for "
+                f"{ids.HOUSEHOLD_SUPPLIER}='{household_id_supplier}' in "
+                f"{ids.PROJECT_SUPPLIER}='{project_id_supplier}' name no "
+                f"{ids.HOUSEHOLD_BATCH}, so the row for {household_batch_id} "
+                f"is ambiguous. Sync HuisBatch so each row names its household "
+                f"batch."
+            )
+        mask = unassigned if n_unassigned == 1 else None
+
+    if mask is not None:
+        index_df.loc[mask, [ids.HOUSEHOLD, ids.HOUSEHOLD_BATCH, ids.SUPPLIER]] = (
             new_entry[ids.HOUSEHOLD],
+            household_batch_id,
             data_provider,
         )
     else:
         new_entry_df = pd.DataFrame([new_entry])
         index_df = pd.concat([index_df, new_entry_df], ignore_index=True)
+
+    index_df[ids.HOUSEHOLD_BATCH] = index_df[ids.HOUSEHOLD_BATCH].astype("Int64")
 
     # Recalculate or add flag columns.
     #
@@ -734,22 +789,31 @@ def update_index(
     # never match under the sharded layout, leaving every household with no
     # household-batch flag and no error to say so.
     #
-    # read_mapped_households resolves either layout and concatenates a
-    # household's several household batches into one frame, which is the grain
-    # these validators expect (they ask questions about a household's whole
-    # series).
+    # ONE household batch, not the household. read_mapped_households prunes
+    # directories by household and then selects the household batch exactly, so
+    # a household delivered twice is not concatenated into one series: these
+    # validators ask whether a series is complete, and a gap between two
+    # deliveries is not a gap in either of them. The flat layout has no
+    # household-batch level, so there the household's one file IS the household
+    # batch and the selection has nothing to narrow.
     household_id = new_entry[ids.HOUSEHOLD]
+    sharded = detect_mapped_format() == "sharded"
     try:
-        df = read_mapped_households([household_id])
+        df = read_mapped_households(
+            [household_id],
+            household_batch_ids=[household_batch_id] if sharded else None,
+        )
     except FileNotFoundError as e:
         raise FileNotFoundError(
-            f"update_index: cannot compute household-batch flags for {ids.HOUSEHOLD} "
-            f"{household_id} -- the household has no mapped data. {e}"
+            f"update_index: cannot compute household-batch flags for "
+            f"{ids.HOUSEHOLD_BATCH} {household_batch_id} ({ids.HOUSEHOLD} "
+            f"{household_id}) -- it has no mapped data. {e}"
         ) from e
 
     # The grid these validators judge against. A row count only means something
-    # against the interval the household is recorded on.
-    grid_minutes = grid_minutes_for_household(household_id)
+    # against the interval the household batch is recorded on, and each
+    # household batch declares its own.
+    grid_minutes = grid_minutes_for_household_batch(household_batch_id)
 
     for flag, condition in dataset_flag_conditions.items():
         kwargs = supported_kwargs(condition, grid_minutes=grid_minutes)
@@ -766,17 +830,17 @@ def update_index(
         # stopping the run (ADR-012).
         try:
             validation_result = condition(df, **kwargs)
-            index_df.loc[index_df[ids.HOUSEHOLD] == household_id, flag] = (
-                validation_result
-            )
+            index_df.loc[
+                index_df[ids.HOUSEHOLD_BATCH] == household_batch_id, flag
+            ] = validation_result
         except (ValueError, ArithmeticError) as e:
             logging.error(
-                f"Error validating with {flag} for household "
-                f"{household_id}: {e}",
+                f"Error validating with {flag} for {ids.HOUSEHOLD_BATCH} "
+                f"{household_batch_id}: {e}",
                 exc_info=True,
             )
             index_df.loc[
-                index_df[ids.HOUSEHOLD] == household_id,
+                index_df[ids.HOUSEHOLD_BATCH] == household_batch_id,
                 flag,
             ] = pd.NA
 
@@ -1316,11 +1380,39 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     # from the household: a household may be delivered as more than one
     # household batch, and the mapped artifacts are already keyed on the synced id
     # (household_batch_for_household is what the mappers resolve it through).
-    index_df[ids.HOUSEHOLD_BATCH] = (
+    synced_batch = (
         merged[ids.HOUSEHOLD_BATCH].astype("Int64")
         if ids.HOUSEHOLD_BATCH in merged.columns
         else pd.array([pd.NA] * n, dtype="Int64")
     )
+    # Two sources name the household batch: the synced table above, and what
+    # update_index wrote from the entry -- the id the shard was actually written
+    # under. A disagreement means a shard registered as one household batch and
+    # written as another, which no later read can reconcile, so it stops here
+    # rather than one source silently winning.
+    if ids.HOUSEHOLD_BATCH in index_df.columns:
+        written = index_df[ids.HOUSEHOLD_BATCH].astype("Int64").reset_index(drop=True)
+        synced = pd.Series(synced_batch).reset_index(drop=True)
+        disagrees = written.notna() & synced.notna() & (written != synced)
+        if disagrees.any():
+            rows = index_df.reset_index(drop=True).loc[disagrees, ids.HOUSEHOLD]
+            pairs = ", ".join(
+                f"{ids.HOUSEHOLD} {int(household)}: written "
+                f"{int(written[i])}, synced {int(synced[i])}"
+                for i, household in rows.items()
+            )
+            raise ValueError(
+                f"[save_index_to_parquet] {int(disagrees.sum())} row(s) name a "
+                f"different {ids.HOUSEHOLD_BATCH} than the synced HuisBatch "
+                f"table does ({pairs}). The shard was written under one id and "
+                f"is registered under another. Check the data model: sync "
+                f"HuisBatch, or re-map under the synced id."
+            )
+        # Agreed, or only one source has it. A row the synced table does not
+        # reach keeps what was written for it; a row nothing wrote stays absent.
+        index_df[ids.HOUSEHOLD_BATCH] = synced.fillna(written).array
+    else:
+        index_df[ids.HOUSEHOLD_BATCH] = synced_batch
     index_df[ids.BATCH] = (
         merged[ids.BATCH].astype("Int64")
         if ids.BATCH in merged.columns
@@ -1515,6 +1607,33 @@ def households_of_household_batches(household_batch_ids) -> list:
         index_df[ids.HOUSEHOLD_BATCH].isin(wanted), ids.HOUSEHOLD
     ]
     return sorted(int(household) for household in match.dropna().unique())
+
+
+def household_batches_of_households(household_ids) -> dict:
+    """The household batches each given household was delivered as.
+
+    From the index, which is the only place the two are related, as
+    ``{household: [household batch, ...]}``, each list sorted. The
+    inverse of :func:`households_of_household_batches`, for a caller that
+    starts from a household -- an operator naming one on a command line, say --
+    and has to reach the key.
+
+    A household the index does not hold is absent from the result rather than
+    mapped to an empty list, so a caller can tell "not in the index" from
+    "in the index with no household batch named".
+    """
+    wanted = {int(household_id) for household_id in household_ids}
+    index_df, _ = read_index()
+    rows = index_df.loc[
+        index_df[ids.HOUSEHOLD].isin(wanted),
+        [ids.HOUSEHOLD, ids.HOUSEHOLD_BATCH],
+    ].dropna()
+    found: dict = {}
+    for household, household_batch in zip(
+        rows[ids.HOUSEHOLD], rows[ids.HOUSEHOLD_BATCH]
+    ):
+        found.setdefault(int(household), set()).add(int(household_batch))
+    return {household: sorted(batches) for household, batches in found.items()}
 
 
 def get_mapped_household_batch(household_batch_id: int) -> pd.DataFrame:

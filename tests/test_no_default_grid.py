@@ -28,8 +28,8 @@ from etdmap.mapping_helpers import (
 from etdmap.testing import (
     PAIRS_EMPTY,
     household_batch_frame,
-    household_batch_of,
     household_batch_table_frame,
+    one_to_one_test_household_batch_of,
 )
 
 GRID = 5
@@ -39,7 +39,7 @@ COL = "ElektriciteitsgebruikBoilervat"
 #: per household batch, so each one is derived from its household rather than stated
 #: beside it.
 _HOUSEHOLD_BATCHES = {
-    household_id: household_batch_of(household_id)
+    household_id: one_to_one_test_household_batch_of(household_id)
     for household_id in (1, 2)
 }
 

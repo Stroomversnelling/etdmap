@@ -101,8 +101,7 @@ def test_the_key_to_write_is_one_column(model):
     keyed = model["keys"]["HOUSEHOLD_BATCH"]
 
     assert keyed["write"] == ["HOUSEHOLD_BATCH"]
-    assert keyed["surrogate"] == "HOUSEHOLD_BATCH"
-    assert sorted(keyed["natural_key"]) == ["BATCH", "HOUSEHOLD", "PROJECT"]
+    assert sorted(keyed["surrogate_for"]) == ["BATCH", "HOUSEHOLD", "PROJECT"]
     # Every forbidden key is a LIST of names, because the check that reads this
     # compares it against the key a groupby or a merge was given.
     assert all(isinstance(key, list) for key in keyed["never_write"])

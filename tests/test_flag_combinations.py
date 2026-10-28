@@ -32,7 +32,7 @@ import pytest
 import etdmap
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import mark_delivered, run_standard_pipeline
-from etdmap.testing import cadence_sidecar, household_batch_of
+from etdmap.testing import cadence_sidecar, one_to_one_test_household_batch_of
 
 GRID = 5
 N = 12
@@ -137,7 +137,7 @@ def mapped(tmp_path_factory):
         run_standard_pipeline(
             frame,
             household_id=household_id,
-            household_batch_id=household_batch_of(household_id),
+            household_batch_id=one_to_one_test_household_batch_of(household_id),
             household_id_supplier=f"H{household_id}",
             mapped_folder_path=folder,
             grid_minutes=GRID,

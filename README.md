@@ -330,7 +330,7 @@ reports when it runs. No cadence can be measured off them, so the mapping's
 Every other column reports on every row.
 
 The shape decides which behaviours a run can reach. A project below
-`etdtransform.presence.MIN_ELIGIBLE_HOUSEHOLDS` publishes no average; a span
+`etdtransform.presence.MIN_ELIGIBLE_HOUSEHOLD_BATCHES` publishes no average; a span
 shorter than an interval gives that interval no slot. State the shape a test
 needs rather than taking the default. At the default span the dataset does not
 satisfy the checks written against a production year of data -- see

@@ -22,8 +22,8 @@ from etdmap.mapping_helpers import assert_no_delivered_in_declared_absent
 from etdmap.testing import (
     declare_synthetic_model,
     household_batch_frame,
-    household_of_batch,
     index_frame,
+    one_to_one_test_household_of_household_batch,
 )
 
 RADIATOR = "ElektriciteitsgebruikRadiator"
@@ -233,7 +233,7 @@ class TestEveryColumnOfTheDeviceFalsifiesTheDeclaration:
 #: the first describes.
 HOUSEHOLD_BATCH_ID = 1001
 SECOND_HOUSEHOLD_BATCH = 2001
-HOUSEHOLD = household_of_batch(HOUSEHOLD_BATCH_ID)
+HOUSEHOLD = one_to_one_test_household_of_household_batch(HOUSEHOLD_BATCH_ID)
 
 #: The supplier and project the raise has to name beside the household batch, so the
 #: declaration can be found and corrected in Grist, and the delivery batch it
@@ -340,7 +340,7 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
                 {model.device},
                 # The household the second household batch belongs to, which the index
                 # written above does not cover.
-                household_id=household_of_batch(SECOND_HOUSEHOLD_BATCH),
+                household_id=one_to_one_test_household_of_household_batch(SECOND_HOUSEHOLD_BATCH),
             )
 
     def test_without_a_household_id_the_message_is_unchanged(self, model):

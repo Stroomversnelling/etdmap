@@ -26,7 +26,7 @@ from etdmap.record_validators import (
     validate_thresholds_combined,
 )
 from etdmap.storage import mapped_household_paths
-from etdmap.testing import household_batch_of, supplier_label
+from etdmap.testing import one_to_one_test_household_batch_of, supplier_label
 
 #: A cumulative variable whose interval column carries a '5-minute' bound.
 CUM = "ElektriciteitNetgebruikHoog"
@@ -124,7 +124,7 @@ def _run_pipeline(tmp_path, grid, household_id, steps, household_batch_id=None):
         CUM: cumulative,
     })
     cadence = detect_column_cadence(df, grid_minutes=grid)
-    household_batch = household_batch_id or household_batch_of(household_id)
+    household_batch = household_batch_id or one_to_one_test_household_batch_of(household_id)
     run_standard_pipeline(
         df, household_id=household_id,
         household_batch_id=household_batch,

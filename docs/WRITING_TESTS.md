@@ -75,7 +75,7 @@ so say how many: `datasets_frame({1001: {}}, n_rows=2)`.
 
 A frame's two ids are never equal, so code reaching for the household where the
 dataset was meant finds no rows instead of the right ones. Computing an id
-(`household_id + 1000`) defeats that; `household_batch_of` and
+(`household_id + 1000`) defeats that; `one_to_one_test_household_batch_of` and
 `household_of_batch` are the conversion.
 
 **Never restate a schema** when you are BUILDING data. Take the columns and

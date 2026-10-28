@@ -29,7 +29,7 @@ from etdmap.mapping_helpers import (
 )
 from etdmap.testing import (
     cadence_sidecar,
-    household_batch_of,
+    one_to_one_test_household_batch_of,
     sidecar_columns,
     sidecar_frame,
 )
@@ -510,7 +510,7 @@ class TestTheDerivedRowReachesTheSidecar:
                 (LAAG, 60, "declared", 65, 0.9, 2),
             ]),
         )
-        household_batch_id = household_batch_of(7)
+        household_batch_id = one_to_one_test_household_batch_of(7)
         path = write_column_cadence(
             cadence_to_rows(household_batch_id, table), str(tmp_path)
         )
@@ -579,7 +579,7 @@ class TestSplitsAtDifferentCadencesRaise:
             with pytest.raises(ValueError, match="different"):
                 run_standard_pipeline(
                     df, household_id=household_id,
-                    household_batch_id=household_batch_of(household_id),
+                    household_batch_id=one_to_one_test_household_batch_of(household_id),
                     household_id_supplier=f"H{household_id}",
                     mapped_folder_path=tmp_path, grid_minutes=GRID,
                     cadence=_cadence([
@@ -618,7 +618,7 @@ class TestThePipelineHandsTheDerivedRowBack:
             return run_standard_pipeline(
                 df,
                 household_id=household_id,
-                household_batch_id=household_batch_of(household_id),
+                household_batch_id=one_to_one_test_household_batch_of(household_id),
                 household_id_supplier=f"H{household_id}",
                 mapped_folder_path=tmp_path,
                 grid_minutes=GRID,
@@ -708,7 +708,7 @@ class TestTheDerivedRowIsWhatGivesTheRootItsLattice:
         try:
             run_standard_pipeline(
                 df, household_id=household_id,
-                household_batch_id=household_batch_of(household_id),
+                household_batch_id=one_to_one_test_household_batch_of(household_id),
                 household_id_supplier=f"H{household_id}",
                 mapped_folder_path=tmp_path, grid_minutes=GRID, cadence=cadence,
             )

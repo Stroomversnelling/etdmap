@@ -11,7 +11,11 @@ import pandas as pd
 from etdmap import ids
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import apply_threshold_to_col
-from etdmap.testing import PAIRS_EMPTY, household_batches_frame, household_of_batch
+from etdmap.testing import (
+    PAIRS_EMPTY,
+    household_batches_frame,
+    one_to_one_test_household_of_household_batch,
+)
 
 COL = "ElektriciteitNetgebruik"
 DIFF = "ElektriciteitNetgebruikDiff"
@@ -117,7 +121,7 @@ class TestFirstZeroMarksTheSeed:
                 HOUSEHOLD_BATCH_ID: {COL: [10.0, 10.5]},
                 SECOND_HOUSEHOLD_BATCH: {COL: [20.0, 20.5]},
             },
-            household_of={SECOND_HOUSEHOLD_BATCH: household_of_batch(HOUSEHOLD_BATCH_ID)},
+            household_of={SECOND_HOUSEHOLD_BATCH: one_to_one_test_household_of_household_batch(HOUSEHOLD_BATCH_ID)},
             start="2026-01-01",
             tz=None,
         )

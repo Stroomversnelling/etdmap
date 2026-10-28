@@ -24,8 +24,8 @@ from etdmap.testing import (
     PAIRS_EMPTY,
     cadence_sidecar,
     household_batch_frame,
-    household_batch_of,
     household_batches_frame,
+    one_to_one_test_household_batch_of,
 )
 
 #: The grid these frames are built on and declared to sit on. Passed
@@ -37,7 +37,7 @@ MAX_PER_INTERVAL = 100.0
 
 #: The household batch these frames describe. It is the key every sidecar
 #: row is recorded under, and the household it belongs to is derived from it.
-HOUSEHOLD_BATCH_ID = household_batch_of(1)
+HOUSEHOLD_BATCH_ID = one_to_one_test_household_batch_of(1)
 
 
 def _measured_cadence(df):

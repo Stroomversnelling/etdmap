@@ -44,7 +44,7 @@ from etdmap.mapping_helpers import (
     threshold_stats_to_rows,
     write_threshold_removals,
 )
-from etdmap.testing import household_batch_of, household_batches_frame
+from etdmap.testing import household_batches_frame, one_to_one_test_household_batch_of
 
 #: The grid these frames are built on and declared to sit on. Passed
 #: explicitly: there is no default grid.
@@ -627,7 +627,7 @@ class TestRunStandardPipeline:
         with pytest.raises(KeyError, match="ReadingDate"):
             run_standard_pipeline(
                 df, household_id=1,
-                household_batch_id=household_batch_of(1),
+                household_batch_id=one_to_one_test_household_batch_of(1),
                 household_id_supplier="HuisA",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
             )
@@ -637,7 +637,7 @@ class TestRunStandardPipeline:
         with pytest.raises((ValueError, Exception)):
             run_standard_pipeline(
                 df, household_id=1,
-                household_batch_id=household_batch_of(1),
+                household_batch_id=one_to_one_test_household_batch_of(1),
                 household_id_supplier="HuisA",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
             )
@@ -647,7 +647,7 @@ class TestRunStandardPipeline:
         df = _minimal_pipeline_df(n=12)
         result = run_standard_pipeline(
             df, household_id=42,
-            household_batch_id=household_batch_of(42),
+            household_batch_id=one_to_one_test_household_batch_of(42),
             household_id_supplier="HuisX",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df),
@@ -657,7 +657,14 @@ class TestRunStandardPipeline:
         # the index entry, and nothing else may reach the index.
         result.pop("_validation_summary", None)
         result.pop("_cadence", None)
-        assert result == {ids.HOUSEHOLD_SUPPLIER: "HuisX", ids.HOUSEHOLD: 42}
+        # The household batch is part of the entry: update_index matches the
+        # index row on it, and the household alone matches every household
+        # batch of the dwelling.
+        assert result == {
+            ids.HOUSEHOLD_SUPPLIER: "HuisX",
+            ids.HOUSEHOLD: 42,
+            ids.HOUSEHOLD_BATCH: one_to_one_test_household_batch_of(42),
+        }
         out_file = tmp_path / "household_42_table.parquet"
         assert out_file.exists()
 
@@ -667,7 +674,7 @@ class TestRunStandardPipeline:
         df = df.iloc[::-1].reset_index(drop=True)  # reverse the order
         run_standard_pipeline(
             df, household_id=1,
-            household_batch_id=household_batch_of(1),
+            household_batch_id=one_to_one_test_household_batch_of(1),
             household_id_supplier="H",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df),
@@ -680,7 +687,7 @@ class TestRunStandardPipeline:
         df = _minimal_pipeline_df(n=6)
         run_standard_pipeline(
             df, household_id=2,
-            household_batch_id=household_batch_of(2),
+            household_batch_id=one_to_one_test_household_batch_of(2),
             household_id_supplier="H2",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df),
@@ -1315,8 +1322,8 @@ class TestThresholdStatsToRows:
     (from apply_thresholds_to_df(return_stats=True)) into sidecar rows."""
 
     def test_empty_or_none_yields_no_rows(self):
-        assert threshold_stats_to_rows(household_batch_of(1), {}) == []
-        assert threshold_stats_to_rows(household_batch_of(1), None) == []
+        assert threshold_stats_to_rows(one_to_one_test_household_batch_of(1), {}) == []
+        assert threshold_stats_to_rows(one_to_one_test_household_batch_of(1), None) == []
 
     def test_one_row_per_affected_column(self):
         stats = {
@@ -1335,7 +1342,7 @@ class TestThresholdStatsToRows:
                 "lower_bound": pd.NA, "upper_bound": 35.0,
             },
         }
-        household_batch_id = household_batch_of(42)
+        household_batch_id = one_to_one_test_household_batch_of(42)
         rows = threshold_stats_to_rows(household_batch_id, stats)
         by_col = {r["column"]: r for r in rows}
         assert len(rows) == 2
@@ -1368,7 +1375,7 @@ class TestThresholdStatsToRows:
                 "cadence_minutes": 60,
             },
         }
-        rows = threshold_stats_to_rows(household_batch_of(7), stats)
+        rows = threshold_stats_to_rows(one_to_one_test_household_batch_of(7), stats)
         assert rows[0]["cadence_minutes"] == 60
 
     def test_a_column_with_no_measured_cadence_carries_na(self):
@@ -1384,7 +1391,7 @@ class TestThresholdStatsToRows:
                 "cadence_minutes": pd.NA,
             },
         }
-        rows = threshold_stats_to_rows(household_batch_of(7), stats)
+        rows = threshold_stats_to_rows(one_to_one_test_household_batch_of(7), stats)
         assert pd.isna(rows[0]["cadence_minutes"])
 
 
@@ -1744,7 +1751,7 @@ class TestGridCollisionsAreCounted:
 
     def test_rows_carry_the_household_and_column(self):
         from etdmap.mapping_helpers import grid_collisions_to_rows
-        household_batch_id = household_batch_of(42)
+        household_batch_id = one_to_one_test_household_batch_of(42)
         rows = grid_collisions_to_rows(household_batch_id, {
             self.COL: {
                 "n_discarded": 3, "n_slots_contested": 2, "max_per_slot": 3,
@@ -1756,15 +1763,15 @@ class TestGridCollisionsAreCounted:
 
     def test_empty_or_none_yields_no_rows(self):
         from etdmap.mapping_helpers import grid_collisions_to_rows
-        assert grid_collisions_to_rows(household_batch_of(1), {}) == []
-        assert grid_collisions_to_rows(household_batch_of(1), None) == []
+        assert grid_collisions_to_rows(one_to_one_test_household_batch_of(1), {}) == []
+        assert grid_collisions_to_rows(one_to_one_test_household_batch_of(1), None) == []
 
     def test_the_sidecar_is_typed(self, tmp_path):
         # Plain dicts of untyped Python values: the writer's own cast is the
         # subject, so an already-typed frame would assert nothing.
         from etdmap.mapping_helpers import write_grid_collisions
         rows = [{
-            ids.HOUSEHOLD_BATCH: household_batch_of(1), "column": self.COL,
+            ids.HOUSEHOLD_BATCH: one_to_one_test_household_batch_of(1), "column": self.COL,
             "n_discarded": 2, "n_slots_contested": 1, "max_per_slot": 3,
         }]
         path = write_grid_collisions(rows, str(tmp_path))
@@ -1946,10 +1953,10 @@ class TestNegativeDiffMagnitudesAreRecorded:
         _, stats = add_diff_columns(
             household_batches_frame(
                 {
-                    household_batch_of(1): {
+                    one_to_one_test_household_batch_of(1): {
                         self.COL: [100.0, 110.0, 105.0, 120.0],
                     },
-                    household_batch_of(2): {
+                    one_to_one_test_household_batch_of(2): {
                         self.COL: [200.0, 210.0, 190.0, 230.0],
                     },
                 },
@@ -1965,7 +1972,7 @@ class TestNegativeDiffMagnitudesAreRecorded:
 
     def test_rows_carry_the_household_and_column(self):
         from etdmap.mapping_helpers import negative_diff_stats_to_rows
-        household_batch_id = household_batch_of(42)
+        household_batch_id = one_to_one_test_household_batch_of(42)
         rows = negative_diff_stats_to_rows(household_batch_id, {
             self.COL: {
                 "n_dips": 1, "n_readings_removed": 1,
@@ -1980,15 +1987,15 @@ class TestNegativeDiffMagnitudesAreRecorded:
 
     def test_empty_or_none_yields_no_rows(self):
         from etdmap.mapping_helpers import negative_diff_stats_to_rows
-        assert negative_diff_stats_to_rows(household_batch_of(1), {}) == []
-        assert negative_diff_stats_to_rows(household_batch_of(1), None) == []
+        assert negative_diff_stats_to_rows(one_to_one_test_household_batch_of(1), {}) == []
+        assert negative_diff_stats_to_rows(one_to_one_test_household_batch_of(1), None) == []
 
     def test_the_sidecar_is_typed(self, tmp_path):
         # Plain dicts of untyped Python values: the writer's own cast is the
         # subject, so an already-typed frame would assert nothing.
         from etdmap.mapping_helpers import write_negative_diff_removals
         rows = [{
-            ids.HOUSEHOLD_BATCH: household_batch_of(1), "column": self.COL,
+            ids.HOUSEHOLD_BATCH: one_to_one_test_household_batch_of(1), "column": self.COL,
             "n_dips": 2, "n_readings_removed": 2,
             "sum_dip_magnitude": -25.0, "min_dip": -20.0, "max_dip": -5.0,
             "n_jump_back": 1, "n_repeat_negative": 0, "n_meter_reset": 1,
@@ -2037,13 +2044,13 @@ class TestWriteThresholdRemovals:
         # cadence_minutes: both the writer's cast and its filling of a column
         # the rows omit are the subject here.
         rows = [
-            {ids.HOUSEHOLD_BATCH: household_batch_of(1),
+            {ids.HOUSEHOLD_BATCH: one_to_one_test_household_batch_of(1),
              "column": "A", "n_below": 2, "n_above": 0,
              "sum_removed_negative": -1.5, "sum_removed_positive": 0.0,
              "balance_removed": -1.5,
              "min_removed": -1.0, "max_removed": -0.5,
              "lower_bound": 0.0, "upper_bound": pd.NA},
-            {ids.HOUSEHOLD_BATCH: household_batch_of(1),
+            {ids.HOUSEHOLD_BATCH: one_to_one_test_household_batch_of(1),
              "column": "B", "n_below": 0, "n_above": 4,
              "sum_removed_negative": 0.0, "sum_removed_positive": 600.0,
              "balance_removed": 600.0,
@@ -2158,7 +2165,7 @@ class TestPipelineDropsUnmappedColumns:
 
         run_standard_pipeline(
             df, household_id=77,
-            household_batch_id=household_batch_of(77),
+            household_batch_id=one_to_one_test_household_batch_of(77),
             household_id_supplier="H77",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df))

@@ -23,12 +23,12 @@ import pytest
 from etdmap import ids
 from etdmap.data_model import cumulative_columns
 from etdmap.flags import MappingFlag, flag_column
-from etdmap.testing import household_batch_of
 from etdmap.mapping_helpers import (
     _detect_negative_diff_cases,
     add_diff_columns,
     validate_cumulative_variables,
 )
+from etdmap.testing import one_to_one_test_household_batch_of
 
 COL = cumulative_columns[0]
 
@@ -686,7 +686,7 @@ class TestGroupedInputIsCorrectedPerHousehold:
             rng = random.Random(seed)
             frame = _frame(_generate(rng, 24))
             frame[ids.HOUSEHOLD] = household
-            frame[ids.HOUSEHOLD_BATCH] = household_batch_of(household)
+            frame[ids.HOUSEHOLD_BATCH] = one_to_one_test_household_batch_of(household)
             frames.append(frame)
         return pd.concat(frames, ignore_index=True)
 

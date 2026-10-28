@@ -69,11 +69,28 @@ relationships:
   # Projects and delivery batches relate only through the leaf: a project's
   # households may arrive in more than one delivery.
   PROJECT <-> BATCH: many_to_many_through HOUSEHOLD_BATCH
+  # Where a household's second household batch can be, given at_most_one: a
+  # household repeats only between delivery batches, never within one, and the
+  # repeat carries its own project.
+  repeats_only_between: BATCH
 
 keys:
   HOUSEHOLD_BATCH:
-    surrogate: HOUSEHOLD_BATCH          # one column, unique in the index
-    natural_key: [HOUSEHOLD, PROJECT, BATCH]
+    surrogate_for: [HOUSEHOLD, PROJECT, BATCH]   # one column for the natural key
+    cardinality: see relationships above -- stated once, there
+    invariants:
+      permanent:        # true by definition; code may rely on these
+        - a household batch has exactly one household, project and delivery batch
+        - a household occurs at most once within a project
+        - a household occurs at most once within a delivery batch
+        - a household repeats only between delivery batches, never within one
+      today_only:       # true of today's data; code may not rely on these
+        - every household has exactly one household batch
+    does_not_license:   # what the today_only facts do not permit
+      - keying, grouping, sorting or merging on HOUSEHOLD
+      - collapsing a per-household-batch decision to the household
+      - a 1:1 guard standing in for handling two household batches
+      - reading a household's rows where one household batch's were meant
     write: [HOUSEHOLD_BATCH]
     never_write:
       - [HOUSEHOLD]                     # alone: pools a dwelling's datasets
@@ -107,6 +124,15 @@ prose:
   BATCH:
     say: delivery batch
     never: [bare "batch"]
+  HOUSEHOLD:
+    say: household
+    never:
+      - house
+      - household where the household batch is meant
+    examples_of_the_mistake:    # each of these is a household batch's property
+      - per-household availability
+      - the household's cadence
+      - one row per household
   batch_rule: >
     the word "batch" never stands alone. It carries "household" or "delivery"
     in front of it, in prose and in identifiers alike: household_batch_*,

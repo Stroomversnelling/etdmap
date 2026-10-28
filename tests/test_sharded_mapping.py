@@ -216,8 +216,9 @@ class TestDatasetValidatorsReadBothLayouts:
 
     HOUSEHOLD_ID = 42
     HOUSEHOLD_BATCH_ID = 9
-    #: update_index matches an existing row on the supplier-side pair, so the
-    #: index and the entry have to name the same project here.
+    #: update_index matches an existing row on the household batch, so the index
+    #: and the entry have to name the same one. The project is carried because
+    #: update_index requires it of every entry.
     PROJECT_SUPPLIER = "P1"
 
     def _index_df(self):
@@ -259,6 +260,7 @@ class TestDatasetValidatorsReadBothLayouts:
             ids.HOUSEHOLD_SUPPLIER: supplier_label(self.HOUSEHOLD_ID),
             ids.PROJECT_SUPPLIER: self.PROJECT_SUPPLIER,
             ids.HOUSEHOLD: self.HOUSEHOLD_ID,
+            ids.HOUSEHOLD_BATCH: self.HOUSEHOLD_BATCH_ID,
         }
         return update_index(
             self._index_df(), entry, data_provider="etdmap", save=False
@@ -304,10 +306,150 @@ class TestDatasetValidatorsReadBothLayouts:
             ids.HOUSEHOLD_SUPPLIER: supplier_label(self.HOUSEHOLD_ID),
             ids.PROJECT_SUPPLIER: self.PROJECT_SUPPLIER,
             ids.HOUSEHOLD: self.HOUSEHOLD_ID,
+            ids.HOUSEHOLD_BATCH: self.HOUSEHOLD_BATCH_ID,
         }
         with pytest.raises(FileNotFoundError, match=str(self.HOUSEHOLD_ID)):
             update_index(
                 self._index_df(), entry, data_provider="etdmap", save=False
+            )
+
+
+class TestTwoHouseholdBatchesOfOneHousehold:
+    """Each household batch's flags come from its own readings.
+
+    update_index used to read the HOUSEHOLD and judge its household batches
+    concatenated, so the interval between two deliveries read as a gap in the
+    data and both index rows carried the one pooled verdict. Each frame below
+    is contiguous on the declared grid and the two are six months apart, which
+    is what lets the test tell the two keys apart.
+
+    The second household batch is a second delivery of the same household, so
+    it carries its own project and its own delivery batch.
+    """
+
+    HOUSEHOLD_ID = 7
+    FIRST_BATCH = 701
+    SECOND_BATCH = 702
+    PROJECTS = (1, 2)
+    DELIVERY_BATCHES = (1, 2)
+    GAP_FLAG = "validate_no_readingdate_gap"
+
+    def _contiguous(self, start):
+        dates = pd.date_range(start, periods=12, freq=f"{GRID}min", tz="UTC")
+        return pd.DataFrame({
+            "ReadingDate": dates,
+            "ElektriciteitNetgebruik": pd.array(range(12), dtype="Float64"),
+            "SomeCount": pd.array(range(12), dtype="Int64"),
+        })
+
+    def _household_of(self):
+        return {
+            self.FIRST_BATCH: self.HOUSEHOLD_ID,
+            self.SECOND_BATCH: self.HOUSEHOLD_ID,
+        }
+
+    def _index_df(self):
+        return index_frame(
+            [self.FIRST_BATCH, self.SECOND_BATCH],
+            household_of=self._household_of(),
+            **{
+                ids.PROJECT: self.PROJECTS,
+                ids.PROJECT_SUPPLIER: [f"P{p}" for p in self.PROJECTS],
+                ids.BATCH: self.DELIVERY_BATCHES,
+            },
+        )
+
+    def test_the_fixture_tells_the_two_keys_apart(self):
+        """Anchor: pooled, these readings DO carry the gap verdict.
+
+        Without this the per-household-batch assertions below would also pass
+        against a pooled read of two contiguous, adjacent periods.
+        """
+        from etdmap.dataset_validators import validate_no_readingdate_gap
+
+        pooled = pd.concat(
+            [self._contiguous("2024-01-01"), self._contiguous("2024-07-01")],
+            ignore_index=True,
+        )
+        assert validate_no_readingdate_gap(pooled) is False
+        assert validate_no_readingdate_gap(self._contiguous("2024-01-01")) is True
+
+    def test_each_household_batch_is_flagged_on_its_own_readings(
+        self, tmp_path, monkeypatch
+    ):
+        from etdmap.index_helpers import update_index
+        from etdmap.mapping_helpers import save_mapped_household
+
+        batch_table = tmp_path / "huisbatch.csv"
+        household_batch_table_frame(
+            [self.FIRST_BATCH, self.SECOND_BATCH],
+            household_of=self._household_of(),
+            grid=f"{GRID}min",
+            **{
+                ids.PROJECT: self.PROJECTS,
+                ids.BATCH: self.DELIVERY_BATCHES,
+            },
+        ).to_csv(batch_table, index=False)
+        monkeypatch.setattr(
+            etdmap.options, "household_batch_csv_path", str(batch_table)
+        )
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+
+        with _output_format("sharded"):
+            save_mapped_household(
+                self._contiguous("2024-01-01"),
+                self.HOUSEHOLD_ID, self.FIRST_BATCH, tmp_path,
+            )
+            save_mapped_household(
+                self._contiguous("2024-07-01"),
+                self.HOUSEHOLD_ID, self.SECOND_BATCH, tmp_path,
+            )
+
+        index_df = self._index_df()
+        # The supplier-side ids as the index itself states them, so the entries
+        # do not restate the derivation index_frame applies.
+        entries = index_df[
+            [ids.HOUSEHOLD_BATCH, ids.HOUSEHOLD_SUPPLIER, ids.PROJECT_SUPPLIER]
+        ].to_dict("records")
+
+        for entry in entries:
+            index_df = update_index(
+                index_df,
+                {**entry, ids.HOUSEHOLD: self.HOUSEHOLD_ID},
+                data_provider="etdmap",
+                save=False,
+            )
+
+        assert len(index_df) == 2, (
+            "one household delivered twice is two index rows; update_index "
+            "collapsed them or appended a third"
+        )
+        verdicts = index_df.set_index(ids.HOUSEHOLD_BATCH)[self.GAP_FLAG]
+        assert bool(verdicts.loc[self.FIRST_BATCH]) is True, (
+            "the first household batch is contiguous, so its own readings carry "
+            "no gap -- False is the pooled verdict"
+        )
+        assert bool(verdicts.loc[self.SECOND_BATCH]) is True, (
+            "the second household batch is contiguous, so its own readings "
+            "carry no gap -- False is the pooled verdict"
+        )
+
+    def test_an_entry_naming_no_household_batch_raises(self, tmp_path, monkeypatch):
+        """The household alone cannot say which row an entry is for."""
+        from etdmap.index_helpers import update_index
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        index_df = self._index_df()
+        with pytest.raises(ValueError, match=ids.HOUSEHOLD_BATCH):
+            update_index(
+                index_df,
+                {
+                    ids.HOUSEHOLD_SUPPLIER: index_df[ids.HOUSEHOLD_SUPPLIER].iloc[0],
+                    ids.PROJECT_SUPPLIER: index_df[ids.PROJECT_SUPPLIER].iloc[0],
+                    ids.HOUSEHOLD: self.HOUSEHOLD_ID,
+                },
+                data_provider="etdmap",
+                save=False,
             )
 
 

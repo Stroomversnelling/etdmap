@@ -37,16 +37,16 @@ __all__ = [
     "generate_mapped_dataset",
     "generate_raw_dataset",
     "household_batch_frame",
-    "household_batch_of",
     "household_batch_table_frame",
     "household_batches_frame",
-    "household_of_batch",
     "index_frame",
     "installed_fingerprint",
     "interval_draw_range",
     "metadata_set",
     "model_row",
     "model_rows",
+    "one_to_one_test_household_batch_of",
+    "one_to_one_test_household_of_household_batch",
     "project_mapping_frame",
     "sidecar_columns",
     "sidecar_frame",
@@ -178,16 +178,17 @@ DEFAULT_GRID = "5min"
 DEFAULT_BASE_DATE = pd.Timestamp("2023-01-01")
 
 
-def household_batch_of(household_id: int) -> int:
+def one_to_one_test_household_batch_of(household_id: int) -> int:
     """The household batch id a test frame gives *household_id*."""
     return int(household_id) + HOUSEHOLD_BATCH_OFFSET
 
 
-def household_of_batch(household_batch_id: int) -> int:
+def one_to_one_test_household_of_household_batch(household_batch_id: int) -> int:
     """The household a test frame's *household_batch_id* belongs to.
 
-    The inverse of :func:`household_batch_of`, for a caller that names the
-    household batch -- which is the key -- and wants the household it rolls up to.
+    The inverse of :func:`one_to_one_test_household_batch_of`, for a caller
+    that names the household batch -- which is the key -- and wants the
+    household it rolls up to.
     """
     return int(household_batch_id) - HOUSEHOLD_BATCH_OFFSET
 
@@ -311,7 +312,7 @@ def household_batches_frame(
     counterpart is completed as :func:`household_batch_frame` does, unless *pairs* is
     cleared.
 
-    The household each household batch rolls up to is :func:`household_of_batch` unless
+    The household each household batch rolls up to is :func:`one_to_one_test_household_of_household_batch` unless
     *household_of* names it. Two household batches of ONE household is therefore
     ``{1001: [...], 2001: [...]}`` with ``household_of={2001: 1}``.
 
@@ -327,7 +328,7 @@ def household_batches_frame(
     parts = []
     for household_batch_id, value in per_household_batch.items():
         household_id = (household_of or {}).get(
-            household_batch_id, household_of_batch(household_batch_id)
+            household_batch_id, one_to_one_test_household_of_household_batch(household_batch_id)
         )
         if not isinstance(value, dict) and not names:
             raise ValueError(
@@ -550,7 +551,7 @@ def household_batch_table_frame(household_batch_ids, *, household_of=None, proje
     """
     household_batches = [int(value) for value in household_batch_ids]
     households = [
-        int((household_of or {}).get(household_batch, household_of_batch(household_batch)))
+        int((household_of or {}).get(household_batch, one_to_one_test_household_of_household_batch(household_batch)))
         for household_batch in household_batches
     ]
     n = len(household_batches)
@@ -693,7 +694,7 @@ def index_frame(household_batch_ids, *, household_of=None, project=1,
     """The index: one row per household batch.
 
     The index is an index OF household batches, so *household_batch_ids* is
-    its key. Each household batch's household is :func:`household_of_batch` unless
+    its key. Each household batch's household is :func:`one_to_one_test_household_of_household_batch` unless
     *household_of* names it, and the supplier-side ids are derived from the two
     so a test never states a matching pair by hand.
 
@@ -726,7 +727,7 @@ def index_frame(household_batch_ids, *, household_of=None, project=1,
 
     household_batches = [int(value) for value in household_batch_ids]
     households = [
-        int((household_of or {}).get(household_batch, household_of_batch(household_batch)))
+        int((household_of or {}).get(household_batch, one_to_one_test_household_of_household_batch(household_batch)))
         for household_batch in household_batches
     ]
     n = len(household_batches)
@@ -1296,8 +1297,8 @@ def _process_data_fixture_file(
     The pipeline writes the household batch's file, so nothing here names its
     path.
     """
-    # The household batch being mapped. It keys the output shard and every sidecar row;
-    # the index entry the pipeline returns is the household's.
+    # The household batch being mapped. It keys the output shard, every sidecar
+    # row, and the index entry the pipeline returns.
     household_batch_id = index_helpers.household_batch_for_household(
         int(household_id)
     )
