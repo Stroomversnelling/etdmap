@@ -490,14 +490,11 @@ repeating a string, and a rename in the data model is one edit:
 ```python
 from etdmap import ids
 
-df.groupby(ids.DATASET_AXIS)              # one running total per time series
-df[ids.ACCOUNTING_AXIS].nunique()         # how many households
+df.groupby(ids.HOUSEHOLD_BATCH)           # one running total per time series
 ```
 
-`ids.DATASET_AXIS` and `ids.ACCOUNTING_AXIS` carry the same strings as
-`ids.HOUSEHOLD_BATCH` and `ids.HOUSEHOLD`; writing the axis says which question
-the call is asking, so "is this keyed on the right thing?" is a grep rather
-than a judgement per site. `ids.DTYPES` gives each one its nullable dtype.
+`ids.DTYPES` gives each id its nullable dtype, and `ids.ALL` is every id
+column, for telling an id from a measured variable.
 
 **This section is the only place the raw column names are written.** Elsewhere
 -- code, comments, docstrings, messages -- use the `etdmap.ids` names. A

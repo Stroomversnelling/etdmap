@@ -170,13 +170,13 @@ def mapped_household_paths(mapped_folder_path=None, fmt="auto") -> dict:
                 if match is None:
                     raise ValueError(
                         f"Cannot parse HuisIdBSV/HuisBatchIdBSV from shard path "
-                        f"{path!r}; refusing to guess the dataset id."
+                        f"{path!r}; refusing to guess the household batch id."
                     )
                 household_batch_id = int(match.group(2))
                 if household_batch_id in out:
                     raise ValueError(
                         f"{ids.HOUSEHOLD_BATCH} {household_batch_id} has more than "
-                        f"one shard under {base}. A dataset is one shard; two "
+                        f"one shard under {base}. A household batch is one shard; two "
                         f"paths for it means the tree was written twice."
                     )
                 out[household_batch_id] = path

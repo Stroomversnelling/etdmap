@@ -29,16 +29,6 @@ names the only two places it is still a key: the guard whose subject is a
 household with more than one household batch, and the outer level of the shard
 path.
 
-Writing the axis rather than the column
----------------------------------------
-:data:`DATASET_AXIS` holds the same string as :data:`HOUSEHOLD_BATCH` and
-exists so a call site can say that it is working along one series rather than
-naming a column::
-
-    df.groupby(ids.DATASET_AXIS)                 # one running total per series
-
-Written that way, "is this keyed on the right thing?" is a grep rather than a
-judgement per site.
 """
 
 import pandas as pd
@@ -69,11 +59,6 @@ SUPPLIER = "Dataleverancier"
 
 #: The timestamp every time series is ordered by.
 READING_DATE = "ReadingDate"
-
-#: The axis a time series is grouped, ordered, windowed, diffed or accumulated
-#: on. Two household batches of one household are two series, possibly over the
-#: same period, so keying any of those on the household pools them.
-DATASET_AXIS = HOUSEHOLD_BATCH
 
 #: The hive partition keys of the sharded layout, outermost first. The layout
 #: on disk, not a key: a shard holds one household batch, under a directory

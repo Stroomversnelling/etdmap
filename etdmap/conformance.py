@@ -30,15 +30,23 @@ MODEL_FILE = "model.yaml"
 #: The calls that take a KEY, and the keywords each takes it under. The first
 #: positional argument is the key for all but ``merge``, whose first positional
 #: is the frame being joined.
+#:
+#: Both engines are listed. pandas spells it ``groupby`` and ibis spells it
+#: ``group_by``; leaving the lazy spelling out made every ibis keying site in
+#: etdtransform invisible, which is most of them.
 _KEY_CALLS = {
     "groupby": ("by",),
+    "group_by": ("by",),
     "merge": ("on", "left_on", "right_on"),
     "sort_values": ("by",),
+    "order_by": ("by",),
     "drop_duplicates": ("subset",),
+    "distinct": ("on",),
     "set_index": ("keys",),
 }
 _KEY_IN_FIRST_POSITION = frozenset({
-    "groupby", "sort_values", "drop_duplicates", "set_index",
+    "groupby", "group_by", "sort_values", "order_by", "drop_duplicates",
+    "distinct", "set_index",
 })
 
 #: The parsed model, once per process.
@@ -402,7 +410,8 @@ def duplicate_dict_keys(tree, path) -> list:
 
 # ---------------------------------------------------------------------------
 # Prose. The model fixes one name per thing; these find the places that use
-# another. They read docstrings and comments only -- an identifier is code,
+# another. They read docstrings, comments and MESSAGES -- a raise or a log
+# line is read by a person as often as a docstring is. An identifier is code,
 # and a rename is a different job from a rewording.
 # ---------------------------------------------------------------------------
 
@@ -477,6 +486,71 @@ def _is_named_token(line, start, end) -> bool:
     return opens and closes
 
 
+def _message_texts(tree, source) -> list:
+    """``(line, text)`` for every string constant that is NOT a docstring.
+
+    A ``raise``, a ``logging`` call and a warning are read by a person as
+    often as a docstring is, so the naming rules hold there too -- and nothing
+    was looking at them, which is how 49 messages kept saying "dataset".
+
+    f-strings arrive as their literal pieces, which is what the rules apply
+    to: the interpolated values are data.
+
+    A single-word string is skipped. Prose has more than one word, so a lone
+    word is a VALUE or a key -- the ``cadence_source`` value ``'dataset'``
+    among them, which the model allows by name.
+    """
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
+                             ast.ClassDef)):
+            first = node.body[0] if node.body else None
+            if (isinstance(first, ast.Expr)
+                    and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)):
+                docstrings.add(id(first.value))
+    out = []
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and id(node) not in docstrings):
+            if len(node.value.split()) < 2:
+                continue
+            out.append((node.lineno, node.value))
+    return out
+
+
+def _bare_batch_in(text, path, number) -> list:
+    """Findings for a bare "batch" in one piece of text."""
+    found = []
+    for match in _BARE_BATCH.finditer(text):
+        if _is_named_token(text, match.start(), match.end()):
+            continue
+        found.append(Finding(
+            path, number,
+            f"bare {match.group(0)!r}: say \"delivery batch\" or "
+            f"\"household batch\"",
+        ))
+    return found
+
+
+def _bare_dataset_in(text, path, number, allowed) -> list:
+    """Findings for a bare "dataset" in one piece of text."""
+    found = []
+    for match in _BARE_DATASET.finditer(text):
+        if _is_named_token(text, match.start(), match.end()):
+            continue                          # cited, not used in a sentence
+        before = text[:match.start()].rstrip()
+        previous = re.search(r"([\w/-]+)$", before)
+        if previous and previous.group(1).lower() in allowed:
+            continue
+        found.append(Finding(
+            path, number,
+            f"bare {match.group(0)!r}: say which one, or "
+            f"\"household batch dataset\"",
+        ))
+    return found
+
+
 def bare_batch(tree, path, source) -> list:
     """"batch" standing alone where it does not mean the delivery.
 
@@ -485,14 +559,7 @@ def bare_batch(tree, path, source) -> list:
     """
     found = []
     for number, line in sorted(_prose_lines(tree, source).items()):
-        for match in _BARE_BATCH.finditer(line):
-            if _is_named_token(line, match.start(), match.end()):
-                continue
-            found.append(Finding(
-                path, number,
-                f"bare {match.group(0)!r}: say \"delivery batch\" or "
-                f"\"household batch\"",
-            ))
+        found.extend(_bare_batch_in(line, path, number))
     return found
 
 
@@ -507,18 +574,24 @@ def bare_dataset(tree, path, source) -> list:
     allowed = _word_before_dataset()
     found = []
     for number, line in sorted(_prose_lines(tree, source).items()):
-        for match in _BARE_DATASET.finditer(line):
-            if _is_named_token(line, match.start(), match.end()):
-                continue                      # cited, not used in a sentence
-            before = line[:match.start()].rstrip()
-            previous = re.search(r"([\w/-]+)$", before)
-            if previous and previous.group(1).lower() in allowed:
-                continue
-            found.append(Finding(
-                path, number,
-                f"bare {match.group(0)!r}: say which dataset, or "
-                f"\"household batch dataset\"",
-            ))
+        found.extend(_bare_dataset_in(line, path, number, allowed))
+    return found
+
+
+def bare_batch_in_message(tree, path, source) -> list:
+    """The same rule, in a message rather than a docstring."""
+    found = []
+    for number, text in _message_texts(tree, source):
+        found.extend(_bare_batch_in(text, path, number))
+    return found
+
+
+def bare_dataset_in_message(tree, path, source) -> list:
+    """The same rule, in a message rather than a docstring."""
+    allowed = _word_before_dataset()
+    found = []
+    for number, text in _message_texts(tree, source):
+        found.extend(_bare_dataset_in(text, path, number, allowed))
     return found
 
 
@@ -570,6 +643,8 @@ PROSE_CHECKS = {
     "bare_batch": bare_batch,
     "bare_dataset": bare_dataset,
     "raw_id_in_prose": raw_id_in_prose,
+    "bare_batch_in_message": bare_batch_in_message,
+    "bare_dataset_in_message": bare_dataset_in_message,
 }
 
 #: Every check. ``loc_metric`` counts all of them, so a check cannot be added

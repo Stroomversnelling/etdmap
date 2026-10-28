@@ -2685,7 +2685,7 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
         elif ids.HOUSEHOLD in existing.columns:
             raise ValueError(
                 f"{path} is keyed on {ids.HOUSEHOLD}, not on the household "
-                f"batch that is the dataset key. Re-run the mapping to rewrite "
+                f"batch, which is the key. Re-run the mapping to rewrite "
                 f"it, or remove it."
             )
 
@@ -2909,9 +2909,9 @@ def cadence_to_rows(household_batch_id, cadence_df):
     if ids.HOUSEHOLD_BATCH in cadence_df.columns:
         raise ValueError(
             f"cadence_to_rows was given a table that already carries "
-            f"{ids.HOUSEHOLD_BATCH}, so which dataset its rows belong to is "
+            f"{ids.HOUSEHOLD_BATCH}, so which household batch its rows belong to is "
             f"ambiguous. Pass the table detect_column_cadence returns, which "
-            f"names no dataset."
+            f"names no household batch."
         )
     rows = []
     for record in cadence_df.to_dict(orient="records"):

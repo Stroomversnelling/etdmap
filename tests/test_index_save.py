@@ -125,7 +125,8 @@ class TestSingleIndexWrite:
         ))
 
         idx = _read_index(tmp)
-        assert idx.set_index(ids.HOUSEHOLD)["Meenemen"].to_dict() == {1: True, 2: False}
+        assert idx.set_index(ids.HOUSEHOLD_BATCH)["Meenemen"].to_dict() == {
+            _HOUSEHOLD_BATCHES[1]: True, _HOUSEHOLD_BATCHES[2]: False}
         # The household batch id comes from the synced CSV, not from the household: the
         # two differ here, so a derived key would fail this.
         assert sorted(idx[ids.HOUSEHOLD_BATCH]) == [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]]
@@ -157,7 +158,8 @@ class TestSingleIndexWrite:
             [_HOUSEHOLD_BATCHES[1], _HOUSEHOLD_BATCHES[2]], batch_fields=False
         ))
         idx = _read_index(tmp)
-        assert idx.set_index(ids.HOUSEHOLD)["Meenemen"].isna().to_dict() == {1: False, 2: True}
+        assert idx.set_index(ids.HOUSEHOLD_BATCH)["Meenemen"].isna().to_dict() == {
+            _HOUSEHOLD_BATCHES[1]: False, _HOUSEHOLD_BATCHES[2]: True}
 
     def test_pending_household_present_with_na_fields(self, index_options, caplog):
         """No synced HuisBatch row yet: the household is still IN the index
@@ -171,6 +173,9 @@ class TestSingleIndexWrite:
         ))
         idx = _read_index(tmp)
         assert set(int(x) for x in idx[ids.HOUSEHOLD]) == {1, 2, 3}
+        # Keyed on the HOUSEHOLD here, and only here: a pending household has
+        # no synced row, so its household batch id is exactly what is absent.
+        # Keying on it would collapse every pending household into one pd.NA.
         assert idx.set_index(ids.HOUSEHOLD)[ids.BATCH].isna().to_dict() == {
             1: False, 2: True, 3: True}
         warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
@@ -268,7 +273,8 @@ class TestSingleIndexWrite:
             Meenemen=[True, False],
         ))
         idx = _read_index(tmp)
-        assert idx.set_index(ids.HOUSEHOLD)["Meenemen"].to_dict() == {1: True, 2: False}
+        assert idx.set_index(ids.HOUSEHOLD_BATCH)["Meenemen"].to_dict() == {
+            _HOUSEHOLD_BATCHES[1]: True, _HOUSEHOLD_BATCHES[2]: False}
 
     def test_idempotent_rerun(self, index_options):
         tmp = index_options

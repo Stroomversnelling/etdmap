@@ -217,7 +217,7 @@ def household_batch_for_household(household_id):
     rows = table[table[ids.HOUSEHOLD] == household_id]
     if rows.empty:
         raise ValueError(
-            f"{context} is not in the household batch table, so the dataset it "
+            f"{context} is not in the household batch table, so the household batch it "
             f"was delivered as is unknown. Check the data model: sync "
             f"HuisBatch before mapping it."
         )
@@ -226,13 +226,13 @@ def household_batch_for_household(household_id):
     if len(batch_ids) > 1:
         raise HouseBatchOverlapError(
             f"{context} has data in more than one household batch "
-            f"({ids.HOUSEHOLD_BATCH} {batch_ids}), so there is no single dataset to "
+            f"({ids.HOUSEHOLD_BATCH} {batch_ids}), so there is no single household batch to "
             f"return. Name the household batch the caller means."
         )
     if not batch_ids:
         raise ValueError(
             f"{context} has a household batch row carrying no {ids.HOUSEHOLD_BATCH}, "
-            f"so its dataset cannot be identified. Check the data model."
+            f"so it cannot be identified. Check the data model."
         )
     return batch_ids[0]
 
@@ -285,7 +285,7 @@ def grid_minutes_for_household_batch(household_batch_id):
     if len(rows) > 1:
         raise ValueError(
             f"{context} has {len(rows)} rows in the household batch table. A "
-            f"household batch identifies one dataset, so its grid is ambiguous. "
+            f"household batch has one row there, so its grid is ambiguous. "
             f"Check the data model."
         )
 
@@ -743,7 +743,7 @@ def update_index(
         df = read_mapped_households([household_id])
     except FileNotFoundError as e:
         raise FileNotFoundError(
-            f"update_index: cannot compute dataset-level flags for {ids.HOUSEHOLD} "
+            f"update_index: cannot compute household-batch flags for {ids.HOUSEHOLD} "
             f"{household_id} -- the household has no mapped data. {e}"
         ) from e
 

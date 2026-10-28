@@ -48,12 +48,15 @@ class TestTheBatchSyncDescribesTheDataset:
     def test_the_project_of_each_household_matches_the_index(self, generated):
         """Declaring one project for every household would contradict the
         index, which splits them, and nothing downstream would notice."""
-        batch = generated["batch"].set_index(ids.HOUSEHOLD)[ids.PROJECT]
-        index = generated["index"].set_index(ids.HOUSEHOLD)[ids.PROJECT]
+        # Both tables are keyed on the household batch, so the comparison is
+        # too: keying on the household would compare one row of a household
+        # delivered twice against the other.
+        batch = generated["batch"].set_index(ids.HOUSEHOLD_BATCH)[ids.PROJECT]
+        index = generated["index"].set_index(ids.HOUSEHOLD_BATCH)[ids.PROJECT]
 
         assert batch.sort_index().tolist() == index.sort_index().tolist()
         assert index.nunique() > 1, (
-            "the dataset has one project, so this check cannot tell a correct "
+            "the generated dataset has one project, so this check cannot tell a correct "
             "mapping from a constant"
         )
 

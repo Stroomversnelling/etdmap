@@ -331,9 +331,9 @@ def household_batches_frame(
         )
         if not isinstance(value, dict) and not names:
             raise ValueError(
-                f"household_batches_frame: dataset {household_batch_id} was given "
+                f"household_batches_frame: household batch {household_batch_id} was given "
                 f"values with no column to put them in. Name the column as a "
-                f"keyword, or map the dataset to {{column: values}}."
+                f"keyword, or map the household batch to {{column: values}}."
             )
         per_column = (
             dict(value) if isinstance(value, dict)
@@ -383,7 +383,7 @@ def household_batches_frame(
         parts.append(part)
     if not parts:
         raise ValueError(
-            "household_batches_frame: no datasets given, so there is no frame to build. "
+            "household_batches_frame: no household batches given, so there is no frame to build. "
             "Name at least one HuisBatchIdBSV."
         )
     return pd.concat(parts, ignore_index=True)
@@ -577,7 +577,7 @@ def household_batch_table_frame(household_batch_ids, *, household_of=None, proje
     unknown = [name for name in overrides if name not in built]
     if unknown:
         raise ValueError(
-            f"household_batch_table_frame: the batch table has no column(s) {unknown}. "
+            f"household_batch_table_frame: the household batch table has no column(s) {unknown}. "
             f"Its columns are {list(built)}."
         )
     for name, value in overrides.items():
@@ -594,7 +594,7 @@ def household_batch_table_frame(household_batch_ids, *, household_of=None, proje
         missing = [name for name in columns if name not in frame.columns]
         if missing:
             raise ValueError(
-                f"household_batch_table_frame: the batch table has no column(s) "
+                f"household_batch_table_frame: the household batch table has no column(s) "
                 f"{missing}."
             )
         frame = frame[list(columns)]

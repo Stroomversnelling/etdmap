@@ -23,6 +23,7 @@ import pytest
 from etdmap import ids
 from etdmap.data_model import cumulative_columns
 from etdmap.flags import MappingFlag, flag_column
+from etdmap.testing import household_batch_of
 from etdmap.mapping_helpers import (
     _detect_negative_diff_cases,
     add_diff_columns,
@@ -675,38 +676,46 @@ class TestGroupedInputIsCorrectedPerHousehold:
     its own seeded first interval."""
 
     def _grouped(self):
+        """Several series in one frame, each its own household batch.
+
+        Both ids are carried, and they differ, so a correction scoped to the
+        household instead of the household batch would read across series.
+        """
         frames = []
         for household, seed in enumerate(range(20, 26)):
             rng = random.Random(seed)
             frame = _frame(_generate(rng, 24))
             frame[ids.HOUSEHOLD] = household
+            frame[ids.HOUSEHOLD_BATCH] = household_batch_of(household)
             frames.append(frame)
         return pd.concat(frames, ignore_index=True)
 
-    def test_each_household_only_loses_its_own_readings(self):
+    def test_each_household_batch_only_loses_its_own_readings(self):
         df = self._grouped()
-        out = _corrected(df, id_column=ids.HOUSEHOLD)
-        for household, delivered in df.groupby(ids.HOUSEHOLD)[COL]:
-            own = out[out[ids.HOUSEHOLD] == household].sort_values("ReadingDate")
+        out = _corrected(df, id_column=ids.HOUSEHOLD_BATCH)
+        for batch_id, delivered in df.groupby(ids.HOUSEHOLD_BATCH)[COL]:
+            own = out[out[ids.HOUSEHOLD_BATCH] == batch_id].sort_values(
+                "ReadingDate"
+            )
             _assert_only_removes(
                 list(delivered), own.reset_index(drop=True),
-                f"household {household}",
+                f"household batch {batch_id}",
             )
 
-    def test_each_household_gets_its_own_seeded_first_interval(self):
+    def test_each_household_batch_gets_its_own_seeded_first_interval(self):
         """Row 0 of a differenced series has no predecessor, and "row 0" is per
-        household -- not per frame."""
-        out = _corrected(self._grouped(), id_column=ids.HOUSEHOLD)
-        for household, group in out.groupby(ids.HOUSEHOLD):
+        household batch -- not per frame."""
+        out = _corrected(self._grouped(), id_column=ids.HOUSEHOLD_BATCH)
+        for batch_id, group in out.groupby(ids.HOUSEHOLD_BATCH):
             first = group.sort_values("ReadingDate")[DIFF].iloc[0]
-            assert float(first) == 0.0, household
+            assert float(first) == 0.0, batch_id
 
-    def test_the_interval_follows_each_households_own_register(self):
-        out = _corrected(self._grouped(), id_column=ids.HOUSEHOLD)
-        for household, group in out.groupby(ids.HOUSEHOLD):
+    def test_the_interval_follows_each_household_batchs_own_readings(self):
+        out = _corrected(self._grouped(), id_column=ids.HOUSEHOLD_BATCH)
+        for batch_id, group in out.groupby(ids.HOUSEHOLD_BATCH):
             _assert_interval_follows_the_register(
                 group.sort_values("ReadingDate").reset_index(drop=True),
-                f"household {household}",
+                f"household batch {batch_id}",
             )
 
     def test_one_households_dip_does_not_reach_another(self):

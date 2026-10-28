@@ -124,7 +124,7 @@ class TestFirstZeroMarksTheSeed:
         out = add_diff_columns(df, id_column=ids.HOUSEHOLD_BATCH)
         flags = _flags(out, DIFF)
         seeded = [i for i in out.index if flags[i] & MappingFlag.FIRST_ZERO.value]
-        assert len(seeded) == 2, f"expected one seed per dataset, got {seeded}"
+        assert len(seeded) == 2, f"expected one seed per household batch, got {seeded}"
 
     def test_the_seed_is_excluded_from_the_average(self):
         assert MappingFlag.FIRST_ZERO & MappingFlag.NOT_A_MEASUREMENT

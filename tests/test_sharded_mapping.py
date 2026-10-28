@@ -274,13 +274,13 @@ class TestDatasetValidatorsReadBothLayouts:
 
         present = [f for f in dataset_flag_conditions if f in out.columns]
         assert present, (
-            f"no dataset flag column was created under the {fmt} layout -- "
+            f"no dataset_validators flag column was created under the {fmt} layout -- "
             f"the validators did not run"
         )
 
         evaluated = [f for f in present if out[f].notna().any()]
         assert evaluated, (
-            f"dataset flag columns exist but none holds a verdict under the "
+            f"dataset_validators flag columns exist but none holds a verdict under the "
             f"{fmt} layout"
         )
 
