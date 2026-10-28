@@ -56,8 +56,8 @@ def test_creation_validation_columns_index_data_files(mapped_fixtures, request):
     1. Appropirate columns are created in datafiles (record_validators) and index file (``dataset_validators``)
     2. If True/False values are found as expected.
     """
-    # The count the household batch was generated with. The shape is a parameter of
-    # the generator, so a literal here would contradict any other shape.
+    # The count the generated dataset was built with. The shape is a parameter
+    # of the generator, so a literal here would contradict any other shape.
     limit_houses = DEFAULT_HOUSEHOLDS_PER_PROJECT * DEFAULT_PROJECTS
     folder_path = mapped_fixtures
 

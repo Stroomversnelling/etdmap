@@ -24,7 +24,10 @@ over a timeperiod. It checks for example:
 
 def validate_columns(df: DataFrame, columns: list, condition_func) -> bool:
     """
-    Validate a household batch based on specified columns in a DataFrame based on a given condition function.
+    Validate the given DataFrame's *columns* against *condition_func*.
+
+    Generic over whatever frame it is handed: the caller decides what the rows
+    are.
 
     Parameters
     ----------
@@ -461,7 +464,8 @@ _FIXED_FLAG_CONDITIONS = dict(dataset_flag_conditions)
 
 def rebuild_flag_conditions() -> None:
     """
-    Rebuild the per-column household batch checks in place from the model as it stands.
+    Rebuild the per-column ``dataset_flag_conditions`` in place from the model
+    as it stands.
 
     Called by :func:`etdmap.data_model.rebuild_model`, which owns when the
     model changes. The per-column entries are rebuilt rather than added to, so

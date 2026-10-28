@@ -194,12 +194,16 @@ def _takes_numpy_dtype(node) -> bool:
 
 
 def id_columns_in_construction(tree, path) -> list:
-    """An id written as a COLUMN of values.
+    """An id column assembled by hand, as a LIST of values, in test data.
 
-    The household batch id names which household batch a row belongs to, which is how
-    ``sidecar_frame`` is called and is fine. Writing a LIST of ids is building
-    the key by hand, which is what the builders exist to do -- they keep the
-    two ids distinct, so code reaching for the wrong one finds no rows.
+    EITHER id: the household batch or the household, under either spelling --
+    the ``ids`` attribute or the column literal. Which one is written is not
+    the point; writing the column at all is.
+
+    A SCALAR id is correct and is how ``sidecar_frame`` is called: one value
+    says which entity every row of that frame belongs to. A LIST assigns the
+    ids, which is the builders' job -- they keep the two ids apart, so a site
+    reaching for the wrong one finds no rows instead of quietly matching.
     """
     found = []
     for node in ast.walk(tree):
@@ -413,6 +417,8 @@ _BARE_BATCH = re.compile(
     re.IGNORECASE,
 )
 _BARE_DATASET = re.compile(r"\bdatasets?\b", re.IGNORECASE)
+
+#: The marks that make a word a citation rather than a use.
 _QUOTED = ("'", '"', "`")
 
 
@@ -452,15 +458,22 @@ def _word_before_dataset() -> frozenset:
 def _is_named_token(line, start, end) -> bool:
     """True where the word is being NAMED rather than used in a sentence.
 
-    Two forms: a reference to the constant (``ids.BATCH``), and the word in
-    quotes or backticks, which is how prose about the naming rule itself has
-    to write it. Neither leaves a reader wondering which one is meant.
+    Three forms: a reference to the constant (``ids.BATCH``); the word itself
+    in quotes or backticks; and the word inside a quoted PHRASE, which is how
+    prose about the naming rule has to cite the wording it rejects -- as in
+    a bare "the dataset". None of them leaves a reader wondering which one is
+    meant.
+
+    The phrase case is read off an odd number of quote marks to the left,
+    which is what "inside a quoted span" means on a single line.
     """
     before = line[:start]
     if re.search(r"\bids\.$", before):
         return True
-    opens = before[-1:] in ("'", '"', "`")
-    closes = line[end:end + 1] in ("'", '"', "`")
+    if any(before.count(quote) % 2 == 1 for quote in _QUOTED):
+        return True
+    opens = before[-1:] in _QUOTED
+    closes = line[end:end + 1] in _QUOTED
     return opens and closes
 
 
@@ -486,17 +499,18 @@ def bare_batch(tree, path, source) -> list:
 def bare_dataset(tree, path, source) -> list:
     """"dataset" standing for a household batch dataset.
 
-    Raw, mapped, generated and project-level datasets all exist, so a bare
-    "the household batch" leaves which one unsaid. ``prose.dataset_alone_allowed_for``
-    holds the senses that keep the plain word.
+    Raw, mapped, generated and project-level datasets all exist, as does the
+    whole estate, so a bare "the dataset" leaves which one unsaid.
+    ``prose.dataset_alone_allowed_for`` holds the senses that keep the plain
+    word.
     """
     allowed = _word_before_dataset()
     found = []
     for number, line in sorted(_prose_lines(tree, source).items()):
         for match in _BARE_DATASET.finditer(line):
+            if _is_named_token(line, match.start(), match.end()):
+                continue                      # cited, not used in a sentence
             before = line[:match.start()].rstrip()
-            if before and before[-1] in _QUOTED:
-                continue                      # a quoted value, not a sentence
             previous = re.search(r"([\w/-]+)$", before)
             if previous and previous.group(1).lower() in allowed:
                 continue

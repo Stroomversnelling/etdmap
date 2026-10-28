@@ -2,9 +2,11 @@
 Storage-layout helpers: one home for "is this a single parquet file or a
 partitioned folder of shards, and how do I read it".
 
-A mapped dataset is one household batch: one body of data for a household,
-identified by ``ids.HOUSEHOLD_BATCH``. A household (``ids.HOUSEHOLD``) can have
-several -- another data structure, or a period after a renovation.
+A mapped dataset holds one body of readings per household batch: one household
+over one period, identified by ``ids.HOUSEHOLD_BATCH``. A household
+(``ids.HOUSEHOLD``) can have several -- another data structure, or a period
+after a renovation. "The mapped dataset" below is always the whole body; one
+household batch is a shard of it.
 
 Pipeline data is stored in one of two layouts:
 

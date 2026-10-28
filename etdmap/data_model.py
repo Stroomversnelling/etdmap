@@ -340,7 +340,8 @@ def _build_derived_structures(df=None):
         (df["Momentaan"] == "ja") & (df["Type variabele"] != "date")
     ]["Variabele"].tolist()
 
-    # Household-batch-cadence delta columns (Diff="ja"). These are interval
+    # Interval delta columns (Diff="ja"), at the cadence their rows sit on.
+    # These are interval
     # deltas of cumulative meter readings; their raw values depend on
     # row cadence, so profile plots require conversion to an
     # instantaneous sibling (e.g. kWh-per-row -> kW) before rendering.

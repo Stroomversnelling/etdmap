@@ -775,8 +775,9 @@ def sidecar_columns(kind, *, with_dataset=True):
     """A sidecar's columns in order, from the library's own map.
 
     Without *with_dataset* the result is the shape the producing step works in,
-    before the household batch is attached: ``detect_column_cadence`` returns a cadence
-    table with no ``ids.HOUSEHOLD_BATCH``, and ``cadence_to_rows`` adds it.
+    before the household batch id is attached: ``detect_column_cadence``
+    returns a cadence table with no ``ids.HOUSEHOLD_BATCH``, and
+    ``cadence_to_rows`` adds it.
 
     Pass the result as :func:`sidecar_frame`'s *partial* where each row states
     its own measurements, which the *kind*-specific builders take as shared
@@ -961,7 +962,7 @@ def installed_fingerprint(*extra_files) -> str:
     Hashes the contents of every module in the installed package, not its
     version: a version number does not move during development, but a
     reinstall of changed code does. Any *extra_files* given are hashed too, so
-    a caller can include the metadata its household batch is generated from.
+    a caller can include the metadata its generated dataset is built from.
     """
     digest = hashlib.sha256()
     root = Path(__file__).parent
