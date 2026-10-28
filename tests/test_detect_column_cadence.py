@@ -4,6 +4,7 @@ timestamps. Synthetic frames only -- no pipeline, no fixtures."""
 import pandas as pd
 import pytest
 
+from etdmap import ids
 from etdmap.mapping_helpers import (
     cadence_label,
     cadence_to_rows,
@@ -139,13 +140,13 @@ class TestCadenceSidecar:
         out = pd.read_parquet(path, dtype_backend='numpy_nullable')
 
         assert list(out.columns) == [
-            'HuisBatchIdBSV', 'column', 'cadence_minutes', 'cadence_source',
+            ids.HOUSEHOLD_BATCH, 'column', 'cadence_minutes', 'cadence_source',
             'cadence_detected', 'confidence', 'n_readings'
         ]
-        assert str(out['HuisBatchIdBSV'].dtype) == 'Int64'
+        assert str(out[ids.HOUSEHOLD_BATCH].dtype) == 'Int64'
         assert str(out['cadence_minutes'].dtype) == 'Int64'
         # The same column reports at different cadences in different households.
-        by_house = out.set_index(['HuisBatchIdBSV', 'column'])['cadence_minutes']
+        by_house = out.set_index([ids.HOUSEHOLD_BATCH, 'column'])['cadence_minutes']
         assert by_house[(7, 'fast')] == 5
         assert by_house[(9, 'fast')] == 15
 

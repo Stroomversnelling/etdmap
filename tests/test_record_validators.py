@@ -3,7 +3,6 @@ import pytest
 
 import etdmap.record_validators as record_validators
 from etdmap.data_model import cumulative_columns, interval_column
-from etdmap.index_helpers import read_metadata
 from etdmap.record_validators import (
     columns_with_value_bounds,
     record_flag_conditions,

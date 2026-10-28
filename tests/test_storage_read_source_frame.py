@@ -11,6 +11,7 @@ silently returned 0 rows per shard.
 import pandas as pd
 import pytest
 
+from etdmap import ids
 from etdmap.storage import read_source_frame
 
 
@@ -24,8 +25,8 @@ def _write_shard(root, household_id, batch_id, n_rows, store_id_in_file):
     d.mkdir(parents=True)
     data = {"value": pd.array(range(n_rows), dtype="Int64")}
     if store_id_in_file:
-        data["HuisIdBSV"] = pd.array([household_id] * n_rows, dtype="Int64")
-        data["HuisBatchIdBSV"] = pd.array([batch_id] * n_rows, dtype="Int64")
+        data[ids.HOUSEHOLD] = pd.array([household_id] * n_rows, dtype="Int64")
+        data[ids.HOUSEHOLD_BATCH] = pd.array([batch_id] * n_rows, dtype="Int64")
     pd.DataFrame(data).to_parquet(d / "part.parquet", engine="pyarrow")
 
 
@@ -36,45 +37,45 @@ class TestPartitionOnlyColumnSubset:
         _write_shard(tmp_path, 1, 1, 10, store_id_in_file=False)
         _write_shard(tmp_path, 2, 2, 7, store_id_in_file=False)
 
-        out = read_source_frame(tmp_path, columns=["HuisIdBSV"])
+        out = read_source_frame(tmp_path, columns=[ids.HOUSEHOLD])
 
         assert len(out) == 17
-        assert list(out.columns) == ["HuisIdBSV"]
-        assert out["HuisIdBSV"].value_counts().to_dict() == {1: 10, 2: 7}
+        assert list(out.columns) == [ids.HOUSEHOLD]
+        assert out[ids.HOUSEHOLD].value_counts().to_dict() == {1: 10, 2: 7}
 
     def test_huisbatchidbsv_only_subset_returns_all_rows(self, tmp_path):
         _write_shard(tmp_path, 5, 9, 4, store_id_in_file=False)
-        out = read_source_frame(tmp_path, columns=["HuisBatchIdBSV"])
+        out = read_source_frame(tmp_path, columns=[ids.HOUSEHOLD_BATCH])
         assert len(out) == 4
-        assert out["HuisBatchIdBSV"].tolist() == [9, 9, 9, 9]
+        assert out[ids.HOUSEHOLD_BATCH].tolist() == [9, 9, 9, 9]
 
     def test_partition_ids_are_int64(self, tmp_path):
         _write_shard(tmp_path, 1, 1, 3, store_id_in_file=False)
-        out = read_source_frame(tmp_path, columns=["HuisIdBSV"])
-        assert str(out["HuisIdBSV"].dtype) == "Int64"
+        out = read_source_frame(tmp_path, columns=[ids.HOUSEHOLD])
+        assert str(out[ids.HOUSEHOLD].dtype) == "Int64"
 
 
 class TestMixedAndFullReads:
     def test_partition_id_plus_infile_column(self, tmp_path):
         _write_shard(tmp_path, 1, 1, 10, store_id_in_file=False)
         _write_shard(tmp_path, 2, 2, 7, store_id_in_file=False)
-        out = read_source_frame(tmp_path, columns=["HuisIdBSV", "value"])
+        out = read_source_frame(tmp_path, columns=[ids.HOUSEHOLD, "value"])
         assert len(out) == 17
-        assert list(out.columns) == ["HuisIdBSV", "value"]
+        assert list(out.columns) == [ids.HOUSEHOLD, "value"]
 
     def test_full_read_injects_ids(self, tmp_path):
         _write_shard(tmp_path, 3, 3, 5, store_id_in_file=False)
         out = read_source_frame(tmp_path)
         assert len(out) == 5
-        assert {"HuisIdBSV", "HuisBatchIdBSV", "value"} <= set(out.columns)
-        assert out["HuisIdBSV"].tolist() == [3] * 5
+        assert {ids.HOUSEHOLD, ids.HOUSEHOLD_BATCH, "value"} <= set(out.columns)
+        assert out[ids.HOUSEHOLD].tolist() == [3] * 5
 
     def test_ids_stored_in_file_are_not_double_injected(self, tmp_path):
         _write_shard(tmp_path, 4, 4, 6, store_id_in_file=True)
-        out = read_source_frame(tmp_path, columns=["HuisIdBSV"])
+        out = read_source_frame(tmp_path, columns=[ids.HOUSEHOLD])
         assert len(out) == 6
-        assert list(out.columns) == ["HuisIdBSV"]
-        assert out["HuisIdBSV"].tolist() == [4] * 6
+        assert list(out.columns) == [ids.HOUSEHOLD]
+        assert out[ids.HOUSEHOLD].tolist() == [4] * 6
 
     def test_a_directory_with_no_recognised_layout_raises(self, tmp_path):
         # No HuisIdBSV=/HuisBatchIdBSV= partitions and no household_<n>_table
@@ -83,7 +84,7 @@ class TestMixedAndFullReads:
         bad.mkdir()
         pd.DataFrame({"value": [1]}).to_parquet(bad / "x.parquet")
         with pytest.raises(FileNotFoundError, match="No parquet files"):
-            read_source_frame(tmp_path, columns=["HuisIdBSV"])
+            read_source_frame(tmp_path, columns=[ids.HOUSEHOLD])
 
     def test_a_stray_parquet_among_real_shards_raises(self, tmp_path):
         # The original point, on a directory that IS sharded: a parquet sitting
@@ -92,7 +93,7 @@ class TestMixedAndFullReads:
         _write_shard(tmp_path, 1, 1, 3, store_id_in_file=False)
         pd.DataFrame({"value": [1]}).to_parquet(tmp_path / "stray.parquet")
         with pytest.raises(ValueError, match="household id"):
-            read_source_frame(tmp_path, columns=["HuisIdBSV"])
+            read_source_frame(tmp_path, columns=[ids.HOUSEHOLD])
 
 
 class TestSourceReadTargets:

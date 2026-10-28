@@ -24,7 +24,6 @@ committed fixture has.
 """
 
 import pandas as pd
-import pytest
 
 from etdmap.flags import (
     MappingFlag,

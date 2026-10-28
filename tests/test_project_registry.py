@@ -6,6 +6,7 @@ import because rule selection reads it per row.
 
 import pandas as pd
 
+from etdmap import ids
 from etdmap.data_model import load_projects, physical_model_by_project
 
 
@@ -13,13 +14,13 @@ class TestTheRegistry:
     def test_it_carries_the_three_columns(self):
         df = load_projects()
         assert list(df.columns) == [
-            "Dataleverancier", "ProjectIdBSV", "FysischModel",
+            ids.SUPPLIER, ids.PROJECT, "FysischModel",
         ]
 
     def test_every_project_declares_exactly_one_model(self):
         df = load_projects()
         assert len(df), "the synced registry is empty"
-        assert not df["ProjectIdBSV"].duplicated().any()
+        assert not df[ids.PROJECT].duplicated().any()
         assert not df["FysischModel"].isna().any()
 
     def test_the_dict_mirrors_the_file(self):

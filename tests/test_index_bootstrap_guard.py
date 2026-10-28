@@ -19,6 +19,7 @@ import pandas as pd
 import pytest
 
 import etdmap
+from etdmap import ids
 from etdmap.index_helpers import bsv_metadata_columns, read_index
 
 
@@ -38,20 +39,20 @@ def mapped_folder(tmp_path):
 
 _ROWS = [
     {
-        "HuisIdLeverancier": "DV-VDA-1",
-        "HuisIdBSV": 1,
-        "ProjectIdLeverancier": "P1",
-        "ProjectIdBSV": 1,
-        "Dataleverancier": "Factory Zero",
+        ids.HOUSEHOLD_SUPPLIER: "DV-VDA-1",
+        ids.HOUSEHOLD: 1,
+        ids.PROJECT_SUPPLIER: "P1",
+        ids.PROJECT: 1,
+        ids.SUPPLIER: "Factory Zero",
         "Meenemen": pd.NA,
         "Notities": pd.NA,
     },
     {
-        "HuisIdLeverancier": "Address 1",
-        "HuisIdBSV": 298,
-        "ProjectIdLeverancier": "P8",
-        "ProjectIdBSV": 8,
-        "Dataleverancier": "O-Nexus",
+        ids.HOUSEHOLD_SUPPLIER: "Address 1",
+        ids.HOUSEHOLD: 298,
+        ids.PROJECT_SUPPLIER: "P8",
+        ids.PROJECT: 8,
+        ids.SUPPLIER: "O-Nexus",
         "Meenemen": pd.NA,
         "Notities": pd.NA,
     },
@@ -119,8 +120,8 @@ class TestIndexPresentPathUnchanged:
         _write_index(mapped_folder, _ROWS)
         index_df, _ = read_index()
         by_key = {
-            (row["Dataleverancier"], row["ProjectIdLeverancier"], row["HuisIdLeverancier"]):
-                int(row["HuisIdBSV"])
+            (row[ids.SUPPLIER], row[ids.PROJECT_SUPPLIER], row[ids.HOUSEHOLD_SUPPLIER]):
+                int(row[ids.HOUSEHOLD])
             for _, row in index_df.iterrows()
         }
         assert by_key[("Factory Zero", "P1", "DV-VDA-1")] == 1

@@ -1,26 +1,14 @@
-import hashlib
-import json
-import logging
 import os
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 import yaml
-from numpy.random import PCG64, Generator
 
-import etdmap
-import etdmap.index_helpers as index_helpers
-import etdmap.mapping_helpers as mapping
-from etdmap.data_model import cumulative_columns
-from etdmap.index_helpers import bsv_metadata_columns, metadata_dtypes, read_metadata
 from etdmap.testing import (
-    generate_mapped_dataset,
-    generate_raw_dataset,
+        generate_mapped_dataset,
+        generate_raw_dataset,
 )
-
-
 
 
 def load_config(config_path):
@@ -39,28 +27,29 @@ def pytest_addoption(parser):
 
 @pytest.fixture
 def valid_metadata_file(tmp_path):
-    # tmp_path fixture provides a temp directory unique
-    # to the test run
-    # Create a valid Excel file with the required columns
+    """A supplier metadata workbook, as read_metadata is given one.
+
+    Built here rather than from a shared builder because the values are the
+    subject: a row whose BSV household id is absent, which is what a workbook
+    looks like before the ids are assigned, and an extra column the reader has
+    to carry through. Written under tmp_path, which pytest makes unique per
+    run.
+    """
     metadata_file = tmp_path / "metadata.xlsx"
 
-    data = {}
-
     data = {
-        "HuisIdLeverancier": ["A123", "B456", "C789"],
-        "HuisIdBSV": [101, 202, None],  # One missing value for demonstration
+        ids.HOUSEHOLD_SUPPLIER: ["A123", "B456", "C789"],
+        ids.HOUSEHOLD: [101, 202, pd.NA],
         "Meenemen": [True, False, True],
-        "ProjectIdLeverancier": ["P001", "P002", "P003"],
-        "ProjectIdBSV": [1, 2, 3],
-        "Notities": ["First note", None, "Final note"],  # One missing value
-        "Dataleverancier": ["CompanyX", "CompanyY", "CompanyZ"],
+        ids.PROJECT_SUPPLIER: ["P001", "P002", "P003"],
+        ids.PROJECT: [1, 2, 3],
+        "Notities": ["First note", pd.NA, "Final note"],
+        ids.SUPPLIER: ["CompanyX", "CompanyY", "CompanyZ"],
+        # Every value positive, which is all any reader of it asserts.
+        "num_column": [5, 50, 95],
     }
 
-    data["num_column"] = np.random.randint(1, 100, size=3)
-    data["num_column"].sort()
-    df = pd.DataFrame(data)
-
-    df.to_excel(metadata_file, sheet_name="Data", index=False)
+    pd.DataFrame(data).to_excel(metadata_file, sheet_name="Data", index=False)
     return str(metadata_file)
 
 
@@ -122,6 +111,8 @@ def mapped_fixtures(tmp_path_factory):
 # test fail so the gap is visible. Do not add pytest.skip.
 # ---------------------------------------------------------------------------
 import pytest as _pytest
+
+from etdmap import ids
 
 # Only these classes of skip may exist. A skip is allowed when its reason
 # begins with "<TOKEN>: " and TOKEN is a key below.

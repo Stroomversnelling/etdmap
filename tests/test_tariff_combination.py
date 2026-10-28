@@ -9,8 +9,7 @@ which both registers advanced carries MappingFlag.TARIFF_SIMULTANEOUS on the
 INTERVAL root -- the alternation guard: tariff registers alternate, so
 consumption on both within one interval is a suspicious delivered pattern.
 Signal only; nothing is removed. The cumulative root never carries it,
-because standing totals are both nonzero at essentially every reading (see
-TestTariffSimultaneous for the measured 100%-vs-0.37% evidence).
+because standing totals are both nonzero at essentially every reading.
 
 Reference semantics: the stats-side synthesis in
 etdmap.data_stats._synthesise_tariff_roots (hoog.fillna(0) + laag.fillna(0),
@@ -21,11 +20,18 @@ per column.
 import pandas as pd
 import pytest
 
+from etdmap import ids
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import (
     add_diff_columns,
     add_tariff_root_cadence,
     combine_tariff_registers,
+)
+from etdmap.testing import (
+    cadence_sidecar,
+    household_batch_of,
+    sidecar_columns,
+    sidecar_frame,
 )
 
 ROOT = "ElektriciteitNetgebruik"
@@ -40,6 +46,8 @@ def _floats(values):
     return pd.array(values, dtype="Float64")
 
 
+# Local: which tariff columns a frame carries is the subject here, so nothing
+# may complete a pair or add a column the supplier did not send.
 def _frame(**columns):
     df = pd.DataFrame({name: _floats(vals) for name, vals in columns.items()})
     return df
@@ -123,17 +131,9 @@ class TestTariffSimultaneous:
     """Alternation is an INTERVAL property, so the test and the flag both
     belong to the interval form.
 
-    These tests were rewritten on 2026-10-02 after the estate remap
-    falsified the original contract. The first version tested "both
-    registers nonzero" on the CUMULATIVE pair and flagged the cumulative
-    root. A cumulative reading is a running total, so both tariff counters
-    hold nonzero totals essentially always: the flag fired on 18.5M Watch-E
-    and 11.3M Factory Zero cells -- on one household, 103,001 of 103,001
-    delivered readings (100%) -- while the interval test was true for 277 of
-    ~74,400 consuming intervals (0.37%). The old assertions passed happily
-    because the fixtures were single rows, where a cumulative value and an
-    interval are indistinguishable. Every case below therefore uses at least
-    two readings, so a cumulative total can be told apart from a step.
+    Every case below uses at least two readings, so a cumulative total can be
+    told apart from a step. On a single row the two are indistinguishable, and
+    an assertion about either says nothing.
     """
 
     def test_fires_where_both_registers_advance_in_one_interval(self):
@@ -309,18 +309,24 @@ class TestTaxonomyPlacement:
 
 GRID = 5
 
+#: The cadence table as a detection produces it: the sidecar's own schema
+#: without the dataset id, which cadence_to_rows adds when the rows are
+#: written. A table carrying the id already would override the one given there.
+_CADENCE_COLUMNS = sidecar_columns("cadence", with_dataset=False)
+
 
 def _cadence(rows):
     """A measured cadence table: (column, cadence_minutes, source, detected,
-    confidence, n_readings) per row."""
-    return pd.DataFrame({
-        "column": pd.array([r[0] for r in rows], dtype="string"),
-        "cadence_minutes": pd.array([r[1] for r in rows], dtype="Int64"),
-        "cadence_source": pd.array([r[2] for r in rows], dtype="string"),
-        "cadence_detected": pd.array([r[3] for r in rows], dtype="Int64"),
-        "confidence": pd.array([r[4] for r in rows], dtype="Float64"),
-        "n_readings": pd.array([r[5] for r in rows], dtype="Int64"),
-    })
+    confidence, n_readings) per row.
+
+    Local because each row states its own measurement, and the per-column
+    cadence, detected value, confidence and reading count are the subject.
+    """
+    return sidecar_frame(
+        "cadence",
+        [dict(zip(_CADENCE_COLUMNS, row, strict=True)) for row in rows],
+        partial=_CADENCE_COLUMNS,
+    )
 
 
 def _row(table, column):
@@ -504,10 +510,16 @@ class TestTheDerivedRowReachesTheSidecar:
                 (LAAG, 60, "declared", 65, 0.9, 2),
             ]),
         )
-        path = write_column_cadence(cadence_to_rows(7, table), str(tmp_path))
+        household_batch_id = household_batch_of(7)
+        path = write_column_cadence(
+            cadence_to_rows(household_batch_id, table), str(tmp_path)
+        )
         out = pd.read_parquet(path, dtype_backend="numpy_nullable")
 
-        root = out[(out["HuisBatchIdBSV"] == 7) & (out["column"] == ROOT)].iloc[0]
+        root = out[
+            (out[ids.HOUSEHOLD_BATCH] == household_batch_id)
+            & (out["column"] == ROOT)
+        ].iloc[0]
         assert int(root["cadence_minutes"]) == 60
         assert root["cadence_source"] == "combined"
         assert pd.isna(root["cadence_detected"])
@@ -554,6 +566,7 @@ class TestSplitsAtDifferentCadencesRaise:
         import etdmap
         from etdmap.mapping_helpers import run_standard_pipeline
 
+        household_id = 903
         df = pd.DataFrame({
             "ReadingDate": pd.date_range("2024-01-01", periods=12, freq="5min"),
             HOOG: _floats([float(i) for i in range(12)]),
@@ -565,7 +578,9 @@ class TestSplitsAtDifferentCadencesRaise:
         try:
             with pytest.raises(ValueError, match="different"):
                 run_standard_pipeline(
-                    df, household_id=903, household_batch_id=1903, household_id_supplier="H903",
+                    df, household_id=household_id,
+                    household_batch_id=household_batch_of(household_id),
+                    household_id_supplier=f"H{household_id}",
                     mapped_folder_path=tmp_path, grid_minutes=GRID,
                     cadence=_cadence([
                         ("ReadingDate", GRID, "detected", GRID, 1.0, 12),
@@ -575,7 +590,9 @@ class TestSplitsAtDifferentCadencesRaise:
                 )
         finally:
             etdmap.options.mapped_output_format = previous
-        assert not (tmp_path / "household_903_table.parquet").exists()
+        assert not (
+            tmp_path / f"household_{household_id}_table.parquet"
+        ).exists()
 
 
 class TestThePipelineHandsTheDerivedRowBack:
@@ -601,7 +618,7 @@ class TestThePipelineHandsTheDerivedRowBack:
             return run_standard_pipeline(
                 df,
                 household_id=household_id,
-                household_batch_id=household_id + 1000,
+                household_batch_id=household_batch_of(household_id),
                 household_id_supplier=f"H{household_id}",
                 mapped_folder_path=tmp_path,
                 grid_minutes=GRID,
@@ -611,11 +628,14 @@ class TestThePipelineHandsTheDerivedRowBack:
             etdmap.options.mapped_output_format = previous
 
     def _measured(self):
-        return _cadence([
-            ("ReadingDate", GRID, "detected", GRID, 1.0, 12),
-            (HOOG, GRID, "detected", GRID, 1.0, 12),
-            (LAAG, GRID, "detected", GRID, 1.0, 12),
-        ])
+        return cadence_sidecar(
+            [HOOG, LAAG],
+            minutes=GRID,
+            source="detected",
+            detected=GRID,
+            confidence=1.0,
+            n_readings=12,
+        )
 
     def test_the_returned_cadence_carries_the_root(self, tmp_path):
         entry = self._run(tmp_path, self._measured())
@@ -688,7 +708,7 @@ class TestTheDerivedRowIsWhatGivesTheRootItsLattice:
         try:
             run_standard_pipeline(
                 df, household_id=household_id,
-                household_batch_id=household_id + 1000,
+                household_batch_id=household_batch_of(household_id),
                 household_id_supplier=f"H{household_id}",
                 mapped_folder_path=tmp_path, grid_minutes=GRID, cadence=cadence,
             )

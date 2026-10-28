@@ -1,7 +1,5 @@
-from pathlib import Path
 
 import pandas as pd
-import pytest
 
 from etdmap.catalog import (
     check_derivability,

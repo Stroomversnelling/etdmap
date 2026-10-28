@@ -20,14 +20,17 @@ import pandas as pd
 import pytest
 
 import etdmap
+from etdmap import ids
 from etdmap.mapping_helpers import run_standard_pipeline, save_household_shard
-
+from etdmap.testing import batch_table_frame, index_frame, supplier_label
 
 #: The grid these frames are built on and declared to sit on. Passed
 #: explicitly: there is no default grid.
 GRID = 5
 
 
+# Local: the pipeline's input is the supplier shape, so the frame carries naive
+# timestamps, no id columns and no interval counterpart to complete.
 def _pipeline_df(n=12, freq="5min"):
     """Tiny valid input for run_standard_pipeline (mirrors _minimal_pipeline_df)."""
     from etdmap.data_model import cumulative_columns
@@ -56,6 +59,8 @@ class _output_format:
         etdmap.options.mapped_output_format = self.prev
 
 
+# Local: these columns and their dtypes are what the round-trip pins -- Float64
+# carrying pd.NA beside Int64, and no id column of any kind.
 def _mapped_df():
     """A minimal mapped-household frame: ReadingDate (UTC) + nullable data cols,
     no id columns -- exactly what run_standard_pipeline writes today."""
@@ -81,8 +86,8 @@ class TestSaveHouseholdShard:
 
         back = pd.read_parquet(out, dtype_backend="numpy_nullable")
         # ids live in the path, not the file
-        assert "HuisIdBSV" not in back.columns
-        assert "HuisBatchIdBSV" not in back.columns
+        assert ids.HOUSEHOLD not in back.columns
+        assert ids.HOUSEHOLD_BATCH not in back.columns
         pd.testing.assert_frame_equal(back, df)
 
     def test_idempotent_single_part_file(self, tmp_path):
@@ -211,25 +216,30 @@ class TestDatasetValidatorsReadBothLayouts:
 
     HOUSEHOLD_ID = 42
     HOUSEHOLD_BATCH_ID = 9
+    #: update_index matches an existing row on the supplier-side pair, so the
+    #: index and the entry have to name the same project here.
+    PROJECT_SUPPLIER = "P1"
 
     def _index_df(self):
-        return pd.DataFrame({
-            "HuisIdBSV": pd.array([self.HOUSEHOLD_ID], dtype="Int64"),
-            "HuisIdLeverancier": pd.array(["Huis42"], dtype="string"),
-            "ProjectIdLeverancier": pd.array(["P1"], dtype="string"),
-            "Dataleverancier": pd.array(["etdmap"], dtype="string"),
-        })
+        return index_frame(
+            [self.HOUSEHOLD_BATCH_ID],
+            household_of={self.HOUSEHOLD_BATCH_ID: self.HOUSEHOLD_ID},
+            **{
+                ids.HOUSEHOLD_SUPPLIER: supplier_label(self.HOUSEHOLD_ID),
+                ids.PROJECT_SUPPLIER: self.PROJECT_SUPPLIER,
+            },
+        )
 
     @pytest.fixture
     def _declared_batch(self, tmp_path, monkeypatch):
         """The batch this household is recorded in. The dataset validators read
         the declared grid from it to know how many rows a year should hold."""
         path = tmp_path / "huisbatch.csv"
-        pd.DataFrame({
-            "HuisIdBSV": pd.array([self.HOUSEHOLD_ID], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([value + 1000 for value in [self.HOUSEHOLD_ID]], dtype="Int64"),
-            "Gegevensfrequentie": pd.array([f"{GRID}min"], dtype="string"),
-        }).to_csv(path, index=False)
+        batch_table_frame(
+            [self.HOUSEHOLD_BATCH_ID],
+            household_of={self.HOUSEHOLD_BATCH_ID: self.HOUSEHOLD_ID},
+            grid=f"{GRID}min",
+        ).to_csv(path, index=False)
         monkeypatch.setattr(
             etdmap.options, "household_batch_csv_path", str(path)
         )
@@ -246,9 +256,9 @@ class TestDatasetValidatorsReadBothLayouts:
             )
 
         entry = {
-            "HuisIdLeverancier": "Huis42",
-            "ProjectIdLeverancier": "P1",
-            "HuisIdBSV": self.HOUSEHOLD_ID,
+            ids.HOUSEHOLD_SUPPLIER: supplier_label(self.HOUSEHOLD_ID),
+            ids.PROJECT_SUPPLIER: self.PROJECT_SUPPLIER,
+            ids.HOUSEHOLD: self.HOUSEHOLD_ID,
         }
         return update_index(
             self._index_df(), entry, data_provider="etdmap", save=False
@@ -291,9 +301,9 @@ class TestDatasetValidatorsReadBothLayouts:
             save_mapped_household(_mapped_df(), 99, 990, tmp_path)
 
         entry = {
-            "HuisIdLeverancier": "Huis42",
-            "ProjectIdLeverancier": "P1",
-            "HuisIdBSV": self.HOUSEHOLD_ID,
+            ids.HOUSEHOLD_SUPPLIER: supplier_label(self.HOUSEHOLD_ID),
+            ids.PROJECT_SUPPLIER: self.PROJECT_SUPPLIER,
+            ids.HOUSEHOLD: self.HOUSEHOLD_ID,
         }
         with pytest.raises(FileNotFoundError, match=str(self.HOUSEHOLD_ID)):
             update_index(
@@ -331,8 +341,8 @@ class TestGetMappedDataReadsBothLayouts:
             save_mapped_household(_mapped_df(), 42, 9, tmp_path)
 
         cols = get_mapped_data(42).columns
-        assert "HuisIdBSV" not in cols
-        assert "HuisBatchIdBSV" not in cols
+        assert ids.HOUSEHOLD not in cols
+        assert ids.HOUSEHOLD_BATCH not in cols
 
     def test_missing_household_raises(self, tmp_path, monkeypatch):
         from etdmap.index_helpers import get_mapped_data

@@ -38,14 +38,15 @@ pytesting = ["pytest>=7"]
 dev = ["pre-commit"]
 # etdmap.testing generates the synthetic mapped dataset the test suites of this
 # package and of downstream packages run against. Reading the supplier metadata
-# workbook it takes as input needs openpyxl.
-testing = ["openpyxl"]
+# workbook it takes as input needs openpyxl. Reading data/model.yaml, which the
+# conformance checks and the agent briefs take the data model from, needs pyyaml.
+testing = ["openpyxl", "pyyaml"]
 
 [tool.setuptools]
 packages = ["etdmap"]
 
 [tool.setuptools.package-data]
-etdmap = ["data/*.csv", "data/*.parquet"]
+etdmap = ["data/*.csv", "data/*.parquet", "data/*.yaml"]
 
 [tool.ruff]
 line-length = 88

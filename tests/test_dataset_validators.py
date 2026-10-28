@@ -41,7 +41,7 @@ def test_dataset_flag_conditions():
 
     special_checks = (
         "validate_monitoring_data_counts",
-        "validate_energiegebruik_warmteopwekker", 
+        "validate_energiegebruik_warmteopwekker",
         "validate_approximately_one_year_of_records",
         "validate_columns_exist",
         "validate_no_readingdate_gap"
@@ -97,6 +97,7 @@ class TestRowCountFollowsTheGrid:
         """Without the grid there is no expected count, so nothing was checked.
         pd.NA says that; True or False would both be claims."""
         import logging
+
         from etdmap.dataset_validators import validate_monitoring_data_counts
         df = self._year(5)
         with caplog.at_level(logging.WARNING):

@@ -1,4 +1,4 @@
-"""Two things the data model now decides for the mapping pipeline.
+"""Two things the data model decides for the mapping pipeline.
 
 Negative-difference correction blanks readings. It is only correct where the
 variable cannot decrease, which the data model declares per column with
@@ -13,6 +13,7 @@ carries signed volumes so the size and direction of the loss is recoverable.
 import pandas as pd
 import pytest
 
+from etdmap import ids
 from etdmap.data_model import cumulative_columns, monotonic_columns
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import (
@@ -21,9 +22,14 @@ from etdmap.mapping_helpers import (
     threshold_stats_to_rows,
     write_threshold_removals,
 )
+from etdmap.testing import PAIRS_EMPTY, datasets_frame, household_batch_of
 
 COL = "ElektriciteitNetgebruik"
 DIFF = "ElektriciteitNetgebruikDiff"
+
+#: The dataset every frame here describes. A difference is taken along one
+#: dataset's series, so the dataset is what the correction is scoped to.
+DATASET = household_batch_of(1)
 
 
 def _flags(df, column):
@@ -34,12 +40,17 @@ def _flags(df, column):
 
 
 def _frame(values, column=COL):
-    n = len(values)
-    return pd.DataFrame({
-        "HuisIdBSV": pd.array([1] * n, dtype="Int64"),
-        "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
-        column: pd.array(values, dtype="Float64"),
-    })
+    """One dataset's readings of *column*, as the pipeline holds them: tz-naive
+    and carrying no project.
+
+    PAIRS_EMPTY: where *column* is the interval one, its cumulative counterpart
+    is present but states no total of its own, so the interval values stand as
+    given.
+    """
+    return datasets_frame(
+        {DATASET: {column: list(values)}},
+        start="2026-01-01", tz=None, project=None, pairs=PAIRS_EMPTY,
+    )
 
 
 class TestTheDeclarationDrivesTheCorrection:
@@ -53,7 +64,9 @@ class TestTheDeclarationDrivesTheCorrection:
         """A meter reading that falls is a fault in a column that cannot fall.
         The reading is condemned and the difference recomputed without it."""
         assert COL in monotonic_columns
-        out = add_diff_columns(_frame([10.0, 10.5, 9.0, 11.0]), id_column="HuisIdBSV")
+        out = add_diff_columns(
+            _frame([10.0, 10.5, 9.0, 11.0]), id_column=ids.HOUSEHOLD_BATCH
+        )
         assert not (out[DIFF] < 0).any()
 
     def test_an_undeclared_column_keeps_its_decrease(self, monkeypatch):
@@ -63,7 +76,9 @@ class TestTheDeclarationDrivesTheCorrection:
         monkeypatch.setattr(
             helpers, "monotonic_columns", [c for c in monotonic_columns if c != COL]
         )
-        out = add_diff_columns(_frame([10.0, 10.5, 9.0, 11.0]), id_column="HuisIdBSV")
+        out = add_diff_columns(
+            _frame([10.0, 10.5, 9.0, 11.0]), id_column=ids.HOUSEHOLD_BATCH
+        )
         assert float(out.loc[2, DIFF]) == pytest.approx(-1.5)
 
     def test_an_undeclared_column_keeps_its_readings(self, monkeypatch):
@@ -74,7 +89,9 @@ class TestTheDeclarationDrivesTheCorrection:
         monkeypatch.setattr(
             helpers, "monotonic_columns", [c for c in monotonic_columns if c != COL]
         )
-        out = add_diff_columns(_frame([10.0, 10.5, 9.0, 11.0]), id_column="HuisIdBSV")
+        out = add_diff_columns(
+            _frame([10.0, 10.5, 9.0, 11.0]), id_column=ids.HOUSEHOLD_BATCH
+        )
         assert out[COL].astype(float).tolist() == pytest.approx(
             [10.0, 10.5, 9.0, 11.0]
         )
@@ -91,7 +108,7 @@ class TestTheDeclarationDrivesTheCorrection:
         df[flag_column(COL)] = pd.array(
             [0, MappingFlag.NULLED.value, 0, 0], dtype="Int64"
         )
-        out = add_diff_columns(df, id_column="HuisIdBSV")
+        out = add_diff_columns(df, id_column=ids.HOUSEHOLD_BATCH)
         assert _flags(out, DIFF)[1] & MappingFlag.NULLED.value
 
 
@@ -145,7 +162,7 @@ class TestTheVolumesReachTheSidecar:
     def _rows(self):
         df = _frame([-99.0, 99.0, 0.5], column=DIFF)
         _, stats = apply_threshold_to_col(df, DIFF, 0.0, 1.5)
-        return threshold_stats_to_rows(1, {DIFF: stats})
+        return threshold_stats_to_rows(DATASET, {DIFF: stats})
 
     @pytest.mark.parametrize("key", [
         "sum_removed_negative", "sum_removed_positive", "balance_removed",

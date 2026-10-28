@@ -9,10 +9,11 @@ Synthetic frames only -- no pipeline, no fixtures.
 """
 
 import pandas as pd
-import pytest
 
+from etdmap import ids
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import mark_cadence, mark_delivered
+from etdmap.testing import cadence_sidecar, datasets_frame, household_batch_of
 
 GRID = 5
 CUM = "ElektriciteitNetgebruik"
@@ -20,24 +21,25 @@ DIFF = "ElektriciteitNetgebruikDiff"
 
 
 def _cadence(entries):
-    """The table detect_column_cadence produces for one household."""
-    return pd.DataFrame({
-        "column": pd.array(list(entries), dtype="string"),
-        "cadence_minutes": pd.array(list(entries.values()), dtype="Int64"),
-        "cadence_source": pd.array(["declared"] * len(entries), dtype="string"),
-        "cadence_detected": pd.array([pd.NA] * len(entries), dtype="Int64"),
-        "confidence": pd.array([pd.NA] * len(entries), dtype="Float64"),
-        "n_readings": pd.array([pd.NA] * len(entries), dtype="Int64"),
-    })
+    """The table detect_column_cadence produces for one household dataset: a
+    row per column of *entries* at its cadence in minutes, the grid on the
+    timestamp row, and no dataset id."""
+    return cadence_sidecar(entries, grid_minutes=GRID)
 
 
-def _frame(values, column=CUM, n=None):
-    n = len(values) if n is None else n
-    return pd.DataFrame({
-        "HuisIdBSV": pd.array([1] * n, dtype="Int64"),
-        "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
-        column: pd.array(values, dtype="Float64"),
-    })
+def _frame(values, column=CUM, **extra):
+    """One dataset's rows: *values* for *column*, plus any further column named.
+
+    Naive timestamps, and no cumulative counterpart is completed: the column
+    under test stands alone here, and a completed counterpart would carry a
+    delivery record of its own.
+    """
+    return datasets_frame(
+        {household_batch_of(1): {column: list(values), **extra}},
+        start="2026-01-01",
+        tz=None,
+        pairs=False,
+    )
 
 
 def _mark(df, **kwargs):
@@ -177,8 +179,7 @@ class TestBothFormsAreMarked:
     register can miss a tick as easily as an interval can."""
 
     def test_a_delivered_interval_column_is_marked(self):
-        df = _frame([pd.NA] * 9)
-        df[DIFF] = pd.array(_every_third(9), dtype="Float64")
+        df = _frame([pd.NA] * 9, **{DIFF: _every_third(9)})
         _mark(
             df, cadence=_cadence({DIFF: GRID * 3}), grid_minutes=GRID
         )
@@ -188,8 +189,7 @@ class TestBothFormsAreMarked:
     def test_each_form_reads_its_own_cadence(self):
         """The register reports hourly and the interval column at the grid, so
         the same row is off-cadence for one and a missed reading for the other."""
-        df = _frame(_every_third(9))
-        df[DIFF] = pd.array([1.0, pd.NA] + [1.0] * 7, dtype="Float64")
+        df = _frame(_every_third(9), **{DIFF: [1.0, pd.NA] + [1.0] * 7})
         _mark(
             df,
             cadence=_cadence({CUM: GRID * 3, DIFF: GRID}),
@@ -228,11 +228,10 @@ class TestAFillCannotBeMistakenForADelivery:
     """Delivery is recorded on the frame as delivered, before anything fills it,
     so a filled cell cannot read as delivered.
 
-    The previous version marked delivery at pipeline step 6b -- after
-    ``fill_down_infrequent_devices`` had run in the mapper -- and subtracted
-    ``INVENTED`` to undo its own lateness. These tests pin the ordering that
-    makes the subtraction unnecessary, so they fail if the mark moves back
-    behind the fill.
+    These tests pin that ordering: they fail if the mark moves behind
+    ``fill_down_infrequent_devices``, which is the point at which a fill would
+    become indistinguishable from a delivery and have to be subtracted back
+    out.
     """
 
     def _fill(self, df, filled, value):
@@ -294,5 +293,5 @@ class TestOnlyModelDataColumns:
     def test_an_identifier_column_is_not_marked(self):
         df = _frame([1.0, 2.0])
         _mark(df, cadence=_cadence({CUM: GRID}), grid_minutes=GRID)
-        assert flag_column("HuisIdBSV") not in df.columns
+        assert flag_column(ids.HOUSEHOLD) not in df.columns
         assert flag_column("ReadingDate") not in df.columns

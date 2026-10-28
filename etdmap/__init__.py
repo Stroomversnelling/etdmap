@@ -6,6 +6,7 @@ from . import (
     catalog,
     data_model,
     dataset_validators,
+    ids,  # noqa: F401
     index_helpers,
     record_validators,
     supplier_validators,

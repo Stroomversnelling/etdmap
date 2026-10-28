@@ -12,22 +12,26 @@ apply_thresholds_to_df, snap_readings_to_grid) have dedicated test files or are 
 indirectly by run_standard_pipeline.
 """
 
-import os
-import pandas as pd
-import pytest
-
 import json
 from unittest.mock import patch
 
+import pandas as pd
+import pytest
+
+from etdmap import ids
 from etdmap.data_model import load_unit_map, model_column_order, model_column_type
+from etdmap.data_stats import (
+    annotate_mapped_bsv_variable,
+    process_raw_data_file,
+)
 from etdmap.mapping_helpers import (
-    NUMERIC_STATS_SCHEMA,
-    apply_threshold_to_col,
-    apply_thresholds_to_df,
     _STATS_DTYPES,
+    NUMERIC_STATS_SCHEMA,
     _cast_stats_dtypes,
     _seasonal_slices,
     _synthesise_tariff_roots,
+    apply_threshold_to_col,
+    apply_thresholds_to_df,
     collect_column_stats,
     collect_mapped_data_stats,
     combine_source_columns,
@@ -40,10 +44,7 @@ from etdmap.mapping_helpers import (
     threshold_stats_to_rows,
     write_threshold_removals,
 )
-from etdmap.data_stats import (
-    annotate_mapped_bsv_variable,
-    process_raw_data_file,
-)
+from etdmap.testing import datasets_frame, household_batch_of
 
 #: The grid these frames are built on and declared to sit on. Passed
 #: explicitly: there is no default grid.
@@ -60,6 +61,8 @@ def _pipeline_cadence(df, grid_minutes=GRID):
     return detect_column_cadence(df, grid_minutes=grid_minutes)
 
 
+# Local: the pipeline's input is the supplier shape, so the frame carries
+# naive timestamps, no id columns and no interval counterpart to complete.
 def _minimal_pipeline_df(n=3, freq="5min"):
     """Return a tiny DataFrame with ReadingDate and one cumulative column."""
     from etdmap.data_model import cumulative_columns
@@ -135,6 +138,8 @@ class TestUnparseableValuesAreRecorded:
 
     COL = "ElektriciteitNetgebruik"
 
+    # Local: the column holds whatever the supplier sent, untyped, which is
+    # what the coercion is given to read.
     def _frame(self, values):
         return pd.DataFrame({
             "ReadingDate": pd.date_range("2026-01-01", periods=len(values), freq="5min"),
@@ -220,6 +225,8 @@ class TestFillDownInfrequentDevices:
         "ElektriciteitsgebruikBooster",
     )
 
+    # Local: where the gaps fall in the one column is the subject, and the fill
+    # reads the column alone -- the frame carries no timestamps or ids at all.
     def _make_df(self):
         col = self._FILL_COLS[0]
         return pd.DataFrame({
@@ -296,6 +303,8 @@ class TestCombineSourceColumns:
       3. neither                  -> all-NA target column
     """
 
+    # Local: which source and target columns are present is the subject, so
+    # nothing may add a column the supplier did not send.
     @staticmethod
     def _df(**cols):
         """Build a DataFrame with Float64 nullable columns (ADR-005)."""
@@ -502,6 +511,8 @@ class TestCombinedColumnsIsRecorded:
 
     TARGET = "ElektriciteitsgebruikWarmtepomp"
 
+    # Local: which source and target columns are present is the subject, so
+    # nothing may add a column the supplier did not send.
     @staticmethod
     def _df(**cols):
         return pd.DataFrame(
@@ -615,7 +626,9 @@ class TestRunStandardPipeline:
         df = pd.DataFrame({"SomeCol": [1, 2, 3]})
         with pytest.raises(KeyError, match="ReadingDate"):
             run_standard_pipeline(
-                df, household_id=1, household_batch_id=1001, household_id_supplier="HuisA",
+                df, household_id=1,
+                household_batch_id=household_batch_of(1),
+                household_id_supplier="HuisA",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
             )
 
@@ -623,7 +636,9 @@ class TestRunStandardPipeline:
         df = pd.DataFrame({"ReadingDate": ["bad", "also-bad"]})
         with pytest.raises((ValueError, Exception)):
             run_standard_pipeline(
-                df, household_id=1, household_batch_id=1001, household_id_supplier="HuisA",
+                df, household_id=1,
+                household_batch_id=household_batch_of(1),
+                household_id_supplier="HuisA",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
             )
 
@@ -631,7 +646,9 @@ class TestRunStandardPipeline:
         """End-to-end smoke test: pipeline writes a file and returns the index entry."""
         df = _minimal_pipeline_df(n=12)
         result = run_standard_pipeline(
-            df, household_id=42, household_batch_id=1042, household_id_supplier="HuisX",
+            df, household_id=42,
+            household_batch_id=household_batch_of(42),
+            household_id_supplier="HuisX",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df),
         )
@@ -640,7 +657,7 @@ class TestRunStandardPipeline:
         # the index entry, and nothing else may reach the index.
         result.pop("_validation_summary", None)
         result.pop("_cadence", None)
-        assert result == {"HuisIdLeverancier": "HuisX", "HuisIdBSV": 42}
+        assert result == {ids.HOUSEHOLD_SUPPLIER: "HuisX", ids.HOUSEHOLD: 42}
         out_file = tmp_path / "household_42_table.parquet"
         assert out_file.exists()
 
@@ -649,7 +666,9 @@ class TestRunStandardPipeline:
         df = _minimal_pipeline_df(n=6)
         df = df.iloc[::-1].reset_index(drop=True)  # reverse the order
         run_standard_pipeline(
-            df, household_id=1, household_batch_id=1001, household_id_supplier="H",
+            df, household_id=1,
+            household_batch_id=household_batch_of(1),
+            household_id_supplier="H",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df),
         )
@@ -660,7 +679,9 @@ class TestRunStandardPipeline:
         """Output parquet must contain all model columns."""
         df = _minimal_pipeline_df(n=6)
         run_standard_pipeline(
-            df, household_id=2, household_batch_id=1002, household_id_supplier="H2",
+            df, household_id=2,
+            household_batch_id=household_batch_of(2),
+            household_id_supplier="H2",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df),
         )
@@ -931,6 +952,8 @@ class TestExpandTzColumns:
     """Per-row default is the safe path; vectorized=True is the opt-in
     fast path that requires uniformity and refuses to guess."""
 
+    # Local: an object column whose tzinfo varies per row is the subject, and
+    # no typed column can hold that.
     def _mk_object_col_mixed_tz(self):
         # Per-row varying tzinfo: Amsterdam, UTC, naive(None)
         return pd.Series(
@@ -943,6 +966,8 @@ class TestExpandTzColumns:
             name="rd",
         )
 
+    # Local: the same object shape with one tzinfo throughout, which is what
+    # the vectorised path requires.
     def _mk_object_col_uniform_tz(self):
         return pd.Series(
             [
@@ -1040,6 +1065,8 @@ class TestLoadUnitMap:
 # ---------------------------------------------------------------------------
 
 
+# Local: each reading's value has to equal its own month for the seasonal
+# slices to be readable off the stats, so the values are the subject.
 def _year_of_data():
     """Synthetic household-style DataFrame: one row per hour for a full
     calendar year, with one numeric column, one bool column, and one object
@@ -1120,11 +1147,10 @@ class TestCollectMappedDataStatsSeasonal:
     three rows per numeric / bool column, one row per non-numeric."""
 
     def _patched_get_mapped_data(self, df):
-        # get_mapped_data was relocated alongside collect_mapped_data_stats
-        # from etdmap.mapping_helpers to etdmap.data_stats; patch the new
-        # location so the test intercepts the actual call site.
+        # The dataset read lives in etdmap.data_stats' namespace, so patch it
+        # there: that is the call site the collector reaches.
         return patch(
-            "etdmap.data_stats.get_mapped_data",
+            "etdmap.data_stats.get_mapped_dataset",
             return_value=df,
         )
 
@@ -1289,8 +1315,8 @@ class TestThresholdStatsToRows:
     (from apply_thresholds_to_df(return_stats=True)) into sidecar rows."""
 
     def test_empty_or_none_yields_no_rows(self):
-        assert threshold_stats_to_rows(1, {}) == []
-        assert threshold_stats_to_rows(1, None) == []
+        assert threshold_stats_to_rows(household_batch_of(1), {}) == []
+        assert threshold_stats_to_rows(household_batch_of(1), None) == []
 
     def test_one_row_per_affected_column(self):
         stats = {
@@ -1309,10 +1335,12 @@ class TestThresholdStatsToRows:
                 "lower_bound": pd.NA, "upper_bound": 35.0,
             },
         }
-        rows = threshold_stats_to_rows(42, stats)
+        household_batch_id = household_batch_of(42)
+        rows = threshold_stats_to_rows(household_batch_id, stats)
         by_col = {r["column"]: r for r in rows}
         assert len(rows) == 2
-        assert by_col["ElektriciteitVermogen"]["HuisBatchIdBSV"] == 42
+        assert (by_col["ElektriciteitVermogen"][ids.HOUSEHOLD_BATCH]
+                == household_batch_id)
         assert by_col["ElektriciteitVermogen"]["n_below"] == 2
         assert by_col["ElektriciteitVermogen"]["n_above"] == 1
         assert by_col["ElektriciteitVermogen"]["min_removed"] == -5.0
@@ -1340,7 +1368,7 @@ class TestThresholdStatsToRows:
                 "cadence_minutes": 60,
             },
         }
-        rows = threshold_stats_to_rows(7, stats)
+        rows = threshold_stats_to_rows(household_batch_of(7), stats)
         assert rows[0]["cadence_minutes"] == 60
 
     def test_a_column_with_no_measured_cadence_carries_na(self):
@@ -1356,7 +1384,7 @@ class TestThresholdStatsToRows:
                 "cadence_minutes": pd.NA,
             },
         }
-        rows = threshold_stats_to_rows(7, stats)
+        rows = threshold_stats_to_rows(household_batch_of(7), stats)
         assert pd.isna(rows[0]["cadence_minutes"])
 
 
@@ -1369,6 +1397,8 @@ class TestARemovalRecordsItsCondition:
 
     COL = "ElektriciteitNetgebruik"
 
+    # Local: the column holds whatever the supplier sent, untyped, which is
+    # what the coercion is given to read.
     def _frame(self, values):
         return pd.DataFrame({
             "ReadingDate": pd.date_range(
@@ -1405,6 +1435,8 @@ class TestAPartialCombineRecordsTheLoss:
 
     TARGET = "ElektriciteitsgebruikWarmtepomp"
 
+    # Local: only the two source columns may be present, since the combine is
+    # judged on what it does with the pair it is given.
     @staticmethod
     def _df(**cols):
         return pd.DataFrame(
@@ -1467,6 +1499,8 @@ class TestDerivingAnIntervalIsRecorded:
     CUM = "ElektriciteitNetgebruik"
     DIFF = "ElektriciteitNetgebruikDiff"
 
+    # Local: which half of the pair the frame carries is the subject, so the
+    # counterpart must stay absent unless the test names it.
     def _frame(self, cum=None, diff=None, n=4):
         data = {
             "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
@@ -1538,8 +1572,7 @@ class TestDerivingAnIntervalIsRecorded:
         ACTIONS_TAKEN is absent, so before this action existed a derived
         interval read as examined-and-unchanged."""
         from etdmap.flags import MappingFlag, flag_column
-        from etdmap.mapping_helpers import mark_unchanged_values
-        from etdmap.mapping_helpers import add_diff_columns
+        from etdmap.mapping_helpers import add_diff_columns, mark_unchanged_values
         out = add_diff_columns(
             self._frame(cum=[10.0, 11.0, 12.0, 13.0]), context="t",
         )
@@ -1564,6 +1597,8 @@ class TestANegativeIntervalIsRecorded:
     #: Momentaan: a decrease here is simply the reading.
     FREE = "ElektriciteitVermogen"
 
+    # Local: which columns the frame carries is the subject -- a cumulative
+    # column added beside a delivered interval would overwrite it.
     def _frame(self, **cols):
         n = len(next(iter(cols.values())))
         data = {
@@ -1651,6 +1686,8 @@ class TestGridCollisionsAreCounted:
 
     COL = "ElektriciteitNetgebruik"
 
+    # Local: the readings sit off the grid, at the seconds each stamp states,
+    # which is what makes two of them land in one slot.
     def _frame(self, stamps, values):
         return pd.DataFrame({
             "ReadingDate": pd.to_datetime(stamps),
@@ -1707,30 +1744,33 @@ class TestGridCollisionsAreCounted:
 
     def test_rows_carry_the_household_and_column(self):
         from etdmap.mapping_helpers import grid_collisions_to_rows
-        rows = grid_collisions_to_rows(42, {
+        household_batch_id = household_batch_of(42)
+        rows = grid_collisions_to_rows(household_batch_id, {
             self.COL: {
                 "n_discarded": 3, "n_slots_contested": 2, "max_per_slot": 3,
             },
         })
-        assert rows[0]["HuisBatchIdBSV"] == 42
+        assert rows[0][ids.HOUSEHOLD_BATCH] == household_batch_id
         assert rows[0]["column"] == self.COL
         assert rows[0]["n_discarded"] == 3
 
     def test_empty_or_none_yields_no_rows(self):
         from etdmap.mapping_helpers import grid_collisions_to_rows
-        assert grid_collisions_to_rows(1, {}) == []
-        assert grid_collisions_to_rows(1, None) == []
+        assert grid_collisions_to_rows(household_batch_of(1), {}) == []
+        assert grid_collisions_to_rows(household_batch_of(1), None) == []
 
     def test_the_sidecar_is_typed(self, tmp_path):
+        # Plain dicts of untyped Python values: the writer's own cast is the
+        # subject, so an already-typed frame would assert nothing.
         from etdmap.mapping_helpers import write_grid_collisions
-        path = write_grid_collisions(
-            [{"HuisBatchIdBSV": 1 + 1000, "column": self.COL, "n_discarded": 2,
-              "n_slots_contested": 1, "max_per_slot": 3}],
-            str(tmp_path),
-        )
+        rows = [{
+            ids.HOUSEHOLD_BATCH: household_batch_of(1), "column": self.COL,
+            "n_discarded": 2, "n_slots_contested": 1, "max_per_slot": 3,
+        }]
+        path = write_grid_collisions(rows, str(tmp_path))
         out = pd.read_parquet(path, dtype_backend="numpy_nullable")
         assert len(out) == 1
-        assert str(out["HuisBatchIdBSV"].dtype) == "Int64"
+        assert str(out[ids.HOUSEHOLD_BATCH].dtype) == "Int64"
         assert str(out["column"].dtype) == "string"
         assert str(out["n_discarded"].dtype) == "Int64"
 
@@ -1792,6 +1832,8 @@ class TestSnappingKeepsAFlagWithItsValue:
 
     COL = "ElektriciteitsgebruikWarmtepomp"
 
+    # Local: each reading's offset within its slot and which rows carry the
+    # flag are both the subject.
     def _frame(self, stamps, values, flagged):
         from etdmap.flags import MappingFlag, set_flags
         df = pd.DataFrame({
@@ -1852,16 +1894,15 @@ class TestNegativeDiffMagnitudesAreRecorded:
 
     COL = "ElektriciteitNetgebruik"
 
-    def _frame(self, values, households=None):
-        data = {
+    # Local: where the dips fall in the one cumulative column is the subject,
+    # and these calls difference the frame as one series rather than per dataset.
+    def _frame(self, values):
+        return pd.DataFrame({
             "ReadingDate": pd.date_range(
                 "2026-01-01", periods=len(values), freq="5min",
             ),
             self.COL: pd.array(values, dtype="Float64"),
-        }
-        if households is not None:
-            data["HuisIdBSV"] = pd.array(households, dtype="Int64")
-        return pd.DataFrame(data)
+        })
 
     def test_a_dip_records_its_magnitude_and_classification(self):
         from etdmap.mapping_helpers import add_diff_columns
@@ -1893,7 +1934,6 @@ class TestNegativeDiffMagnitudesAreRecorded:
         """return_stats defaults to False, so every existing caller is
         unaffected."""
         from etdmap.mapping_helpers import add_diff_columns
-        from etdmap.mapping_helpers import add_diff_columns
         out = add_diff_columns(
             self._frame([100.0, 110.0, 105.0, 120.0]), context="t",
         )
@@ -1904,11 +1944,18 @@ class TestNegativeDiffMagnitudesAreRecorded:
         each. The counts add; the extremes take the outer value."""
         from etdmap.mapping_helpers import add_diff_columns
         _, stats = add_diff_columns(
-            self._frame(
-                [100.0, 110.0, 105.0, 120.0, 200.0, 210.0, 190.0, 230.0],
-                households=[1, 1, 1, 1, 2, 2, 2, 2],
+            datasets_frame(
+                {
+                    household_batch_of(1): {
+                        self.COL: [100.0, 110.0, 105.0, 120.0],
+                    },
+                    household_batch_of(2): {
+                        self.COL: [200.0, 210.0, 190.0, 230.0],
+                    },
+                },
+                start="2026-01-01", tz=None,
             ),
-            id_column="HuisIdBSV", context="t", return_stats=True,
+            id_column=ids.HOUSEHOLD, context="t", return_stats=True,
         )
         s = stats[self.COL]
         assert s["n_dips"] == 2
@@ -1918,7 +1965,8 @@ class TestNegativeDiffMagnitudesAreRecorded:
 
     def test_rows_carry_the_household_and_column(self):
         from etdmap.mapping_helpers import negative_diff_stats_to_rows
-        rows = negative_diff_stats_to_rows(42, {
+        household_batch_id = household_batch_of(42)
+        rows = negative_diff_stats_to_rows(household_batch_id, {
             self.COL: {
                 "n_dips": 1, "n_readings_removed": 1,
                 "sum_dip_magnitude": -5.0, "min_dip": -5.0, "max_dip": -5.0,
@@ -1926,19 +1974,21 @@ class TestNegativeDiffMagnitudesAreRecorded:
                 "n_no_recovery": 0, "n_zero_total": 0,
             },
         })
-        assert rows[0]["HuisBatchIdBSV"] == 42
+        assert rows[0][ids.HOUSEHOLD_BATCH] == household_batch_id
         assert rows[0]["column"] == self.COL
         assert rows[0]["sum_dip_magnitude"] == -5.0
 
     def test_empty_or_none_yields_no_rows(self):
         from etdmap.mapping_helpers import negative_diff_stats_to_rows
-        assert negative_diff_stats_to_rows(1, {}) == []
-        assert negative_diff_stats_to_rows(1, None) == []
+        assert negative_diff_stats_to_rows(household_batch_of(1), {}) == []
+        assert negative_diff_stats_to_rows(household_batch_of(1), None) == []
 
     def test_the_sidecar_is_typed(self, tmp_path):
+        # Plain dicts of untyped Python values: the writer's own cast is the
+        # subject, so an already-typed frame would assert nothing.
         from etdmap.mapping_helpers import write_negative_diff_removals
         rows = [{
-            "HuisBatchIdBSV": 1 + 1000, "column": self.COL,
+            ids.HOUSEHOLD_BATCH: household_batch_of(1), "column": self.COL,
             "n_dips": 2, "n_readings_removed": 2,
             "sum_dip_magnitude": -25.0, "min_dip": -20.0, "max_dip": -5.0,
             "n_jump_back": 1, "n_repeat_negative": 0, "n_meter_reset": 1,
@@ -1947,7 +1997,7 @@ class TestNegativeDiffMagnitudesAreRecorded:
         path = write_negative_diff_removals(rows, str(tmp_path))
         out = pd.read_parquet(path, dtype_backend="numpy_nullable")
         assert len(out) == 1
-        assert str(out["HuisBatchIdBSV"].dtype) == "Int64"
+        assert str(out[ids.HOUSEHOLD_BATCH].dtype) == "Int64"
         assert str(out["column"].dtype) == "string"
         assert str(out["sum_dip_magnitude"].dtype) == "Float64"
         assert str(out["n_dips"].dtype) == "Int64"
@@ -1976,20 +2026,25 @@ class TestWriteThresholdRemovals:
     """write_threshold_removals writes a typed sidecar parquet (ADR-005)."""
 
     EXPECTED_COLS = [
-        "HuisBatchIdBSV", "column", "n_below", "n_above",
+        ids.HOUSEHOLD_BATCH, "column", "n_below", "n_above",
         "sum_removed_negative", "sum_removed_positive", "balance_removed",
         "min_removed", "max_removed",
         "lower_bound", "upper_bound", "cadence_minutes",
     ]
 
     def test_writes_rows_with_nullable_dtypes(self, tmp_path):
+        # Plain dicts of untyped Python values, and neither names
+        # cadence_minutes: both the writer's cast and its filling of a column
+        # the rows omit are the subject here.
         rows = [
-            {"HuisBatchIdBSV": 1 + 1000, "column": "A", "n_below": 2, "n_above": 0,
+            {ids.HOUSEHOLD_BATCH: household_batch_of(1),
+             "column": "A", "n_below": 2, "n_above": 0,
              "sum_removed_negative": -1.5, "sum_removed_positive": 0.0,
              "balance_removed": -1.5,
              "min_removed": -1.0, "max_removed": -0.5,
              "lower_bound": 0.0, "upper_bound": pd.NA},
-            {"HuisBatchIdBSV": 1 + 1000, "column": "B", "n_below": 0, "n_above": 4,
+            {ids.HOUSEHOLD_BATCH: household_batch_of(1),
+             "column": "B", "n_below": 0, "n_above": 4,
              "sum_removed_negative": 0.0, "sum_removed_positive": 600.0,
              "balance_removed": 600.0,
              "min_removed": 100.0, "max_removed": 200.0,
@@ -1999,7 +2054,7 @@ class TestWriteThresholdRemovals:
         out = pd.read_parquet(path, dtype_backend="numpy_nullable")
         assert list(out.columns) == self.EXPECTED_COLS
         assert len(out) == 2
-        assert str(out["HuisBatchIdBSV"].dtype) == "Int64"
+        assert str(out[ids.HOUSEHOLD_BATCH].dtype) == "Int64"
         assert str(out["n_below"].dtype) == "Int64"
         assert str(out["min_removed"].dtype) == "Float64"
         assert str(out["column"].dtype) == "string"
@@ -2102,7 +2157,9 @@ class TestPipelineDropsUnmappedColumns:
         df["nan [nan]"] = pd.array([0] * 12, dtype="Int64")
 
         run_standard_pipeline(
-            df, household_id=77, household_batch_id=1077, household_id_supplier="H77",
+            df, household_id=77,
+            household_batch_id=household_batch_of(77),
+            household_id_supplier="H77",
             mapped_folder_path=tmp_path, grid_minutes=GRID,
             cadence=_pipeline_cadence(df))
         out = pd.read_parquet(tmp_path / "household_77_table.parquet", dtype_backend="numpy_nullable")

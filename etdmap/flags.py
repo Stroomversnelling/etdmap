@@ -68,7 +68,7 @@ class MappingFlag(IntFlag):
     # measurement was taken; a zero set here is not a reported zero.
     FILLED_ZERO = auto()
 
-    # The zero seeded at a household's first interval. Differencing has no
+    # The zero seeded at a dataset's first interval. Differencing has no
     # predecessor there, so the value is structural rather than measured.
     FIRST_ZERO = auto()
 
@@ -475,12 +475,11 @@ def assert_flag_history_complete(df, context: str = "") -> None:
     The completeness half of the guard. :func:`set_flags` refuses a write onto
     a missing history, but only sees the rows it is asked to write: a column
     that no later step writes to carries the damage to disk with nothing to
-    trip over. Measured on the 2026-10-21 estate mapping, 52 flag columns held
-    pd.NA and only 4 of them ever saw a later write.
+    trip over, and most damaged columns are never written to again.
 
     Reported per column rather than as a total because which columns are
-    damaged identifies the step that did it -- on that run the damaged set was
-    exactly the columns flagged before the grid padding.
+    damaged identifies the step that did it -- a column flagged before the grid
+    padding is one the padding can extend without initialising.
 
     Missingness in a DATA column is untouched by this: there it is a
     first-class value, and only the flag columns carry the no-pd.NA invariant.
@@ -549,8 +548,8 @@ def bound_flags(
     lower_bound : float, pd.Series or pd.NA, optional
         Min from the thresholds table. pd.NA means no lower bound is set. A
         Series gives a bound per row, for a bound that is not one number for the
-        whole column -- scaled to a household's cadence, or derived from the
-        other cells in the row.
+        whole column -- scaled to the cadence the column reports at, or derived
+        from the other cells in the row.
     upper_bound : float, pd.Series or pd.NA, optional
         Max, same forms as lower_bound.
 

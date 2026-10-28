@@ -22,24 +22,34 @@ import etdmap
 import etdmap.data_model as data_model
 import etdmap.index_helpers as index_helpers
 import etdmap.mapping_helpers as mapping
+from etdmap import ids
 from etdmap.index_helpers import bsv_metadata_columns, read_metadata
 
 __all__ = [
-    "CADENCE_DTYPES",
+    "HOUSEHOLD_BATCH_OFFSET",
+    "PAIRS_EMPTY",
+    "PAIRS_RAMP",
+    "MetadataSet",
     "SyntheticModel",
+    "batch_table_frame",
     "cadence_sidecar",
     "cumulative_pair",
-    "household_batch_of",
-    "household_frame",
-    "households_frame",
+    "dataset_frame",
+    "datasets_frame",
     "declare_synthetic_model",
-    "HOUSEHOLD_BATCH_OFFSET",
     "generate_mapped_dataset",
     "generate_raw_dataset",
+    "household_batch_of",
+    "household_of_batch",
+    "index_frame",
     "installed_fingerprint",
     "interval_draw_range",
+    "metadata_set",
     "model_row",
     "model_rows",
+    "project_mapping_frame",
+    "sidecar_columns",
+    "sidecar_frame",
     "supplier_label",
     "synthetic_model",
 ]
@@ -91,8 +101,16 @@ def synthetic_model(
       column on the frame.
 
     Every interval column is declared monotonic, and every column gets the
-    same threshold entry -- *minimum*, *maximum*, *threshold_type*, with no
-    sustained level or exponent, so a bound scales by a plain multiply.
+    same threshold entry -- *minimum*, *maximum*, *threshold_type*, with
+    neither a sustained level nor an exponent declared.
+
+    Leaving those two unset does NOT mean the bound scales linearly: a
+    threshold declaring no shape of its own takes
+    ``DEFAULT_UPPER_THRESHOLD_SUSTAINED`` (0.0) and
+    ``DEFAULT_UPPER_THRESHOLD_EXPONENT`` (0.5), so *maximum* scales by
+    ``n ** 0.5`` over an interval *n* times the declared unit -- a Max of 1.5
+    at three times the unit is 2.598, not 4.5. Compute an expected bound with
+    :func:`etdmap.data_model.scale_upper_bound` rather than by hand.
 
     Pass the result to :func:`declare_synthetic_model`.
     """
@@ -149,126 +167,224 @@ def synthetic_model(
 #: right ones.
 HOUSEHOLD_BATCH_OFFSET = 1000
 
+#: The dataset's shape, where a caller states none. Two projects, because a
+#: project aggregate needs more than one; enough households per project to meet
+#: the averaging floor; and three days, because the coarsest resample is daily
+#: and a single day gives it no interior slot.
+DEFAULT_HOUSEHOLDS_PER_PROJECT = 10
+DEFAULT_PROJECTS = 2
+DEFAULT_DAYS = 3
+DEFAULT_GRID = "5min"
+DEFAULT_BASE_DATE = pd.Timestamp("2023-01-01")
+
 
 def household_batch_of(household_id: int) -> int:
     """The household batch id a test frame gives *household_id*."""
     return int(household_id) + HOUSEHOLD_BATCH_OFFSET
 
 
-def household_frame(
+def household_of_batch(household_batch_id: int) -> int:
+    """The household a test frame's *household_batch_id* belongs to.
+
+    The inverse of :func:`household_batch_of`, for a caller that names the
+    dataset -- which is the key -- and wants the household it rolls up to.
+    """
+    return int(household_batch_id) - HOUSEHOLD_BATCH_OFFSET
+
+
+#: What the cumulative counterpart of an interval column holds. ``RAMP`` is a
+#: usable monotonic total; ``EMPTY`` leaves it present but all pd.NA; ``None``
+#: or False omits it.
+PAIRS_RAMP = "ramp"
+PAIRS_EMPTY = "empty"
+
+
+def _complete_pairs(frame, names, n_rows, how=PAIRS_RAMP):
+    """Add the cumulative counterpart of every interval column in *names*.
+
+    A frame holding one half of a pair is not a household artifact and the
+    stages refuse it, so the counterpart is completed from the data model.
+
+    *how* decides what it holds, and the choice is load-bearing wherever the
+    frame reaches the averaging engine: that engine takes a dataset's volume
+    from the cumulative column whenever it holds any value, so a RAMP
+    counterpart becomes the source in place of the interval values the test
+    stated. Use EMPTY to keep the pair present and the interval column the
+    source.
+    """
+    from etdmap.data_model import cumulative_column
+
+    if how not in (PAIRS_RAMP, PAIRS_EMPTY):
+        raise ValueError(
+            f"pairs must be {PAIRS_RAMP!r}, {PAIRS_EMPTY!r}, True or False, "
+            f"not {how!r}."
+        )
+    values = (
+        [float(i) for i in range(n_rows)] if how == PAIRS_RAMP
+        else [pd.NA] * n_rows
+    )
+    for name in names:
+        counterpart = cumulative_column(name)
+        if counterpart and counterpart not in frame.columns:
+            frame[counterpart] = pd.array(values, dtype="Float64")
+
+
+def dataset_frame(
     n_rows: int = 4,
     start="2024-01-01",
-    project: int = 1,
+    project: int | None = 1,
     freq: str = "5min",
+    tz: str | None = "UTC",
+    pairs=PAIRS_RAMP,
     **columns,
 ):
-    """One household batch's rows: the id columns, plus *columns*, plus the
-    cumulative counterpart of every interval column given.
+    """One dataset's rows: *columns*, plus the cumulative counterpart of every
+    interval column given.
 
     Each value may be a scalar (repeated) or a list of length *n_rows*. The
     pairing is completed from the data model rather than spelled out per test,
     because a frame holding one half of a pair is not a household artifact and
     the stages refuse it.
 
-    ``HuisIdBSV`` and ``HuisBatchIdBSV`` are deliberately absent: the shard
-    path carries them, which is where a reader expects them. Use
-    :func:`households_frame` for a frame that carries the ids itself.
-    """
-    from etdmap.data_model import cumulative_column
+    *pairs* decides what that counterpart holds: ``PAIRS_RAMP`` (the default) a
+    usable total, ``PAIRS_EMPTY`` all pd.NA, False no column at all. Pass
+    ``PAIRS_EMPTY`` when the frame reaches the averaging engine, which prefers a
+    cumulative column holding any value over the interval one.
 
+    *tz* may be None for a tz-naive frame, and *project* None to leave the
+    project column off: that is the shape a mapper hands
+    ``run_standard_pipeline``, which is what a supplier delivered.
+
+    No household or dataset id: the shard path carries them, which is where a
+    reader expects them. The project is a plain column and is included unless
+    *project* is None. Use :func:`datasets_frame` for a frame that carries the
+    ids itself.
+    """
     df = pd.DataFrame({
-        "ProjectIdBSV": pd.array([project] * n_rows, dtype="Int64"),
-        "ReadingDate": pd.date_range(start, periods=n_rows, freq=freq, tz="UTC"),
+        ids.READING_DATE: pd.date_range(
+            start, periods=n_rows, freq=freq, tz=tz
+        ),
     })
+    if project is not None:
+        df.insert(0, ids.PROJECT, pd.array(
+            [project] * n_rows, dtype=ids.DTYPES[ids.PROJECT]
+        ))
     for name, value in columns.items():
         values = value if isinstance(value, (list, tuple)) else [value] * n_rows
         df[name] = pd.array(list(values), dtype="Float64")
-    for name in list(columns):
-        counterpart = cumulative_column(name)
-        if counterpart and counterpart not in df.columns:
-            # A monotonic cumulative column under the interval one. The value is
-            # not the subject of any test that needs the pair present; its being
-            # there is.
-            df[counterpart] = pd.array(
-                [float(i) for i in range(n_rows)], dtype="Float64"
-            )
+    if pairs:
+        _complete_pairs(
+            df, list(columns), n_rows,
+            PAIRS_RAMP if pairs is True else pairs,
+        )
     return df
 
 
-def households_frame(
-    per_household: dict,
+def datasets_frame(
+    per_dataset: dict,
     *,
     start="2024-01-01",
     freq: str = "5min",
     project: int = 1,
+    household_of: dict | None = None,
     project_of: dict | None = None,
     tz: str | None = "UTC",
+    dtypes: dict | None = None,
+    pairs=PAIRS_RAMP,
+    n_rows: int | None = None,
     **columns,
 ):
-    """Several households' rows in one frame, carrying both id columns.
+    """Several datasets' rows in one frame, carrying the id columns.
 
     What a stage receives once the shard reader has injected the ids, so a test
-    that works on a frame rather than a shard tree -- a project average, a
-    chunk, a per-dataset groupby -- builds it here instead of assembling the id
-    columns itself.
+    working on a frame rather than a shard tree -- a project average, a chunk,
+    a per-dataset groupby -- builds it here instead of spelling the id columns
+    out. Building them here is what keeps the two ids distinct and the dtypes
+    nullable without every test restating either.
 
-    *per_household* maps a household id to that household's values for the
-    columns in *columns*: either ``{household: [values]}`` when one column is
-    given, or ``{household: {column: [values]}}`` for several. The row count per
-    household is the length of its values. Every interval column's cumulative
-    counterpart is completed as :func:`household_frame` does.
+    *per_dataset* is keyed on ``HuisBatchIdBSV``, because that is the key of a
+    dataset. It maps each one to its values for the columns in *columns*:
+    either ``{dataset: [values]}`` when one column is given, or
+    ``{dataset: {column: [values]}}`` for several. The row count per dataset is
+    the length of its values, or *n_rows* where there are none to count -- a
+    frame of ids and timestamps alone. Every interval column's cumulative
+    counterpart is completed as :func:`dataset_frame` does, unless *pairs* is
+    cleared.
 
-    ``HuisBatchIdBSV`` is :func:`household_batch_of` the household, so the two
-    ids are never equal.
+    The household each dataset rolls up to is :func:`household_of_batch` unless
+    *household_of* names it. Two datasets of ONE household is therefore
+    ``{1001: [...], 2001: [...]}`` with ``household_of={2001: 1}``.
 
-    *project_of* gives a household its own project where they differ; *project*
-    is the one they share otherwise. *tz* may be None for a tz-naive frame,
-    which some stages' inputs are.
+    *project_of* gives a dataset its own project where they differ; *project*
+    is the one they share otherwise, and None leaves the project column off for
+    a stage that knows nothing about projects. *tz* may be None for a tz-naive
+    frame, which some stages' inputs are. *dtypes* names a nullable dtype per
+    column where Float64 is wrong -- ``Int64`` for a flag column, ``boolean``
+    for an ``_is_imputed`` marker.
     """
-    from etdmap.data_model import cumulative_column
-
     names = list(columns)
+    dtypes = dtypes or {}
     parts = []
-    for household_id, value in per_household.items():
+    for household_batch_id, value in per_dataset.items():
+        household_id = (household_of or {}).get(
+            household_batch_id, household_of_batch(household_batch_id)
+        )
+        if not isinstance(value, dict) and not names:
+            raise ValueError(
+                f"datasets_frame: dataset {household_batch_id} was given "
+                f"values with no column to put them in. Name the column as a "
+                f"keyword, or map the dataset to {{column: values}}."
+            )
         per_column = (
             dict(value) if isinstance(value, dict)
-            else {names[0]: value} if names
-            else {}
+            else {names[0]: value}
         )
         for name, declared in columns.items():
             per_column.setdefault(name, declared)
-        n_rows = max(
+        rows_here = max(
             (len(v) for v in per_column.values() if isinstance(v, (list, tuple))),
-            default=1,
+            default=(n_rows if n_rows is not None else 1),
         )
         part = pd.DataFrame({
-            "HuisIdBSV": pd.array([int(household_id)] * n_rows, dtype="Int64"),
-            "HuisBatchIdBSV": pd.array(
-                [household_batch_of(household_id)] * n_rows, dtype="Int64"
+            ids.HOUSEHOLD: pd.array(
+                [int(household_id)] * rows_here, dtype=ids.DTYPES[ids.HOUSEHOLD]
             ),
-            "ProjectIdBSV": pd.array(
-                [int((project_of or {}).get(household_id, project))] * n_rows,
-                dtype="Int64",
+            ids.HOUSEHOLD_BATCH: pd.array(
+                [int(household_batch_id)] * rows_here,
+                dtype=ids.DTYPES[ids.HOUSEHOLD_BATCH],
             ),
-            "ReadingDate": pd.date_range(
-                start, periods=n_rows, freq=freq, tz=tz
+            ids.READING_DATE: pd.date_range(
+                start, periods=rows_here, freq=freq, tz=tz
             ),
         })
+        in_project = (project_of or {}).get(household_batch_id, project)
+        if in_project is not None:
+            part.insert(2, ids.PROJECT, pd.array(
+                [int(in_project)] * rows_here, dtype=ids.DTYPES[ids.PROJECT],
+            ))
         for name, values in per_column.items():
-            if not isinstance(values, (list, tuple)):
-                values = [values] * n_rows
-            part[name] = pd.array(list(values), dtype="Float64")
-        for name in per_column:
-            counterpart = cumulative_column(name)
-            if counterpart and counterpart not in part.columns:
-                part[counterpart] = pd.array(
-                    [float(i) for i in range(n_rows)], dtype="Float64"
+            if isinstance(values, (pd.Series, pd.api.extensions.ExtensionArray)):
+                raise TypeError(
+                    f"datasets_frame: column {name!r} was given a "
+                    f"{type(values).__name__}, which is read as one scalar "
+                    f"repeated. Pass a plain list and name its dtype in "
+                    f"dtypes= if Float64 is wrong."
                 )
+            if not isinstance(values, (list, tuple)):
+                values = [values] * rows_here
+            part[name] = pd.array(
+                list(values), dtype=dtypes.get(name, "Float64")
+            )
+        if pairs:
+            _complete_pairs(
+                part, list(per_column), rows_here,
+                PAIRS_RAMP if pairs is True else pairs,
+            )
         parts.append(part)
     if not parts:
         raise ValueError(
-            "households_frame: no households given, so there is no frame to "
-            "build. Name at least one."
+            "datasets_frame: no datasets given, so there is no frame to build. "
+            "Name at least one HuisBatchIdBSV."
         )
     return pd.concat(parts, ignore_index=True)
 
@@ -402,17 +518,348 @@ def declare_synthetic_model(model: SyntheticModel = None):
         data_model.rebuild_model()
 
 
-#: The sidecar's dtypes, as :func:`etdmap.mapping_helpers.detect_column_cadence`
-#: returns them. A hand-built table that gets one of these wrong is accepted by
-#: the frame and then read differently by whatever consumes it.
-CADENCE_DTYPES = {
-    "column": "string",
-    "cadence_minutes": "Int64",
-    "cadence_source": "string",
-    "cadence_detected": "Int64",
-    "confidence": "Float64",
-    "n_readings": "Int64",
-}
+#: The batch table's window columns, which the index write accepts both as
+#: formatted strings and as epoch seconds.
+_BATCH_WINDOW_COLUMNS = ("Startdatum", "Einddatum")
+
+
+class MetadataSet(NamedTuple):
+    """The three metadata files a mapping run reads, as written."""
+
+    bsv_metadata: Path
+    household_batch_csv: Path
+    project_mapping_csv: Path
+
+
+def batch_table_frame(household_batch_ids, *, household_of=None, project=1,
+                      batch=1, grid="5min", start=DEFAULT_BASE_DATE,
+                      days=DEFAULT_DAYS, columns=None, **overrides):
+    """The synced HuisBatch table: one row per household dataset.
+
+    What ``etdmap.options.household_batch_csv_path`` points at, and what
+    ``household_batch_for_household`` and ``grid_minutes_for_household``
+    resolve a dataset and its grid through.
+
+    *columns* keeps only the named ones, for a test whose subject is a table
+    missing a column -- the readers raise a specific error for an absent
+    ``Gegevensfrequentie``, which cannot be exercised with a complete table.
+    Any further keyword overrides a column with a scalar or a per-row list.
+
+    *start* and *days* set the window each dataset covers. A window that does
+    not contain the readings puts the batch at odds with the household files.
+    """
+    datasets = [int(value) for value in household_batch_ids]
+    households = [
+        int((household_of or {}).get(dataset, household_of_batch(dataset)))
+        for dataset in datasets
+    ]
+    n = len(datasets)
+    begins = pd.Timestamp(start)
+    ends = begins + pd.Timedelta(days=days)
+
+    built = {
+        ids.HOUSEHOLD: pd.array(households, dtype=ids.DTYPES[ids.HOUSEHOLD]),
+        ids.HOUSEHOLD_BATCH: pd.array(
+            datasets, dtype=ids.DTYPES[ids.HOUSEHOLD_BATCH]
+        ),
+        ids.BATCH: pd.array([batch] * n, dtype=ids.DTYPES[ids.BATCH]),
+        ids.PROJECT: pd.array([project] * n, dtype=ids.DTYPES[ids.PROJECT]),
+        "Meenemen": pd.array([pd.NA] * n, dtype="boolean"),
+        "Gegevensfrequentie": pd.array([grid] * n, dtype="string"),
+        "Leverancierfrequentie": pd.array([pd.NA] * n, dtype="string"),
+        "Startdatum": pd.array(
+            [f"{begins:%Y-%m-%d %H:%M:%S} UTC"] * n, dtype="string"
+        ),
+        "Einddatum": pd.array(
+            [f"{ends:%Y-%m-%d %H:%M:%S} UTC"] * n, dtype="string"
+        ),
+    }
+    unknown = [name for name in overrides if name not in built]
+    if unknown:
+        raise ValueError(
+            f"batch_table_frame: the batch table has no column(s) {unknown}. "
+            f"Its columns are {list(built)}."
+        )
+    for name, value in overrides.items():
+        values = value if isinstance(value, (list, tuple)) else [value] * n
+        if name in _BATCH_WINDOW_COLUMNS:
+            # The write accepts a window as a formatted string or as epoch
+            # seconds, so an override brings its own type.
+            built[name] = pd.Series(list(values)).convert_dtypes().array
+            continue
+        built[name] = pd.array(list(values), dtype=built[name].dtype)
+
+    frame = pd.DataFrame(built)
+    if columns is not None:
+        missing = [name for name in columns if name not in frame.columns]
+        if missing:
+            raise ValueError(
+                f"batch_table_frame: the batch table has no column(s) "
+                f"{missing}."
+            )
+        frame = frame[list(columns)]
+    return frame
+
+
+def project_mapping_frame(project_ids, *, supplier="etdmap"):
+    """The project mapping: a supplier's own project name to its BSV project.
+
+    Covers exactly *project_ids*. A mapping that does not name a project leaves
+    ProjectIdBSV unresolved on its households rather than failing, so the set
+    is generated for the projects the test made.
+    """
+    project_ids = [int(value) for value in project_ids]
+    return pd.DataFrame({
+        ids.SUPPLIER: pd.array(
+            [supplier] * len(project_ids), dtype=ids.DTYPES[ids.SUPPLIER]
+        ),
+        ids.PROJECT_SUPPLIER: pd.array(
+            [f"Project{project_id:02}" for project_id in project_ids],
+            dtype=ids.DTYPES[ids.PROJECT_SUPPLIER],
+        ),
+        ids.PROJECT: pd.array(project_ids, dtype=ids.DTYPES[ids.PROJECT]),
+    })
+
+
+def metadata_set(folder, household_batch_ids, *, household_of=None,
+                 projects=None, project=1, batch=1, grid="5min",
+                 start=DEFAULT_BASE_DATE, days=DEFAULT_DAYS,
+                 supplier="etdmap", include=True) -> MetadataSet:
+    """Write the three metadata files a mapping run reads, and point at them.
+
+    The BSV metadata, the synced HuisBatch table and the project mapping are
+    one set: they agree about which datasets exist, which households and
+    projects they belong to, and which supplier delivered them. Built
+    together so a test cannot describe a dataset in one and not the others.
+
+    The caller sets the options; this writes the files and returns their
+    paths, so a test that wants only one of them takes it from the result.
+
+    Parameters
+    ----------
+    folder : path-like
+        Where the three files are written.
+    household_batch_ids : iterable of int
+        The datasets the set describes.
+    household_of : mapping of int to int, optional
+        The household a dataset belongs to, where it is not the default.
+    projects : iterable of int, optional
+        The projects the mapping covers. Defaults to *project* alone.
+    include : bool
+        The reviewed Meenemen value.
+    """
+    from etdmap.index_helpers import bsv_metadata_columns
+
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    datasets = [int(value) for value in household_batch_ids]
+    project_ids = sorted(set(projects)) if projects else [project]
+
+    batch_csv = folder / "household_batch_sync.csv"
+    batch_table_frame(
+        datasets, household_of=household_of, project=project, batch=batch,
+        grid=grid, start=start, days=days,
+    ).to_csv(batch_csv, index=False)
+
+    mapping_csv = folder / "project_mapping.csv"
+    project_mapping_frame(project_ids, supplier=supplier).to_csv(
+        mapping_csv, index=False
+    )
+
+    metadata_csv = folder / "metadata_reviewed.csv"
+    index = index_frame(
+        datasets, household_of=household_of, project=project, batch=batch,
+        supplier=supplier, Meenemen=include,
+    )
+    reviewed = index.loc[:, bsv_metadata_columns].copy()
+    # Declared empty rather than absent: the device-absence reader refuses
+    # metadata with no such column at all.
+    reviewed["ApparaatOntbrekend"] = pd.array(
+        [pd.NA] * len(reviewed), dtype="string"
+    )
+    reviewed.to_csv(metadata_csv, index=False)
+
+    return MetadataSet(metadata_csv, batch_csv, mapping_csv)
+
+
+def index_frame(household_batch_ids, *, household_of=None, project=1,
+                batch=1, supplier="etdmap", batch_fields=True, partial=False,
+                **columns):
+    """The index: one row per household dataset.
+
+    The index is an index OF household datasets, so *household_batch_ids* is
+    its key. Each dataset's household is :func:`household_of_batch` unless
+    *household_of* names it, and the supplier-side ids are derived from the two
+    so a test never states a matching pair by hand.
+
+    Columns and dtypes come from
+    :data:`etdmap.index_helpers.metadata_dtypes` and
+    :data:`etdmap.index_helpers.batch_field_dtypes` together, which is the
+    shape :func:`etdmap.index_helpers.save_index_to_parquet` writes. Clear
+    *batch_fields* for the review-metadata shape alone, which carries no
+    dataset column.
+
+    Any further keyword overrides a column, as a scalar or a list as long as
+    *household_batch_ids*. ``Meenemen=[True, False]`` is the common one.
+
+    Parameters
+    ----------
+    household_batch_ids : iterable of int
+        The datasets the index covers.
+    household_of : mapping of int to int, optional
+        The household a dataset belongs to, where it is not the default.
+    project, batch, supplier
+        Shared values for the columns of those names.
+    batch_fields : bool
+        Carry the per-dataset batch columns, the dataset id among them.
+    partial : bool or iterable of str
+        False for the whole shape. An iterable keeps only those columns, for a
+        test whose subject is an index MISSING one -- the strict read refuses
+        it, which cannot be exercised with a complete frame.
+    """
+    from etdmap.index_helpers import batch_field_dtypes, metadata_dtypes
+
+    datasets = [int(value) for value in household_batch_ids]
+    households = [
+        int((household_of or {}).get(dataset, household_of_batch(dataset)))
+        for dataset in datasets
+    ]
+    n = len(datasets)
+
+    dtypes = dict(metadata_dtypes)
+    if batch_fields:
+        dtypes.update(batch_field_dtypes)
+
+    defaults = {
+        ids.HOUSEHOLD: households,
+        ids.HOUSEHOLD_BATCH: datasets,
+        ids.HOUSEHOLD_SUPPLIER: [f"L{household}" for household in households],
+        ids.PROJECT: project,
+        ids.PROJECT_SUPPLIER: f"P{project}",
+        ids.BATCH: batch,
+        ids.SUPPLIER: supplier,
+        "Meenemen": pd.NA,
+        "Notities": "",
+        "Gegevensfrequentie": "5min",
+        "Leverancierfrequentie": pd.NA,
+    }
+
+    unknown = [name for name in columns if name not in dtypes]
+    if unknown:
+        raise ValueError(
+            f"index_frame: the index has no column(s) {unknown}. "
+            f"Its columns are {list(dtypes)}."
+        )
+
+    if partial is not False and partial is not True:
+        keep = list(partial)
+        missing = [name for name in keep if name not in dtypes]
+        if missing:
+            raise ValueError(
+                f"index_frame: the index has no column(s) {missing}."
+            )
+        dtypes = {
+            name: dtype for name, dtype in dtypes.items() if name in keep
+        }
+
+    frame = pd.DataFrame(index=range(n))
+    for name, dtype in dtypes.items():
+        value = columns.get(name, defaults.get(name, pd.NA))
+        if not isinstance(value, (list, tuple)):
+            value = [value] * n
+        frame[name] = pd.array(list(value), dtype=dtype)
+    return frame
+
+
+def sidecar_columns(kind, *, with_dataset=True):
+    """A sidecar's columns in order, from the library's own map.
+
+    Without *with_dataset* the result is the shape the producing step works in,
+    before the dataset is attached: ``detect_column_cadence`` returns a cadence
+    table with no ``HuisBatchIdBSV``, and ``cadence_to_rows`` adds it.
+
+    Pass the result as :func:`sidecar_frame`'s *partial* where each row states
+    its own measurements, which the *kind*-specific builders take as shared
+    scalars.
+    """
+    sidecar = mapping.SIDECARS.get(kind)
+    if sidecar is None:
+        raise ValueError(
+            f"sidecar_columns: unknown sidecar {kind!r}. "
+            f"Known: {sorted(mapping.SIDECARS)}."
+        )
+    return [
+        name for name in sidecar.dtypes
+        if with_dataset or name != ids.HOUSEHOLD_BATCH
+    ]
+
+
+def sidecar_frame(kind, rows=(), *, household_batch_id=None, partial=False):
+    """One mapping sidecar as a frame, over its full schema.
+
+    *kind* names it: ``'cadence'``, ``'threshold_removals'``,
+    ``'negative_diffs'``, ``'grid_collisions'`` or ``'frozen_spans'``. The
+    schema and its dtypes come from
+    :data:`etdmap.mapping_helpers.SIDECARS`, so a test never restates them.
+
+    Each row is a mapping of column to value; every column it leaves out is
+    filled with pd.NA. A column the sidecar does not have is an error rather
+    than an extra column, since the readers select by name and would ignore it.
+
+    The readers tolerate a missing COLUMN by design -- a sidecar written before
+    that column existed still reads -- so a frame built without one answers
+    "nothing recorded" instead of raising. That is why the full schema is the
+    default and *partial* has to be asked for: pass the names to keep when the
+    test's subject IS a sidecar missing a column.
+
+    Parameters
+    ----------
+    kind : str
+        Which sidecar.
+    rows : iterable of mapping
+        The rows, each over any subset of the sidecar's columns.
+    household_batch_id : int, optional
+        The dataset every row belongs to, for rows that do not name it.
+    partial : bool or iterable of str
+        False for the full schema. An iterable keeps only those columns.
+    """
+    sidecar = mapping.SIDECARS.get(kind)
+    if sidecar is None:
+        raise ValueError(
+            f"sidecar_frame: unknown sidecar {kind!r}. "
+            f"Known: {sorted(mapping.SIDECARS)}."
+        )
+
+    columns = list(sidecar.dtypes)
+    if partial is not False and partial is not True:
+        keep = list(partial)
+        unknown = [name for name in keep if name not in sidecar.dtypes]
+        if unknown:
+            raise ValueError(
+                f"sidecar_frame: {kind!r} has no column(s) {unknown}."
+            )
+        columns = [name for name in columns if name in keep]
+
+    built = []
+    for row in rows:
+        unknown = [name for name in row if name not in sidecar.dtypes]
+        if unknown:
+            raise ValueError(
+                f"sidecar_frame: {kind!r} has no column(s) {unknown}. "
+                f"Its columns are {list(sidecar.dtypes)}."
+            )
+        complete = {name: row.get(name, pd.NA) for name in columns}
+        if (ids.HOUSEHOLD_BATCH in complete
+                and complete[ids.HOUSEHOLD_BATCH] is pd.NA
+                and household_batch_id is not None):
+            complete[ids.HOUSEHOLD_BATCH] = household_batch_id
+        built.append(complete)
+
+    frame = pd.DataFrame(built, columns=columns)
+    return frame.astype({
+        name: dtype for name, dtype in sidecar.dtypes.items()
+        if name in columns
+    })
 
 
 def cadence_sidecar(
@@ -425,9 +872,10 @@ def cadence_sidecar(
     confidence=pd.NA,
     n_readings=pd.NA,
     date_column="ReadingDate",
+    household_batch_id=None,
 ) -> pd.DataFrame:
     """
-    The per-column cadence table for one household, as a test needs it.
+    The per-column cadence table for one household dataset, as a test needs it.
 
     What :func:`etdmap.mapping_helpers.detect_column_cadence` produces, without
     running a detection: a test stating the cadence it means to exercise says so
@@ -438,6 +886,10 @@ def cadence_sidecar(
     defaulting to *minutes*, because the grid is read from that row and a table
     without it resolves no grid at all.
 
+    Give *household_batch_id* for the shape the sidecar FILE holds, which
+    carries the dataset each row belongs to. Without it the result is the
+    detection's own shape, for one dataset at a time.
+
     Parameters
     ----------
     columns : iterable of str, or mapping of str to float
@@ -447,38 +899,60 @@ def cadence_sidecar(
     grid_minutes : float, optional
         The interval the dataset is recorded on. Defaults to *minutes*.
     source : str
-        ``'declared'``, ``'detected'`` or ``'dataset'``.
+        ``'declared'``, ``'detected'`` or ``'dataset'``. A mapping of column to
+        value where they differ, as for *detected*.
     detected, confidence, n_readings
         What a detection would have measured. Default to pd.NA, which is what a
-        declared cadence carries.
-    date_column : str
-        Name of the timestamp column, whose row carries the grid.
+        declared cadence carries. Each may be a mapping of column to its own
+        value, for a table recording that one column delivered readings and
+        another delivered none; a column the mapping omits carries pd.NA.
+    date_column : str or None
+        Name of the timestamp column, whose row carries the grid. None omits
+        that row, for a test whose subject is a table that resolves no grid.
+    household_batch_id : int, optional
+        The dataset the rows belong to. Adds the id column.
     """
+    if isinstance(columns, str):
+        raise TypeError(
+            f"cadence_sidecar: columns was the single name {columns!r}, which "
+            f"iterates as its letters. Pass [{columns!r}], or a mapping of "
+            f"name to cadence."
+        )
     per_column = (
         dict(columns) if hasattr(columns, "items")
         else {column: minutes for column in columns}
     )
-    rows = [{
-        "column": date_column,
-        "cadence_minutes": minutes if grid_minutes is None else grid_minutes,
+    declared = {
         "cadence_source": source,
         "cadence_detected": detected,
         "confidence": confidence,
         "n_readings": n_readings,
+    }
+
+    def measured(column):
+        """The measurement fields for *column*, resolving any per-column map."""
+        return {
+            field: value.get(column, pd.NA) if hasattr(value, "items") else value
+            for field, value in declared.items()
+        }
+
+    rows = [] if date_column is None else [{
+        "column": date_column,
+        "cadence_minutes": minutes if grid_minutes is None else grid_minutes,
+        **measured(date_column),
     }]
     rows += [
-        {
-            "column": column,
-            "cadence_minutes": column_minutes,
-            "cadence_source": source,
-            "cadence_detected": detected,
-            "confidence": confidence,
-            "n_readings": n_readings,
-        }
+        {"column": column, "cadence_minutes": column_minutes,
+         **measured(column)}
         for column, column_minutes in per_column.items()
         if column != date_column
     ]
-    return pd.DataFrame(rows).astype(CADENCE_DTYPES)
+    return sidecar_frame(
+        "cadence", rows,
+        household_batch_id=household_batch_id,
+        partial=(False if household_batch_id is not None
+                 else sidecar_columns("cadence", with_dataset=False)),
+    )
 
 
 def installed_fingerprint(*extra_files) -> str:
@@ -578,16 +1052,6 @@ def interval_draw_range(column: str, grid_minutes: float) -> tuple:
     return lower, upper
 
 
-#: The dataset's shape, where a caller states none. Two projects, because a
-#: project aggregate needs more than one; enough households per project to meet
-#: the averaging floor; and three days, because the coarsest resample is daily
-#: and a single day gives it no interior slot.
-DEFAULT_HOUSEHOLDS_PER_PROJECT = 10
-DEFAULT_PROJECTS = 2
-DEFAULT_DAYS = 3
-DEFAULT_GRID = "5min"
-DEFAULT_BASE_DATE = pd.Timestamp("2023-01-01")
-
 #: One gap, in one column of one household: with no gap anywhere, imputation
 #: writes its artifacts having filled nothing, and the gap accumulator records
 #: nothing. Declared by household number and span fraction, so it lands inside
@@ -641,8 +1105,8 @@ def synthetic_supplier_metadata(household_keys) -> pd.DataFrame:
 
     keys = list(household_keys)
     frame = pd.DataFrame({
-        "HuisIdLeverancier": [household for household, _ in keys],
-        "ProjectIdLeverancier": [project for _, project in keys],
+        ids.HOUSEHOLD_SUPPLIER: [household for household, _ in keys],
+        ids.PROJECT_SUPPLIER: [project for _, project in keys],
     })
     for column in allowed_supplier_metadata_columns:
         if column in frame.columns:
@@ -766,8 +1230,8 @@ def generate_raw_dataset(
             # Generate time series
             timestamps = pd.date_range(start=base_date, periods=num_records, freq=time_interval)
             household_data = {
-                "HuisIdLeverancier": pd.Series([household_prefixed] * num_records, dtype="string"),
-                "ProjectIdLeverancier": pd.Series([project_prefixed] * num_records, dtype="string"),
+                ids.HOUSEHOLD_SUPPLIER: pd.Series([household_prefixed] * num_records, dtype="string"),
+                ids.PROJECT_SUPPLIER: pd.Series([project_prefixed] * num_records, dtype="string"),
                 "ReadingDate": timestamps,
             }
 
@@ -786,8 +1250,8 @@ def generate_raw_dataset(
             household_df.to_parquet(file_path, index=False)
 
             # Add metadata
-            index_bsv.append({"HuisIdLeverancier": household_prefixed, "ProjectIdLeverancier": project_prefixed, "HuisIdBSV": household_id, "ProjectIdBSV": project_id})
-            index_raw.append({"HuisIdLeverancier": household_prefixed, "ProjectIdLeverancier": project_prefixed})
+            index_bsv.append({ids.HOUSEHOLD_SUPPLIER: household_prefixed, ids.PROJECT_SUPPLIER: project_prefixed, ids.HOUSEHOLD: household_id, ids.PROJECT: project_id})
+            index_raw.append({ids.HOUSEHOLD_SUPPLIER: household_prefixed, ids.PROJECT_SUPPLIER: project_prefixed})
 
     index_raw_df = pd.DataFrame(index_raw)
     index_raw_file_path = os.path.join(output_dir, "index_raw.parquet")
@@ -841,8 +1305,8 @@ def _process_data_fixture_file(
     # Identifier columns belong to the index, not the household data, and are
     # not part of the data model -- read them before the mapping steps.
     project_id = (
-        str(data_fixture_df["ProjectIdLeverancier"].iloc[0])
-        if "ProjectIdLeverancier" in data_fixture_df.columns
+        str(data_fixture_df[ids.PROJECT_SUPPLIER].iloc[0])
+        if ids.PROJECT_SUPPLIER in data_fixture_df.columns
         else "unknown"
     )
 
@@ -887,7 +1351,7 @@ def _process_data_fixture_file(
     # of its own. Both extras are popped; the index takes no other fields.
     cadence = new_entry.pop("_cadence", None)
     new_entry.pop("_validation_summary", None)
-    new_entry["ProjectIdLeverancier"] = project_id
+    new_entry[ids.PROJECT_SUPPLIER] = project_id
     return new_entry, cadence, household_batch_id
 
 
@@ -952,24 +1416,16 @@ def generate_mapped_dataset(
         ((household_id - 1) // households_per_project) + 1
         for household_id in household_ids
     ]
-    # The span the data actually covers. A window that does not contain the
-    # readings would make the batch disagree with the household files.
-    start = pd.Timestamp(base_date)
-    end = start + pd.Timedelta(days=days)
-    pd.DataFrame({
-        "HuisIdBSV": pd.array(household_ids, dtype="Int64"),
-        # One household batch per household, numbered with the household id,
-        # which is what save_mapped_household writes. A household can have
-        # several household batches; the mapping cannot produce them yet.
-        "HuisBatchIdBSV": pd.array(household_ids, dtype="Int64"),
-        "BatchIdBSV": pd.array([1] * households, dtype="Int64"),
-        "ProjectIdBSV": pd.array(project_of, dtype="Int64"),
-        "Meenemen": pd.array([pd.NA] * households, dtype="boolean"),
-        "Gegevensfrequentie": pd.array([DEFAULT_GRID] * households, dtype="string"),
-        "Leverancierfrequentie": pd.array([pd.NA] * households, dtype="string"),
-        "Startdatum": [f"{start:%Y-%m-%d %H:%M:%S} UTC"] * households,
-        "Einddatum": [f"{end:%Y-%m-%d %H:%M:%S} UTC"] * households,
-    }).to_csv(fixtures_dir / "household_batch_sync.csv", index=False)
+    # One household batch per household, numbered with the household id, which
+    # is what save_mapped_household writes. A household can have several
+    # household batches; the mapping cannot produce them yet.
+    batch_table_frame(
+        household_ids,
+        household_of={household_id: household_id
+                      for household_id in household_ids},
+        grid=DEFAULT_GRID, start=base_date, days=days,
+        **{ids.PROJECT: project_of},
+    ).to_csv(fixtures_dir / "household_batch_sync.csv", index=False)
     etdmap.options.household_batch_csv_path = fixtures_dir / "household_batch_sync.csv"
 
     # Generation runs in the FIRST-MAPPING state: Meenemen is not reviewed yet,
@@ -986,8 +1442,8 @@ def generate_mapped_dataset(
     # folder, so there is no index to look household ids up from and the
     # sequential assignment is the intended behaviour here.
     index_df, _ = index_helpers.read_index(allow_missing=True)
-    if "Dataleverancier" not in index_df.columns:
-        index_df.loc[:, "Dataleverancier"] = "etdmap"
+    if ids.SUPPLIER not in index_df.columns:
+        index_df.loc[:, ids.SUPPLIER] = "etdmap"
     household_id_pairs = index_helpers.get_household_id_pairs(
         index_df, raw_folder, data_provider="etdmap",
         list_files_func=_list_files_data_fixture,
@@ -1018,14 +1474,9 @@ def generate_mapped_dataset(
     # supplied file covers whatever it was written for, so a dataset with more
     # projects than that leaves ProjectIdBSV unresolved on the rest.
     generated_project_mapping = fixtures_dir / "project_mapping.csv"
-    pd.DataFrame({
-        "Dataleverancier": pd.array(["etdmap"] * projects, dtype="string"),
-        "ProjectIdLeverancier": pd.array(
-            [f"Project{project_id:02}" for project_id in range(1, projects + 1)],
-            dtype="string",
-        ),
-        "ProjectIdBSV": pd.array(range(1, projects + 1), dtype="Int64"),
-    }).to_csv(generated_project_mapping, index=False)
+    project_mapping_frame(range(1, projects + 1)).to_csv(
+        generated_project_mapping, index=False
+    )
     etdmap.options.project_mapping_csv_path = (
         project_mapping_csv_path or generated_project_mapping
     )
@@ -1036,7 +1487,7 @@ def generate_mapped_dataset(
         read_metadata(Path(supplier_metadata_xlsx_file))
         if supplier_metadata_xlsx_file is not None
         else synthetic_supplier_metadata(
-            zip(index_df["HuisIdLeverancier"], index_df["ProjectIdLeverancier"])
+            zip(index_df[ids.HOUSEHOLD_SUPPLIER], index_df[ids.PROJECT_SUPPLIER])
         )
     )
     index_helpers.add_supplier_metadata_to_index(

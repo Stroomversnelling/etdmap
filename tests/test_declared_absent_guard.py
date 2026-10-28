@@ -15,10 +15,16 @@ import pandas as pd
 import pytest
 
 import etdmap
+from etdmap import ids
 from etdmap.data_model import parse_device_declaration
 from etdmap.flags import MappingFlag, set_flags
 from etdmap.mapping_helpers import assert_no_delivered_in_declared_absent
-from etdmap.testing import declare_synthetic_model
+from etdmap.testing import (
+    dataset_frame,
+    declare_synthetic_model,
+    household_of_batch,
+    index_frame,
+)
 
 RADIATOR = "ElektriciteitsgebruikRadiator"
 BOILERVAT = "ElektriciteitsgebruikBoilervat"
@@ -38,13 +44,23 @@ def model():
         yield declared
 
 
-def _frame(values, column=RADIATOR, n=None):
-    n = n if n is not None else len(values)
-    return pd.DataFrame(
-        {
-            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
-            column: pd.array(values, dtype="Float64"),
-        }
+def _frame(columns, n_rows=None):
+    """A household frame holding exactly *columns*, as a supplier delivered
+    it: tz-naive, no id columns.
+
+    No counterpart is completed. The guard reads the whole family of a
+    declared device, so a completed counterpart is another delivered column
+    of that family rather than one the test put on the frame.
+    """
+    if n_rows is None:
+        n_rows = max(len(values) for values in columns.values())
+    return dataset_frame(
+        n_rows=n_rows,
+        start="2026-01-01",
+        tz=None,
+        project=None,
+        pairs=False,
+        **columns,
     )
 
 
@@ -71,17 +87,15 @@ class TestParseDeviceDeclaration:
 
 class TestAssertNoDeliveredInDeclaredAbsent:
     def test_all_na_column_passes(self):
-        df = _frame([pd.NA, pd.NA, pd.NA])
+        df = _frame({RADIATOR: [pd.NA, pd.NA, pd.NA]})
         assert_no_delivered_in_declared_absent(df, {RADIATOR}, context="hh 1")
 
     def test_absent_column_passes(self):
-        df = pd.DataFrame(
-            {"ReadingDate": pd.date_range("2026-01-01", periods=2, freq="5min")}
-        )
+        df = _frame({}, n_rows=2)
         assert_no_delivered_in_declared_absent(df, {RADIATOR})
 
     def test_delivered_reading_raises_with_count_and_dates(self):
-        df = _frame([pd.NA, 1.5, 2.0, pd.NA])
+        df = _frame({RADIATOR: [pd.NA, 1.5, 2.0, pd.NA]})
         with pytest.raises(ValueError) as err:
             assert_no_delivered_in_declared_absent(df, {RADIATOR}, context="hh 7")
         message = str(err.value)
@@ -95,14 +109,14 @@ class TestAssertNoDeliveredInDeclaredAbsent:
     def test_invented_values_do_not_falsify(self):
         """Zeros the pipeline itself wrote (INVENTED bits) are not the meter
         reporting -- the legacy zero-prefill must not read as a device."""
-        df = _frame([0.0, 0.0, 0.0])
+        df = _frame({RADIATOR: [0.0, 0.0, 0.0]})
         set_flags(
             df, RADIATOR, pd.Series(True, index=df.index), MappingFlag.FILLED_ZERO
         )
         assert_no_delivered_in_declared_absent(df, {RADIATOR})
 
     def test_a_mix_raises_on_the_delivered_cells_only(self):
-        df = _frame([0.0, 7.5, pd.NA])
+        df = _frame({RADIATOR: [0.0, 7.5, pd.NA]})
         set_flags(
             df,
             RADIATOR,
@@ -119,23 +133,20 @@ class TestAssertNoDeliveredInDeclaredAbsent:
 
         pair = interval_column(RADIATOR)
         assert pair is not None, "fixture relies on the model's declared pair"
-        df = _frame([pd.NA, pd.NA], column=pair)
         with pytest.raises(ValueError, match=pair):
             assert_no_delivered_in_declared_absent(
-                df.assign(**{pair: pd.array([pd.NA, 3.0], dtype="Float64")}),
-                {RADIATOR},
+                _frame({pair: [pd.NA, 3.0]}), {RADIATOR}
             )
 
     def test_every_violation_is_named_in_one_raise(self):
-        df = _frame([1.0, 2.0])
-        df[BOILERVAT] = pd.array([5.0, pd.NA], dtype="Float64")
+        df = _frame({RADIATOR: [1.0, 2.0], BOILERVAT: [5.0, pd.NA]})
         with pytest.raises(ValueError) as err:
             assert_no_delivered_in_declared_absent(df, {RADIATOR, BOILERVAT})
         message = str(err.value)
         assert RADIATOR in message and BOILERVAT in message
 
     def test_empty_declaration_is_a_no_op(self):
-        df = _frame([1.0, 2.0])
+        df = _frame({RADIATOR: [1.0, 2.0]})
         assert_no_delivered_in_declared_absent(df, set())
 
 
@@ -155,33 +166,33 @@ class TestEveryColumnOfTheDeviceFalsifiesTheDeclaration:
     )
     def test_a_delivered_register_raises(self, model, register):
         column = getattr(model, register)
-        df = _frame([pd.NA, 4.0], column=column)
+        df = _frame({column: [pd.NA, 4.0]})
         with pytest.raises(ValueError, match=column):
             assert_no_delivered_in_declared_absent(df, {model.device})
 
     @pytest.mark.parametrize("member", ["device", "device_complement"])
     def test_the_variable_and_its_complement_still_raise(self, model, member):
         column = getattr(model, member)
-        df = _frame([pd.NA, 9.0], column=column)
+        df = _frame({column: [pd.NA, 9.0]})
         with pytest.raises(ValueError, match=column):
             assert_no_delivered_in_declared_absent(df, {model.device})
 
     def test_a_family_with_nothing_delivered_passes(self, model):
-        df = _frame([pd.NA, pd.NA], column=model.device)
-        for column in (
+        family = (
+            model.device,
             model.high,
             model.low,
             model.high_complement,
             model.low_complement,
-        ):
-            df[column] = pd.array([pd.NA, pd.NA], dtype="Float64")
+        )
+        df = _frame({column: [pd.NA, pd.NA] for column in family})
         assert_no_delivered_in_declared_absent(df, {model.device})
 
     def test_an_invented_register_value_does_not_falsify(self, model):
         """The existing rule -- a cell the pipeline wrote is not a delivered
         reading -- has to survive the widening, or a filled register starts
         reading as a device."""
-        df = _frame([0.0, 0.0], column=model.high)
+        df = _frame({model.high: [0.0, 0.0]})
         set_flags(
             df,
             model.high,
@@ -191,8 +202,7 @@ class TestEveryColumnOfTheDeviceFalsifiesTheDeclaration:
         assert_no_delivered_in_declared_absent(df, {model.device})
 
     def test_every_delivering_register_is_named_in_one_raise(self, model):
-        df = _frame([1.0, 2.0], column=model.high)
-        df[model.low] = pd.array([3.0, pd.NA], dtype="Float64")
+        df = _frame({model.high: [1.0, 2.0], model.low: [3.0, pd.NA]})
         with pytest.raises(ValueError) as err:
             assert_no_delivered_in_declared_absent(df, {model.device})
         message = str(err.value)
@@ -201,12 +211,12 @@ class TestEveryColumnOfTheDeviceFalsifiesTheDeclaration:
     def test_the_family_is_the_declared_device_not_every_column(self, model):
         """The widening comes from the declared relations. A delivered column
         belonging to another device is not a falsification."""
-        df = _frame([1.0, 2.0], column=model.plain)
+        df = _frame({model.plain: [1.0, 2.0]})
         assert_no_delivered_in_declared_absent(df, {model.device})
 
     def test_a_device_with_no_registers_is_still_fully_checked(self, model):
         """The resolver must not assume every device has registers."""
-        df = _frame([pd.NA, 6.0], column=model.plain_complement)
+        df = _frame({model.plain_complement: [pd.NA, 6.0]})
         with pytest.raises(ValueError, match=model.plain_complement):
             assert_no_delivered_in_declared_absent(df, {model.plain})
 
@@ -214,9 +224,24 @@ class TestEveryColumnOfTheDeviceFalsifiesTheDeclaration:
         """Satisfaction is a property of the device, so the closure over the
         declared relations has to be symmetric: declaring a register reaches
         the whole device, exactly as declaring the combined variable does."""
-        df = _frame([pd.NA, 4.0], column=model.low)
+        df = _frame({model.low: [pd.NA, 4.0]})
         with pytest.raises(ValueError, match=model.low):
             assert_no_delivered_in_declared_absent(df, {model.high})
+
+
+#: The dataset the declaration belongs to, a second dataset, and the household
+#: the first describes.
+DATASET = 1001
+SECOND_DATASET = 2001
+HOUSEHOLD = household_of_batch(DATASET)
+
+#: The supplier and project the raise has to name beside the dataset, so the
+#: declaration can be found and corrected in Grist, and the delivery batch it
+#: must not be confused with. Each differs in value from the household and
+#: from the dataset, so a message naming the wrong one cannot read as right.
+SUPPLIER = "Watch-E"
+PROJECT = 7
+DELIVERY_BATCH = 2
 
 
 class TestTheRaiseNamesWhoseDeclarationItIs:
@@ -227,78 +252,36 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
     """
 
     @staticmethod
-    def _write_index(folder, rows):
-        index_df = pd.DataFrame(
-            {
-                "HuisIdLeverancier": pd.array(
-                    [r["HuisIdLeverancier"] for r in rows], dtype="string"
-                ),
-                "HuisIdBSV": pd.array(
-                    [r["HuisIdBSV"] for r in rows], dtype="Int64"
-                ),
-                "ProjectIdLeverancier": pd.array(
-                    [r["ProjectIdLeverancier"] for r in rows], dtype="string"
-                ),
-                "ProjectIdBSV": pd.array(
-                    [r["ProjectIdBSV"] for r in rows], dtype="Int64"
-                ),
-                "Dataleverancier": pd.array(
-                    [r["Dataleverancier"] for r in rows], dtype="string"
-                ),
-                "Meenemen": pd.array(
-                    [True for _ in rows], dtype="boolean"
-                ),
-                # read_index reads the index strictly, so every declared
-                # metadata column has to be present even when it is empty.
-                "Notities": pd.array(
-                    [pd.NA for _ in rows], dtype="string"
-                ),
-                "HuisBatchIdBSV": pd.array(
-                    [r["HuisBatchIdBSV"] for r in rows], dtype="Int64"
-                ),
-                "BatchIdBSV": pd.array(
-                    [r["BatchIdBSV"] for r in rows], dtype="Int64"
-                ),
-                "Gegevensfrequentie": pd.array(
-                    ["5min" for _ in rows], dtype="string"
-                ),
-            }
-        )
-        index_df.to_parquet(folder / "index.parquet", engine="pyarrow")
-
-    @classmethod
-    def _one_household(cls, folder):
-        cls._write_index(
-            folder,
-            [
-                {
-                    "HuisIdLeverancier": "A1",
-                    "HuisIdBSV": 250,
-                    "ProjectIdLeverancier": "7",
-                    "ProjectIdBSV": 7,
-                    "Dataleverancier": "Watch-E",
-                    "HuisBatchIdBSV": 251,
-                    "BatchIdBSV": 2,
-                }
-            ],
-        )
+    def _write_index(folder, household_batch_ids, household_of=None):
+        """The index the raise reads the declaration's owner from."""
+        index_frame(
+            household_batch_ids,
+            household_of=household_of,
+            project=PROJECT,
+            batch=DELIVERY_BATCH,
+            supplier=SUPPLIER,
+            Meenemen=True,
+        ).to_parquet(folder / "index.parquet", engine="pyarrow")
 
     def test_supplier_project_and_household_batch_are_named(
         self, model, tmp_path, monkeypatch
     ):
-        self._one_household(tmp_path)
+        self._write_index(tmp_path, [DATASET])
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", tmp_path)
-        df = _frame([pd.NA, 4.0], column=model.high)
+        df = _frame({model.high: [pd.NA, 4.0]})
 
         with pytest.raises(ValueError) as err:
             assert_no_delivered_in_declared_absent(
-                df, {model.device}, context="hh 250", household_id=250
+                df,
+                {model.device},
+                context=f"hh {HOUSEHOLD}",
+                household_id=HOUSEHOLD,
             )
 
         message = str(err.value)
-        assert "Watch-E" in message
-        assert "ProjectIdBSV 7" in message
-        assert "HuisBatchIdBSV 251" in message
+        assert SUPPLIER in message
+        assert f"{ids.PROJECT} {PROJECT}" in message
+        assert f"{ids.HOUSEHOLD_BATCH} {DATASET}" in message
         # The violation detail is unchanged by the decoration.
         assert model.high in message
         assert "1 delivered reading(s)" in message
@@ -310,37 +293,19 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
         to one of them. Naming every candidate beats naming one at random."""
         self._write_index(
             tmp_path,
-            [
-                {
-                    "HuisIdLeverancier": "A1",
-                    "HuisIdBSV": 250,
-                    "ProjectIdLeverancier": "7",
-                    "ProjectIdBSV": 7,
-                    "Dataleverancier": "Watch-E",
-                    "HuisBatchIdBSV": 251,
-                    "BatchIdBSV": 2,
-                },
-                {
-                    "HuisIdLeverancier": "A1",
-                    "HuisIdBSV": 250,
-                    "ProjectIdLeverancier": "7",
-                    "ProjectIdBSV": 7,
-                    "Dataleverancier": "Watch-E",
-                    "HuisBatchIdBSV": 252,
-                    "BatchIdBSV": 3,
-                },
-            ],
+            [DATASET, SECOND_DATASET],
+            household_of={SECOND_DATASET: HOUSEHOLD},
         )
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", tmp_path)
-        df = _frame([pd.NA, 4.0], column=model.high)
+        df = _frame({model.high: [pd.NA, 4.0]})
 
         with pytest.raises(ValueError) as err:
             assert_no_delivered_in_declared_absent(
-                df, {model.device}, household_id=250
+                df, {model.device}, household_id=HOUSEHOLD
             )
 
         message = str(err.value)
-        assert "251" in message and "252" in message
+        assert str(DATASET) in message and str(SECOND_DATASET) in message
 
     def test_an_absent_index_still_raises_on_the_violation(
         self, model, tmp_path, monkeypatch
@@ -348,36 +313,43 @@ class TestTheRaiseNamesWhoseDeclarationItIs:
         """The identifiers decorate the message. Failing to find them must
         never swallow the contradiction the guard exists to report."""
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", tmp_path)
-        df = _frame([pd.NA, 4.0], column=model.high)
+        df = _frame({model.high: [pd.NA, 4.0]})
 
         with pytest.raises(ValueError) as err:
             assert_no_delivered_in_declared_absent(
-                df, {model.device}, context="hh 250", household_id=250
+                df,
+                {model.device},
+                context=f"hh {HOUSEHOLD}",
+                household_id=HOUSEHOLD,
             )
 
         message = str(err.value)
         assert model.high in message
-        assert "hh 250" in message
+        assert f"hh {HOUSEHOLD}" in message
 
     def test_a_household_absent_from_the_index_still_raises(
         self, model, tmp_path, monkeypatch
     ):
-        self._one_household(tmp_path)
+        self._write_index(tmp_path, [DATASET])
         monkeypatch.setattr(etdmap.options, "mapped_folder_path", tmp_path)
-        df = _frame([pd.NA, 4.0], column=model.high)
+        df = _frame({model.high: [pd.NA, 4.0]})
 
         with pytest.raises(ValueError, match=model.high):
             assert_no_delivered_in_declared_absent(
-                df, {model.device}, household_id=999
+                df,
+                {model.device},
+                # The household the second dataset belongs to, which the index
+                # written above does not cover.
+                household_id=household_of_batch(SECOND_DATASET),
             )
 
     def test_without_a_household_id_the_message_is_unchanged(self, model):
         """Every existing caller omits it, so the decoration is additive."""
-        df = _frame([pd.NA, 4.0], column=model.high)
+        df = _frame({model.high: [pd.NA, 4.0]})
 
         with pytest.raises(ValueError) as err:
             assert_no_delivered_in_declared_absent(df, {model.device})
 
         message = str(err.value)
-        assert "ProjectIdBSV" not in message
+        assert ids.PROJECT not in message
         assert model.high in message

@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 import etdmap
+from etdmap import ids
 from etdmap.index_helpers import (
     HouseBatchOverlapError,
     frequency_to_minutes,
@@ -23,6 +24,25 @@ from etdmap.mapping_helpers import (
     ensure_intervals,
     fill_down_infrequent_devices,
 )
+from etdmap.testing import (
+    batch_table_frame,
+    cadence_sidecar,
+    datasets_frame,
+    household_batch_of,
+)
+
+#: The dataset each household here is described through. The grid is declared
+#: per dataset, so each one is derived from its household rather than stated
+#: beside it.
+_DATASETS = {
+    household_id: household_batch_of(household_id)
+    for household_id in (1, 2, 3, 5, 7, 8)
+}
+
+#: A second dataset of household 7, for a household delivered twice at two
+#: different grids. No offset derives it: a household's further deliveries are
+#: numbered by the metadata, not by arithmetic on the household.
+_SECOND_DATASET = 1070
 
 
 @pytest.fixture(autouse=True)
@@ -55,12 +75,12 @@ class TestFrequencyToMinutes:
 class TestGridMinutesForHousehold:
     @pytest.fixture
     def batch_table(self, tmp_path):
+        """Three datasets, the third declaring no grid at all."""
         path = tmp_path / "huisbatch.csv"
-        pd.DataFrame({
-            "HuisIdBSV": pd.array([1, 2, 3], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([1001, 1002, 1003], dtype="Int64"),
-            "Gegevensfrequentie": pd.array(["5min", "15min", None], dtype="string"),
-        }).to_csv(path, index=False)
+        batch_table_frame(
+            [_DATASETS[1], _DATASETS[2], _DATASETS[3]],
+            Gegevensfrequentie=["5min", "15min", None],
+        ).to_csv(path, index=False)
 
         previous = etdmap.options.household_batch_csv_path
         etdmap.options.household_batch_csv_path = str(path)
@@ -112,13 +132,11 @@ class TestTheGridIsKeyedOnTheBatch:
     def two_batches(self, tmp_path):
         """Household 7 has two datasets at different grids; household 8 has one."""
         path = tmp_path / "huisbatch_multi.csv"
-        pd.DataFrame({
-            "HuisIdBSV": pd.array([7, 7, 8], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([1007, 1070, 1008], dtype="Int64"),
-            "Gegevensfrequentie": pd.array(
-                ["5min", "15min", "1h"], dtype="string"
-            ),
-        }).to_csv(path, index=False)
+        batch_table_frame(
+            [_DATASETS[7], _SECOND_DATASET, _DATASETS[8]],
+            household_of={_SECOND_DATASET: 7},
+            Gegevensfrequentie=["5min", "15min", "1h"],
+        ).to_csv(path, index=False)
 
         previous = etdmap.options.household_batch_csv_path
         etdmap.options.household_batch_csv_path = str(path)
@@ -126,9 +144,9 @@ class TestTheGridIsKeyedOnTheBatch:
         etdmap.options.household_batch_csv_path = previous
 
     def test_each_batch_resolves_its_own_grid(self, two_batches):
-        assert grid_minutes_for_household_batch(1007) == 5.0
-        assert grid_minutes_for_household_batch(1070) == 15.0
-        assert grid_minutes_for_household_batch(1008) == 60.0
+        assert grid_minutes_for_household_batch(_DATASETS[7]) == 5.0
+        assert grid_minutes_for_household_batch(_SECOND_DATASET) == 15.0
+        assert grid_minutes_for_household_batch(_DATASETS[8]) == 60.0
 
     def test_a_household_with_two_batches_refuses_to_answer(self, two_batches):
         """The grid is a property of the dataset. Returning the first listed
@@ -138,8 +156,8 @@ class TestTheGridIsKeyedOnTheBatch:
             grid_minutes_for_household(7)
 
         message = str(excinfo.value)
-        assert "1007" in message
-        assert "1070" in message
+        assert str(_DATASETS[7]) in message
+        assert str(_SECOND_DATASET) in message
 
     def test_a_household_with_one_batch_still_resolves(self, two_batches):
         assert grid_minutes_for_household(8) == 60.0
@@ -158,17 +176,15 @@ class TestTheGridIsKeyedOnTheBatch:
 
     def test_a_batch_with_no_declared_grid_raises(self, tmp_path):
         path = tmp_path / "huisbatch_blank.csv"
-        pd.DataFrame({
-            "HuisIdBSV": pd.array([5], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([1050], dtype="Int64"),
-            "Gegevensfrequentie": pd.array([None], dtype="string"),
-        }).to_csv(path, index=False)
+        batch_table_frame(
+            [_DATASETS[5]], Gegevensfrequentie=None
+        ).to_csv(path, index=False)
 
         previous = etdmap.options.household_batch_csv_path
         etdmap.options.household_batch_csv_path = str(path)
         try:
             with pytest.raises(ValueError, match="Gegevensfrequentie"):
-                grid_minutes_for_household_batch(1050)
+                grid_minutes_for_household_batch(_DATASETS[5])
         finally:
             etdmap.options.household_batch_csv_path = previous
 
@@ -176,17 +192,16 @@ class TestTheGridIsKeyedOnTheBatch:
         """An older synced table has no HuisBatchIdBSV. Resolving the grid off
         HuisIdBSV instead would answer for a key the data model does not use."""
         path = tmp_path / "huisbatch_legacy.csv"
-        pd.DataFrame({
-            "HuisIdBSV": pd.array([1], dtype="Int64"),
-            "Gegevensfrequentie": pd.array(["5min"], dtype="string"),
-        }).to_csv(path, index=False)
+        batch_table_frame(
+            [_DATASETS[1]], columns=[ids.HOUSEHOLD, "Gegevensfrequentie"]
+        ).to_csv(path, index=False)
 
         previous = etdmap.options.household_batch_csv_path
         etdmap.options.household_batch_csv_path = str(path)
         try:
-            with pytest.raises(ValueError, match="HuisBatchIdBSV"):
+            with pytest.raises(ValueError, match=ids.HOUSEHOLD_BATCH):
                 grid_minutes_for_household_batch(1)
-            with pytest.raises(ValueError, match="HuisBatchIdBSV"):
+            with pytest.raises(ValueError, match=ids.HOUSEHOLD_BATCH):
                 grid_minutes_for_household(1)
         finally:
             etdmap.options.household_batch_csv_path = previous
@@ -195,17 +210,16 @@ class TestTheGridIsKeyedOnTheBatch:
         """A batch id names one dataset, so two rows for it is a metadata
         fault rather than a choice to make."""
         path = tmp_path / "huisbatch_dup.csv"
-        pd.DataFrame({
-            "HuisIdBSV": pd.array([3, 3], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([1030, 1030], dtype="Int64"),
-            "Gegevensfrequentie": pd.array(["5min", "15min"], dtype="string"),
-        }).to_csv(path, index=False)
+        batch_table_frame(
+            [_DATASETS[3], _DATASETS[3]],
+            Gegevensfrequentie=["5min", "15min"],
+        ).to_csv(path, index=False)
 
         previous = etdmap.options.household_batch_csv_path
         etdmap.options.household_batch_csv_path = str(path)
         try:
             with pytest.raises(ValueError, match="2 rows"):
-                grid_minutes_for_household_batch(1030)
+                grid_minutes_for_household_batch(_DATASETS[3])
         finally:
             etdmap.options.household_batch_csv_path = previous
 
@@ -214,6 +228,9 @@ class TestEnsureIntervalsUsesTheGridItIsGiven:
     """The count of expected records is what decides whether padding happens at
     all, so it has to be counted in the grid being padded to."""
 
+    # Local: the frame returned here is itself the subject -- a complete series
+    # is asserted to come back unchanged, so its exact columns are pinned, and
+    # it carries no id column for the padding to leave empty.
     @staticmethod
     def _readings(freq, periods, drop):
         dates = pd.date_range("2026-01-01", periods=periods, freq=freq)
@@ -268,17 +285,20 @@ class TestFillingStepsInTheGridItIsGiven:
         values = [
             10.0 + i if i % reports_every == 0 else pd.NA for i in range(n)
         ]
-        df = pd.DataFrame({
-            "ReadingDate": pd.date_range(
-                "2026-01-01", periods=n, freq=f"{grid_minutes}min"
-            ),
-            self.CUM: pd.array(values, dtype="Float64"),
-        })
-        cadence = pd.DataFrame({
-            "HuisIdBSV": pd.array([1], dtype="Int64"),
-            "column": pd.array([self.CUM], dtype="string"),
-            "cadence_minutes": pd.array([column_minutes], dtype="Int64"),
-        })
+        # Naive timestamps, and no cumulative counterpart: the column under
+        # test is the cumulative one and the fill is given it alone.
+        df = datasets_frame(
+            {household_batch_of(1): {self.CUM: values}},
+            start="2026-01-01",
+            freq=f"{grid_minutes}min",
+            tz=None,
+            pairs=False,
+        )
+        # The shape detect_column_cadence returns: no dataset id, and the grid
+        # on the timestamp row.
+        cadence = cadence_sidecar(
+            {self.CUM: column_minutes}, grid_minutes=grid_minutes
+        )
         out = fill_down_infrequent_devices(
             df, [self.CUM], cadence=cadence, grid_minutes=grid_minutes
         )

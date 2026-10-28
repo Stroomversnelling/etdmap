@@ -4,6 +4,8 @@ from importlib.resources import files
 
 import pandas as pd
 
+import etdmap.ids as ids
+
 logger = logging.getLogger(__name__)
 
 # Maps the data model's "Type variabele" values to pandas dtype strings.
@@ -363,7 +365,7 @@ def _build_derived_structures(df=None):
 
     # Columns suppliers are allowed to provide in their metadata files.
     supplier_meta_rows = df[
-        (df["Wie vult?"] == "Dataleverancier") & (df["Entiteit"] == "Metadata")
+        (df["Wie vult?"] == ids.SUPPLIER) & (df["Entiteit"] == "Metadata")
     ]
     supplier_meta = supplier_meta_rows["Variabele"].tolist()
 
@@ -447,13 +449,13 @@ def load_projects() -> pd.DataFrame:
     projects_file = files("etdmap.data").joinpath("projects.csv")
     if not projects_file.is_file():
         return pd.DataFrame(
-            columns=["Dataleverancier", "ProjectIdBSV", "FysischModel"]
+            columns=[ids.SUPPLIER, ids.PROJECT, "FysischModel"]
         )
     return pd.read_csv(
         projects_file,
         dtype={
-            "Dataleverancier": "string",
-            "ProjectIdBSV": "Int64",
+            ids.SUPPLIER: "string",
+            ids.PROJECT: "Int64",
             "FysischModel": "string",
         },
         na_values=["n.a.", "NA", "N/A", ""],
@@ -461,7 +463,7 @@ def load_projects() -> pd.DataFrame:
     )
 
 
-# The physical model each project's households follow, keyed by ProjectIdBSV.
+# The physical model each project's households follow, keyed by the project.
 # Built once at import like the threshold tables: rule selection reads it per
 # row, and a per-row lookup cannot afford a file read.
 physical_model_by_project = {
@@ -696,7 +698,7 @@ def cadence_minutes_by_column(cadence) -> dict:
     Map each column to the interval its readings cover, in minutes.
 
     Reads the table :func:`etdmap.mapping_helpers.detect_column_cadence`
-    produces for one household. A column is found under its own name or under
+    produces for one household batch. A column is found under its own name or under
     the name of the variable it is paired with, since cadence is measured on the
     columns as delivered and a derived column is not there under its own name.
 
@@ -714,7 +716,7 @@ def cadence_minutes_by_column(cadence) -> dict:
     ----------
     cadence : pd.DataFrame or None
         The table :func:`etdmap.mapping_helpers.detect_column_cadence` produces
-        for one household: one row per column, with ``cadence_minutes`` holding
+        for one household batch: one row per column, with ``cadence_minutes`` holding
         the interval that column's readings cover, measured on the timestamps
         as delivered. None or empty is accepted and resolves nothing.
 
@@ -757,7 +759,7 @@ def dataset_cadence_minutes(cadence, date_column: str = "ReadingDate"):
     ----------
     cadence : pd.DataFrame or None
         The table :func:`etdmap.mapping_helpers.detect_column_cadence` produces
-        for one household. The row for *date_column* is the one read here.
+        for one household batch. The row for *date_column* is the one read here.
     date_column : str
         Name of the timestamp column, whose own row carries the grid.
     """

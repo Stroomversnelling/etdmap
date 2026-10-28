@@ -26,6 +26,7 @@ from etdmap.record_validators import (
     validate_thresholds_combined,
 )
 from etdmap.storage import mapped_household_paths
+from etdmap.testing import household_batch_of, supplier_label
 
 #: A cumulative variable whose interval column carries a '5-minute' bound.
 CUM = "ElektriciteitNetgebruikHoog"
@@ -123,14 +124,15 @@ def _run_pipeline(tmp_path, grid, household_id, steps, household_batch_id=None):
         CUM: cumulative,
     })
     cadence = detect_column_cadence(df, grid_minutes=grid)
+    dataset = household_batch_id or household_batch_of(household_id)
     run_standard_pipeline(
         df, household_id=household_id,
-        household_batch_id=household_batch_id or household_id + 1000,
-        household_id_supplier=f"H{household_id}",
+        household_batch_id=dataset,
+        household_id_supplier=supplier_label(household_id),
         mapped_folder_path=tmp_path, grid_minutes=grid, cadence=cadence,
     )
     paths = mapped_household_paths(tmp_path)
-    return pd.read_parquet(paths[household_id], dtype_backend="numpy_nullable")
+    return pd.read_parquet(paths[dataset], dtype_backend="numpy_nullable")
 
 
 class TestThroughTheWholePipeline:

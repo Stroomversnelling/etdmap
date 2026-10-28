@@ -1,10 +1,11 @@
 """
-Per-entity (HuisIdBSV-keyed mapped mode, source-file-keyed raw mode)
-data-stats producer for etdmap. Mirrors ``etdtransform.data_stats`` so
-both repos expose the same public name (``get_data_stats``) at the
-same module path; ``etdmap`` handles the raw and mapped stages
-(per-household or per-file fan-out), ``etdtransform`` handles the
-wide-parquet stages (default / imputed / calculated).
+Per-entity data-stats producer for etdmap: the entity is the household batch
+dataset (:data:`etdmap.ids.HOUSEHOLD_BATCH`) in mapped mode and the source
+file in raw mode. Mirrors ``etdtransform.data_stats`` so both repos expose the
+same public name (``get_data_stats``) at the same module path; ``etdmap``
+handles the raw and mapped stages (per-dataset or per-file fan-out),
+``etdtransform`` handles the wide-parquet stages (default / imputed /
+calculated).
 
 Schema contract: ``_STATS_DTYPES`` and ``NUMERIC_STATS_SCHEMA`` (see
 parent ADR-018). The schema is defined here and consumed by every
@@ -14,12 +15,10 @@ stats producer in the project. Schema-parity tests in
 per-Series kernel, the per-group pandas/ibis kernels, and the
 wide-parquet producer all agree on shape and values.
 
-Historical note: these definitions previously lived in
-``etdmap/mapping_helpers.py``. They were relocated here for
-module-path symmetry with ``etdtransform.data_stats``. ``mapping_helpers``
-re-exports the same names for backward compatibility -- existing
-``from etdmap.mapping_helpers import get_data_stats`` imports keep
-working. New code should prefer ``from etdmap.data_stats import ...``.
+``etdmap.data_stats`` is the canonical import path for these names;
+``mapping_helpers`` re-exports them, so
+``from etdmap.mapping_helpers import get_data_stats`` resolves to the
+same object.
 """
 
 import json
@@ -30,10 +29,10 @@ from functools import partial
 
 import pandas as pd
 
+from etdmap import ids
 from etdmap.data_model import tariff_root_to_splits
-from etdmap.index_helpers import get_mapped_data, read_index
+from etdmap.index_helpers import get_mapped_dataset, read_index
 from etdmap.timestamp_helpers import derive_and_normalize_reading_date
-
 
 # ---------------------------------------------------------------------------
 # Schema constants
@@ -377,17 +376,19 @@ def _cast_stats_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 # Per-entity collectors
 # ---------------------------------------------------------------------------
 
-def collect_mapped_data_stats(household_id, seasonal=False, seasons=None):
+def collect_mapped_data_stats(household_batch_id, seasonal=False, seasons=None):
     """
-    Collect statistics for each column in the DataFrame corresponding to a
-    specific HuisIdBSV.
+    Collect statistics for each column of ONE household batch dataset.
 
     Parameters
     ----------
-    household_id : str or int
-        The identifier for the household to process.
+    household_batch_id : str or int
+        The household batch dataset to process: one household over one
+        period. Keyed on the dataset rather than the dwelling, because two
+        datasets of one household are two series -- pooling them would give a
+        min, a max and a mean over a concatenation of both.
     seasonal : bool, optional
-        If True, emit one row per (HuisIdBSV, numeric column, season) where
+        If True, emit one row per (dataset, numeric column, season) where
         season includes 'annual' plus each entry in `seasons`. Non-numeric /
         non-bool columns only get the 'annual' row regardless. Default False
         (annual only).
@@ -403,10 +404,13 @@ def collect_mapped_data_stats(household_id, seasonal=False, seasons=None):
         Stats dicts produced by collect_column_stats, each with an extra
         'season' key.
     """
-    logging.info(f"Processing stats from columns where HuisIdBSV = {household_id}")
+    logging.info(
+        f"Processing stats from columns where {ids.HOUSEHOLD_BATCH} = "
+        f"{household_batch_id}"
+    )
     file_summary_data = []
     try:
-        df = get_mapped_data(household_id)
+        df = get_mapped_dataset(household_batch_id)
         # Fill in any Hoog/Laag tariff-pair root columns that are missing
         # or empty so downstream stats compare projects on the root name
         # apples-to-apples regardless of how a supplier reports the data.
@@ -419,12 +423,13 @@ def collect_mapped_data_stats(household_id, seasonal=False, seasons=None):
                     or pd.api.types.is_bool_dtype(col_data)
                 ):
                     continue
-                stats = collect_column_stats(household_id, col_data)
+                stats = collect_column_stats(household_batch_id, col_data)
                 stats["season"] = season
                 file_summary_data.append(stats)
     except Exception as e:
         logging.error(
-            f"Failed to process stats from columns where HuisIdBSV = {household_id}: {str(e)}",
+            f"Failed to process stats from columns where "
+            f"{ids.HOUSEHOLD_BATCH} = {household_batch_id}: {e!s}",
             exc_info=True,
         )
 
@@ -494,27 +499,33 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
 
     Modes:
       raw_data_folder_path is None (default): mapped mode. Iterates
-        the HuisIdBSV values from read_index(), collecting stats per
-        household via collect_mapped_data_stats. The mode-driver
-        identifier is HuisIdBSV; the index DataFrame is merged in
-        (Dataleverancier, ProjectIdBSV, etc).
+        the household batch datasets from read_index(), collecting stats
+        per dataset via collect_mapped_data_stats. The mode-driver
+        identifier is the household batch dataset; the index DataFrame is
+        merged in (the household, supplier, project, etc).
       raw_data_folder_path is a path-like: raw mode. Iterates the
         *.parquet files in the folder, collecting stats per file via
         process_raw_data_file. The mode-driver identifier is the
         source filename. No index merge.
 
     Output schema (shape-stable across modes):
-      Identifier  -- always present; the mode-driver value as string
-                     (HuisIdBSV in mapped mode, filename in raw mode).
-                     Use this column for mode-agnostic consumers.
-      HuisIdBSV   -- always present; populated in mapped mode, all NA
-                     (Int64 dtype) in raw mode.
-      source_file -- always present; populated in raw mode, all NA
-                     (string dtype) in mapped mode.
+      Identifier    -- always present; the mode-driver value as string
+                       (the household batch dataset in mapped mode, the
+                       filename in raw mode). Use this column for
+                       mode-agnostic consumers.
+      ids.HOUSEHOLD_BATCH
+                    -- always present; populated in mapped mode, all NA
+                       (Int64 dtype) in raw mode.
+      source_file   -- always present; populated in raw mode, all NA
+                       (string dtype) in mapped mode.
+
+    The statistics are per DATASET. Two datasets of one household are two
+    rows per column, because they are two series: a min, max, mean or
+    percentile taken over both concatenated describes neither.
 
     A consumer that is mode-agnostic should use `Identifier`. A consumer
     that requires a specific identifier type should use the typed
-    column (`HuisIdBSV` or `source_file`) and treat all-NA as "not
+    column (`ids.HOUSEHOLD_BATCH` or `source_file`) and treat all-NA as "not
     available in this mode" -- not silently fall back to row counts or
     other proxies.
 
@@ -562,22 +573,27 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
         worker = partial(collect_mapped_data_stats, seasonal=seasonal, seasons=seasons)
         if multi:
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                results = executor.map(worker, index_df["HuisIdBSV"])
+                results = executor.map(worker, index_df[ids.HOUSEHOLD_BATCH])
                 summary_data = [item for sublist in results for item in sublist]
         else:
-            for household_id in index_df["HuisIdBSV"]:
-                logging.info(f"Collecting stats for HuisIdBSV = {household_id}")
-                summary_data.extend(worker(household_id))
+            for household_batch_id in index_df[ids.HOUSEHOLD_BATCH]:
+                logging.info(
+                    f"Collecting stats for {ids.HOUSEHOLD_BATCH} = "
+                    f"{household_batch_id}"
+                )
+                summary_data.extend(worker(household_batch_id))
         df = pd.DataFrame(summary_data)
         df = _cast_stats_dtypes(df)
         # Shape-stable schema (see docstring): copy the mode-driver
         # identifier into both a generic `Identifier` column and the
-        # typed `HuisIdBSV`. The raw-mode column `source_file` is
+        # typed `ids.HOUSEHOLD_BATCH`. The raw-mode column `source_file` is
         # always present too, all-NA in this mode, with the same
         # string dtype it carries in raw mode.
-        df["HuisIdBSV"] = df["Identifier"]
+        df[ids.HOUSEHOLD_BATCH] = df["Identifier"]
         df["source_file"] = pd.Series([pd.NA] * len(df), dtype="string")
-        df = pd.merge(df, index_df, how="left", on="HuisIdBSV")
+        # The index join brings the household in as an attribute of the
+        # dataset, alongside its project and the rest of its row.
+        df = pd.merge(df, index_df, how="left", on=ids.HOUSEHOLD_BATCH)
         return df
 
     file_extension = "parquet"
@@ -601,11 +617,11 @@ def get_data_stats(raw_data_folder_path=None, multi=False, max_workers=2,
     df = _cast_stats_dtypes(df)
     # Shape-stable schema (see docstring): copy the mode-driver
     # identifier into both a generic `Identifier` column and the typed
-    # `source_file`. The mapped-mode column `HuisIdBSV` is always
+    # `source_file`. The mapped-mode column `ids.HOUSEHOLD_BATCH` is always
     # present too, all-NA in this mode, with Int64 dtype to match its
     # populated dtype in mapped mode.
     df["source_file"] = df["Identifier"]
-    df["HuisIdBSV"] = pd.Series([pd.NA] * len(df), dtype="Int64")
+    df[ids.HOUSEHOLD_BATCH] = pd.Series([pd.NA] * len(df), dtype="Int64")
     return df
 
 

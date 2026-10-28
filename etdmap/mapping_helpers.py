@@ -1,61 +1,13 @@
 import logging
-from datetime import datetime
 import os
 import re
 import shutil
-from typing import NamedTuple
+from datetime import datetime
+from typing import Callable, NamedTuple
 
 import pandas as pd
 
 import etdmap
-
-from etdmap.data_model import (
-    # cadence_minutes_by_column lives in data_model, beside cadence_lookup_names
-    # which it uses, so record_validators can reach it too. Re-exported here for
-    # callers that import it from this module.
-    cadence_minutes_by_column,  # noqa: F401
-    dataset_cadence_minutes,
-    resolve_bounds,
-    complement_column,
-    cumulative_column,
-    cumulative_columns,
-    diff_columns,
-    interval_column,
-    model_column_order,
-    model_column_type,
-    monotonic_columns,
-    performance_column_dtypes,
-    required_performance_data_columns,
-    tariff_root_to_splits,
-    thresholds_dict,
-)
-from etdmap.index_helpers import (
-    get_mapped_data,
-    grid_minutes_for_household,
-    grid_minutes_for_household_batch,
-    household_batch_for_household,
-    read_index,
-    supported_kwargs,
-)
-from etdmap.flags import (
-    _SPAN_DTYPES,
-    MappingFlag,
-    assert_flag_history_complete,
-    bound_flags,
-    frozen_spans,
-    flag_column,
-    mark_undelivered_slots,
-    record_delivery,
-    scale_bound_to_cadence,
-    set_flags,
-    threshold_base_minutes,
-)
-from etdmap.record_validators import (
-    record_flag_conditions,
-    record_quality_flag_conditions,
-    momentaan_flag_conditions,
-    cumulative_diff_flag_conditions,
-)
 
 # Backward-compat re-exports: the stats producer, the per-Series
 # kernel, the schema constants, and their helpers were relocated to
@@ -64,12 +16,33 @@ from etdmap.record_validators import (
 # `from etdmap.mapping_helpers import get_data_stats` (and similar)
 # imports keep working through these re-exports. New code should
 # import directly from etdmap.data_stats.
-from etdmap.data_stats import (  # noqa: F401, E402
-    DEFAULT_SEASON_MONTHS,
-    NUMERIC_STATS_SCHEMA,
+from etdmap import ids
+from etdmap.data_model import (
+    # cadence_minutes_by_column lives in data_model, beside cadence_lookup_names
+    # which it uses, so record_validators can reach it too. Re-exported here for
+    # callers that import it from this module.
+    cadence_minutes_by_column,
+    complement_column,
+    cumulative_column,
+    cumulative_columns,
+    dataset_cadence_minutes,
+    diff_columns,
+    interval_column,
+    model_column_order,
+    model_column_type,
+    monotonic_columns,
+    performance_column_dtypes,
+    required_performance_data_columns,
+    resolve_bounds,
+    tariff_root_to_splits,
+    thresholds_dict,
+)
+from etdmap.data_stats import (  # noqa: F401
     _COLD_MONTHS,
     _STATS_DTYPES,
     _WARM_MONTHS,
+    DEFAULT_SEASON_MONTHS,
+    NUMERIC_STATS_SCHEMA,
     _cast_stats_dtypes,
     _seasonal_slices,
     _synthesise_tariff_roots,
@@ -78,6 +51,31 @@ from etdmap.data_stats import (  # noqa: F401, E402
     compute_numeric_column_stats,
     get_data_stats,
     process_raw_data_file,
+)
+from etdmap.flags import (
+    _SPAN_DTYPES,
+    MappingFlag,
+    assert_flag_history_complete,
+    bound_flags,
+    flag_column,
+    frozen_spans,
+    mark_undelivered_slots,
+    record_delivery,
+    set_flags,
+    threshold_base_minutes,
+)
+from etdmap.index_helpers import (
+    grid_minutes_for_household,
+    grid_minutes_for_household_batch,
+    household_batch_for_household,
+    read_index,
+    supported_kwargs,
+)
+from etdmap.record_validators import (
+    cumulative_diff_flag_conditions,
+    momentaan_flag_conditions,
+    record_flag_conditions,
+    record_quality_flag_conditions,
 )
 
 
@@ -383,7 +381,7 @@ def _detect_negative_diff_cases(group, col):
     Parameters
     ----------
     group : pd.DataFrame
-        Per-household DataFrame, sorted by ReadingDate, containing ``col``.
+        One dataset's DataFrame, sorted by ReadingDate, containing ``col``.
     col : str
         Name of the cumulative column being classified.
 
@@ -467,7 +465,7 @@ def _apply_negative_diff_corrections(group, col, cases, context_string):
     Parameters
     ----------
     group : pd.DataFrame
-        Per-household DataFrame, sorted by ReadingDate. Must already contain
+        One dataset's DataFrame, sorted by ReadingDate. Must already contain
         ``col`` and the interval column linked to it.
     col : str
         Name of the cumulative column being corrected.
@@ -643,19 +641,17 @@ def combine_tariff_registers(df, context: str = "") -> pd.DataFrame:
     Alternation is an INTERVAL property and the flag belongs only to the
     interval form. Testing "both registers nonzero" on the CUMULATIVE
     registers is meaningless -- a cumulative reading is a running total, so
-    both tariff counters hold nonzero totals essentially always. Measured on
-    the 2026-10-01 estate remap, that test was true for 103,001 of 103,001
-    delivered readings on one household (100%) and fired on 18.5M Watch-E
-    and 11.3M Factory Zero cells, while the interval test was true for 277
-    of ~74,400 consuming intervals (0.37%). So the cumulative root cell
-    never carries this signal: flagging it would re-create an always-on bit
-    that says nothing. Where only cumulative registers are delivered, the
-    interval each one consumed is its advance between readings, which is
-    what the test uses -- and the flag still lands on the interval root.
-    The surviving 0.37% are the readings worth looking at; an interval in
-    which the tariff switch fell part-way through would advance both
-    registers legitimately, which is the likeliest benign explanation but
-    is not established here.
+    both tariff counters hold nonzero totals on effectively every delivered
+    reading, where the interval test holds on a fraction of a percent of
+    consuming intervals. So the cumulative root cell never carries this
+    signal: flagging it would re-create an always-on bit that says nothing.
+    Where only cumulative registers are delivered, the interval each one
+    consumed is its advance between readings, which is what the test uses --
+    and the flag still lands on the interval root. The intervals that do
+    survive the test are the readings worth looking at; one in which the
+    tariff switch fell part-way through would advance both registers
+    legitimately, which is the likeliest benign explanation but is not
+    established here.
 
     Covers the cumulative pairs and the interval (Diff) pairs alike. Call it
     BEFORE ``add_diff_columns`` so a combined cumulative root produces its
@@ -1025,7 +1021,7 @@ def add_diff_columns(
                 _col_stats = _apply_negative_diff_corrections(
                     group, col, cases, context_string,
                 )
-                # Accumulated across groups: one call may cover many households
+                # Accumulated across groups: one call may cover many datasets
                 # when a groupby is passed, and a column may be corrected in
                 # each of them.
                 if _col_stats is not None:
@@ -1113,15 +1109,8 @@ def add_diff_columns(
     return result
 
 
-# Nullable dtypes for the per-column cadence table. cadence_minutes and
-# cadence_source are added by the resolution step at the end.
-_CADENCE_DTYPES = {
-    'column': 'string',
-    'cadence_detected': 'Int64',
-    'confidence': 'Float64',
-    'n_readings': 'Int64',
-}
-
+# Nullable dtypes for the per-column cadence table. Both maps also fix the
+# column ORDER of the frames built from them.
 _CADENCE_TABLE_DTYPES = {
     'column': 'string',
     'cadence_minutes': 'Int64',
@@ -1129,6 +1118,15 @@ _CADENCE_TABLE_DTYPES = {
     'cadence_detected': 'Int64',
     'confidence': 'Float64',
     'n_readings': 'Int64',
+}
+
+# The columns the resolution step adds at the end.
+_CADENCE_RESOLVED = ('cadence_minutes', 'cadence_source')
+
+# The same table as detection produces it, before resolution.
+_CADENCE_DTYPES = {
+    name: dtype for name, dtype in _CADENCE_TABLE_DTYPES.items()
+    if name not in _CADENCE_RESOLVED
 }
 
 
@@ -1248,7 +1246,7 @@ def detect_column_cadence(
     disagreement. The declared value is still the one used.
 
     The grid is required, because it is what source 3 uses. Pass it as
-    *grid_minutes*, or pass *household_id* and it is read from the batch
+    *grid_minutes*, or pass *household_id* and it is read from the household batch
     metadata. A column too short or too irregular to measure then still ends up
     with the interval its household is recorded on, rather than nothing.
 
@@ -1288,8 +1286,8 @@ def detect_column_cadence(
         The grid the household batch is recorded on, in minutes. Required unless
         *household_id* is given.
     household_id : int, optional
-        HuisIdBSV, used to read the grid from the batch metadata when
-        *grid_minutes* is not given.
+        The household, from which the grid is read out of the household batch
+        metadata when *grid_minutes* is not given.
 
     Returns
     -------
@@ -1370,7 +1368,7 @@ def detect_column_cadence(
     # must still be free of pd.NA, which .loc would read as False silently.
     trusted = (out['confidence'] >= min_confidence).fillna(False)
 
-    # The grid the batch declares, not the spacing measured off date_column. A
+    # The grid the household batch declares, not the spacing measured off date_column. A
     # record too short or too irregular to measure has no measured spacing to
     # fall back to, which is the case this source exists to cover.
     grid = round(float(grid_minutes))
@@ -1393,7 +1391,7 @@ def detect_column_cadence(
     ).get(date_column, pd.NA)
     if pd.notna(measured_grid) and round(float(measured_grid)) != grid:
         logging.warning(
-            f"{ctx}The batch declares a {cadence_label(grid_minutes)} grid but "
+            f"{ctx}The household batch declares a {cadence_label(grid_minutes)} grid but "
             f"the readings arrive every {cadence_label(measured_grid)}. Using "
             f"the declared grid."
         )
@@ -1432,7 +1430,7 @@ def fill_down_infrequent_devices(
     Intended for cumulative columns from optional devices that report infrequently.
     When the device is idle the cumulative meter holds its last value (forward-fill).
     A column with no readings at all is left untouched: a never-seen device is
-    an absence claim, and absence is declared per household in the metadata
+    an absence claim, and absence is an explicit metadata declaration
     (ApparaatOntbrekend), never invented as zeros.
 
     The column list is intentionally required -- it must be defined per project/mapper
@@ -1499,9 +1497,9 @@ def fill_down_infrequent_devices(
     Notes
     -----
     Fill order: forward fill, then backward fill. A column that remains
-    all-NA (sensor never seen for the household) stays all-NA -- device
-    absence is a per-household metadata declaration, not something this
-    function may infer from missingness.
+    all-NA (sensor never seen in this dataset) stays all-NA -- device
+    absence is a metadata declaration, not something this function may infer
+    from missingness.
     Only meaningful for cumulative variables -- do not apply to instantaneous sensors.
     """
     if grid_minutes is None or pd.isna(grid_minutes):
@@ -1612,9 +1610,9 @@ def _declaration_owner(household_id) -> str:
     """Name whose declaration is at fault, for the error message.
 
     A declaration is corrected in Grist, found by supplier and project, and
-    it belongs to one household's dataset -- ``HuisBatchIdBSV``, not the
+    it belongs to one household's dataset -- ``ids.HOUSEHOLD_BATCH``, not the
     delivery batch. ``index.parquet`` is the registry carrying all three
-    beside ``HuisIdBSV``.
+    beside ``ids.HOUSEHOLD``.
 
     Returns an empty string when the household cannot be resolved. These
     identifiers only decorate a message, so failing to find them must never
@@ -1624,13 +1622,13 @@ def _declaration_owner(household_id) -> str:
         return ""
     try:
         index_df, _ = read_index()
-        rows = index_df[index_df["HuisIdBSV"] == int(household_id)]
+        rows = index_df[index_df[ids.HOUSEHOLD] == int(household_id)]
     # Broad on purpose: an unreadable, absent or older index must cost the
     # caller nothing more than a less specific message.
     except Exception as exc:
         logging.debug(
             f"[assert_no_delivered_in_declared_absent] no index identifiers "
-            f"for HuisIdBSV {household_id}: {exc}"
+            f"for {ids.HOUSEHOLD} {household_id}: {exc}"
         )
         return ""
     if rows.empty:
@@ -1649,9 +1647,9 @@ def _declaration_owner(household_id) -> str:
         return f"{label} {', '.join(str(v) for v in values)}"
 
     named = [
-        _named("Dataleverancier", "supplier"),
-        _named("ProjectIdBSV", "ProjectIdBSV"),
-        _named("HuisBatchIdBSV", "HuisBatchIdBSV"),
+        _named(ids.SUPPLIER, "supplier"),
+        _named(ids.PROJECT, ids.PROJECT),
+        _named(ids.HOUSEHOLD_BATCH, ids.HOUSEHOLD_BATCH),
     ]
     named = [n for n in named if n]
     return (" -- " + ", ".join(named)) if named else ""
@@ -1669,22 +1667,20 @@ def assert_no_delivered_in_declared_absent(
     claim: the device does not exist, its term is zero. A delivered reading
     in a declared-absent column falsifies that claim, and falsified metadata
     is always a hard failure -- the metadata (not the data) must be
-    corrected. This replaces the old conditional-default semantics, where a
-    supplier-wide zero list silently applied only to households whose column
-    happened to be empty and said nothing when it was not.
+    corrected. A supplier-wide zero list instead of a declaration would apply
+    silently only to households whose column happened to be empty, and say
+    nothing when it was not.
 
-    Migration started contradiction-free by construction -- only households
-    with no delivered reading over their whole span were declared -- so this
-    guard exists for FUTURE drift: a device installed later that starts
-    reporting raises here until the declaration is removed.
+    The guard catches drift: a device installed later that starts reporting
+    raises here until the declaration is removed.
 
     Checked per declared variable over the whole family of columns the
     device reports through -- see ``_declared_absent_family``: the variable
     itself, its declared complement, and the tariff registers and their
     complements. A reading on any of them is the device reporting.
     Delivered means a non-NA value whose findings carry no INVENTED bit;
-    values the pipeline itself wrote (e.g. legacy zero-prefill) do not count
-    against the declaration.
+    values the pipeline itself wrote (a zero fill, say) do not count against
+    the declaration.
 
     Parameters
     ----------
@@ -1696,8 +1692,8 @@ def assert_no_delivered_in_declared_absent(
     context : str
         Household/file label for the error message.
     household_id : optional
-        HuisIdBSV. When given, the raise also names the supplier, project and
-        household batch the declaration belongs to, read from the index --
+        The household. When given, the raise also names the supplier, project
+        and household batch the declaration belongs to, read from the index --
         the identifiers needed to find and correct it in Grist.
 
     Raises
@@ -2435,7 +2431,7 @@ def expand_tz_columns(df: pd.DataFrame, vectorized: bool = False) -> pd.DataFram
             out_cols[f"{col}_UTC_naive"] = converted.rename(f"{col}_UTC_naive")
             continue
 
-        # Per-row safe path. Batch-assign so pandas does the heavy lifting.
+        # Per-row safe path. Assign in one write so pandas does the heavy lifting.
         stripped = s.copy()
         new_stripped_values = [s.loc[idx].tz_localize(None) for idx in tz_aware_index]
         stripped.loc[tz_aware_index] = new_stripped_values
@@ -2613,13 +2609,14 @@ def apply_threshold_to_col(
     return df, col_stats
 
 
-# Sidecar written next to the mapped household batches (one row per HuisIdBSV +
-# column that lost values in the threshold pass; keyed as _write_sidecar notes).
+# Sidecar written next to the mapped household batches (one row per household
+# batch + column that lost values in the threshold pass; keyed as
+# _write_sidecar notes).
 THRESHOLD_REMOVALS_FILENAME = "mapping_threshold_removals.parquet"
 
 # Nullable dtypes for the sidecar columns.
 _THRESHOLD_REMOVAL_DTYPES = {
-    "HuisBatchIdBSV": "Int64",
+    ids.HOUSEHOLD_BATCH: ids.DTYPES[ids.HOUSEHOLD_BATCH],
     "column": "string",
     "n_below": "Int64",
     "n_above": "Int64",
@@ -2639,10 +2636,10 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
     Merge accumulated sidecar rows into the typed parquet beside the mapped data.
 
     A sidecar row describes one household batch: it is measured on that
-    dataset, against the grid that household batch declares. ``HuisBatchIdBSV``
-    is therefore the key, and ``HuisIdBSV`` is not -- on the household, two
-    household batches of one household cannot be told apart and re-mapping one
-    would replace the other's rows. Join to the household through
+    dataset, against the grid that household batch declares.
+    ``ids.HOUSEHOLD_BATCH`` is therefore the key, and ``ids.HOUSEHOLD`` is not
+    -- on the household, two household batches of one household cannot be told
+    apart and re-mapping one would replace the other's rows. Join to the household through
     ``index.parquet`` where accounting needs it.
 
     Rows are merged on that key: the household batches this run wrote replace
@@ -2655,9 +2652,9 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
 
     Returns the path written.
     """
-    if "HuisBatchIdBSV" not in dtypes:
+    if ids.HOUSEHOLD_BATCH not in dtypes:
         raise ValueError(
-            f"{label} sidecar declares no HuisBatchIdBSV, so its rows cannot "
+            f"{label} sidecar declares no {ids.HOUSEHOLD_BATCH}, so its rows cannot "
             f"be merged. Add the id to its dtype map."
         )
 
@@ -2679,16 +2676,16 @@ def _write_sidecar(rows, mapped_folder_path, filename, dtypes, label):
     kept = 0
     if os.path.exists(path):
         existing = pd.read_parquet(path, dtype_backend="numpy_nullable")
-        if "HuisBatchIdBSV" in existing.columns:
-            written_now = set(df["HuisBatchIdBSV"].dropna().unique())
-            others = existing[~existing["HuisBatchIdBSV"].isin(written_now)]
+        if ids.HOUSEHOLD_BATCH in existing.columns:
+            written_now = set(df[ids.HOUSEHOLD_BATCH].dropna().unique())
+            others = existing[~existing[ids.HOUSEHOLD_BATCH].isin(written_now)]
             kept = len(others)
             if kept:
                 df = pd.concat([others, df], ignore_index=True).astype(dtypes)
-        elif "HuisIdBSV" in existing.columns:
+        elif ids.HOUSEHOLD in existing.columns:
             raise ValueError(
-                f"{path} is keyed on HuisIdBSV, which predates the household "
-                f"batch being the dataset key. Re-run the mapping to rewrite "
+                f"{path} is keyed on {ids.HOUSEHOLD}, not on the household "
+                f"batch that is the dataset key. Re-run the mapping to rewrite "
                 f"it, or remove it."
             )
 
@@ -2707,7 +2704,7 @@ def threshold_stats_to_rows(household_batch_id, threshold_stats):
     Parameters
     ----------
     household_batch_id : int
-        The dataset's HuisBatchIdBSV.
+        The household batch the dataset is.
     threshold_stats : dict
         {column: {"n_below", "n_above", "sum_removed_negative",
         "sum_removed_positive", "balance_removed", "min_removed",
@@ -2723,7 +2720,7 @@ def threshold_stats_to_rows(household_batch_id, threshold_stats):
     for col, s in (threshold_stats or {}).items():
         rows.append(
             {
-                "HuisBatchIdBSV": household_batch_id,
+                ids.HOUSEHOLD_BATCH: household_batch_id,
                 "column": col,
                 "n_below": s["n_below"],
                 "n_above": s["n_above"],
@@ -2750,7 +2747,7 @@ def write_threshold_removals(
     """
     Write accumulated threshold-removal rows to a sidecar parquet.
 
-    One row per (HuisIdBSV, column) that lost values in the threshold pass.
+    One row per (household batch, column) that lost values in the threshold pass.
     An empty but correctly-typed frame is written when no values were removed,
     so downstream readers get a stable schema either way.
 
@@ -2763,11 +2760,11 @@ def write_threshold_removals(
 
 
 # Sidecar written next to the per-household mapped parquets (one row per
-# HuisIdBSV + cumulative column a decrease was corrected in).
+# household batch + cumulative column a decrease was corrected in).
 NEGATIVE_DIFF_FILENAME = "mapping_negative_diff_removals.parquet"
 
 _NEGATIVE_DIFF_DTYPES = {
-    "HuisBatchIdBSV": "Int64",
+    ids.HOUSEHOLD_BATCH: ids.DTYPES[ids.HOUSEHOLD_BATCH],
     "column": "string",
     "n_dips": "Int64",
     "n_readings_removed": "Int64",
@@ -2789,7 +2786,7 @@ def negative_diff_stats_to_rows(household_batch_id, dip_stats):
     Parameters
     ----------
     household_batch_id : int
-        The dataset's HuisBatchIdBSV.
+        The household batch the dataset is.
     dip_stats : dict
         {column: figures} as produced by
         ``add_diff_columns(return_stats=True)``. May be empty or None.
@@ -2801,7 +2798,7 @@ def negative_diff_stats_to_rows(household_batch_id, dip_stats):
     """
     rows = []
     for col, s in (dip_stats or {}).items():
-        rows.append({"HuisBatchIdBSV": household_batch_id, "column": col, **s})
+        rows.append({ids.HOUSEHOLD_BATCH: household_batch_id, "column": col, **s})
     return rows
 
 
@@ -2811,7 +2808,7 @@ def write_negative_diff_removals(
     """
     Write accumulated negative-diff figures to a sidecar parquet.
 
-    One row per (HuisIdBSV, column) a decrease was corrected in. The flags on
+    One row per (household batch, column) a decrease was corrected in. The flags on
     the readings say which were condemned and why; this says how far the
     register went back, which no flag carries and which the blanking destroys.
 
@@ -2827,11 +2824,11 @@ def write_negative_diff_removals(
 
 
 # Sidecar written next to the per-household mapped parquets (one row per
-# HuisIdBSV + column that lost a delivered value to the grid-slot merge).
+# household batch + column that lost a delivered value to the grid-slot merge).
 GRID_COLLISIONS_FILENAME = "mapping_grid_collisions.parquet"
 
 _GRID_COLLISION_DTYPES = {
-    "HuisBatchIdBSV": "Int64",
+    ids.HOUSEHOLD_BATCH: ids.DTYPES[ids.HOUSEHOLD_BATCH],
     "column": "string",
     "n_discarded": "Int64",
     "n_slots_contested": "Int64",
@@ -2846,7 +2843,7 @@ def grid_collisions_to_rows(household_batch_id, collisions):
     Parameters
     ----------
     household_batch_id : int
-        The dataset's HuisBatchIdBSV.
+        The household batch the dataset is.
     collisions : dict
         {column: figures} as produced by
         ``snap_readings_to_grid(return_stats=True)``. May be empty or None.
@@ -2858,7 +2855,7 @@ def grid_collisions_to_rows(household_batch_id, collisions):
     """
     rows = []
     for col, s in (collisions or {}).items():
-        rows.append({"HuisBatchIdBSV": household_batch_id, "column": col, **s})
+        rows.append({ids.HOUSEHOLD_BATCH: household_batch_id, "column": col, **s})
     return rows
 
 
@@ -2868,7 +2865,7 @@ def write_grid_collisions(
     """
     Write accumulated grid-collision figures to a sidecar parquet.
 
-    One row per (HuisIdBSV, column) that lost a delivered value when two
+    One row per (household batch, column) that lost a delivered value when two
     readings fell in one grid slot. The discarded reading is gone and cannot
     carry a flag, so this count is the only possible record of it.
 
@@ -2885,6 +2882,11 @@ def write_grid_collisions(
 
 CADENCE_FILENAME = "mapping_column_cadence.parquet"
 
+_COLUMN_CADENCE_DTYPES = {
+    ids.HOUSEHOLD_BATCH: ids.DTYPES[ids.HOUSEHOLD_BATCH],
+    **_CADENCE_TABLE_DTYPES,
+}
+
 
 def cadence_to_rows(household_batch_id, cadence_df):
     """
@@ -2893,7 +2895,7 @@ def cadence_to_rows(household_batch_id, cadence_df):
     Parameters
     ----------
     household_batch_id : int
-        The dataset's HuisBatchIdBSV.
+        The household batch the dataset is.
     cadence_df : pd.DataFrame or None
         The output of detect_column_cadence. May be empty or None.
 
@@ -2904,9 +2906,16 @@ def cadence_to_rows(household_batch_id, cadence_df):
     """
     if cadence_df is None or cadence_df.empty:
         return []
+    if ids.HOUSEHOLD_BATCH in cadence_df.columns:
+        raise ValueError(
+            f"cadence_to_rows was given a table that already carries "
+            f"{ids.HOUSEHOLD_BATCH}, so which dataset its rows belong to is "
+            f"ambiguous. Pass the table detect_column_cadence returns, which "
+            f"names no dataset."
+        )
     rows = []
     for record in cadence_df.to_dict(orient="records"):
-        rows.append({"HuisBatchIdBSV": household_batch_id, **record})
+        rows.append({ids.HOUSEHOLD_BATCH: household_batch_id, **record})
     return rows
 
 
@@ -2914,9 +2923,9 @@ def write_column_cadence(rows, mapped_folder_path, filename=CADENCE_FILENAME):
     """
     Write accumulated per-column cadence rows to a sidecar parquet.
 
-    One row per (HuisIdBSV, column). Cadence is measured per household because
-    it varies between them -- a sensor swap or a partial year can change how
-    often one household's column reports without affecting any other.
+    One row per (household batch, column). Cadence is measured per household batch
+    because it varies between them -- a sensor swap or a partial year can change
+    how often one household batch's column reports without affecting any other.
 
     An empty but correctly-typed frame is written when nothing was measured, so
     downstream readers get a stable schema either way.
@@ -2925,11 +2934,22 @@ def write_column_cadence(rows, mapped_folder_path, filename=CADENCE_FILENAME):
     """
     return _write_sidecar(
         rows, mapped_folder_path, filename,
-        {"HuisBatchIdBSV": "Int64", **_CADENCE_TABLE_DTYPES}, "column-cadence",
+        _COLUMN_CADENCE_DTYPES, "column-cadence",
     )
 
 
 FROZEN_SPANS_FILENAME = "mapping_frozen_spans.parquet"
+
+# span_kind is additive: a sidecar written before it existed has no such
+# column, so a merge yields pd.NA rather than a wrong value.
+_FROZEN_SPAN_DTYPES = {
+    ids.HOUSEHOLD_BATCH: ids.DTYPES[ids.HOUSEHOLD_BATCH],
+    "column": "string",
+    "span_kind": "string",
+    **_SPAN_DTYPES,
+    "start_date": "datetime64[ns]",
+    "catchup_date": "datetime64[ns]",
+}
 
 
 def frozen_spans_to_rows(
@@ -2939,7 +2959,7 @@ def frozen_spans_to_rows(
     """
     Flatten one column's frozen spans into sidecar rows.
 
-    *reading_dates* is the household's ReadingDate series; when given, each span
+    *reading_dates* is the dataset's ReadingDate series; when given, each span
     also carries the timestamps it starts and ends at, which is what makes the
     artifact readable without going back to the data.
 
@@ -2956,7 +2976,7 @@ def frozen_spans_to_rows(
     rows = []
     for span in spans.to_dict(orient="records"):
         row = {
-            "HuisBatchIdBSV": household_batch_id,
+            ids.HOUSEHOLD_BATCH: household_batch_id,
             "column": column,
             "span_kind": span_kind,
             **span,
@@ -2972,24 +2992,51 @@ def write_frozen_spans(rows, mapped_folder_path, filename=FROZEN_SPANS_FILENAME)
     """
     Write accumulated frozen-span rows to a sidecar parquet.
 
-    One row per (HuisIdBSV, column, span): a stretch where the cumulative variable stood
+    One row per (household batch, column, span): a stretch where the cumulative variable stood
     still and the reading its accumulation arrived in.
 
     ``span_kind`` says which form the column held and therefore how the span was
-    treated. Additive: a sidecar written before it exists has no such column, so
-    a merge yields pd.NA rather than a wrong value.
+    treated.
     """
-    dtypes = {
-        "HuisBatchIdBSV": "Int64",
-        "column": "string",
-        "span_kind": "string",
-        **_SPAN_DTYPES,
-        "start_date": "datetime64[ns]",
-        "catchup_date": "datetime64[ns]",
-    }
     return _write_sidecar(
-        rows, mapped_folder_path, filename, dtypes, "frozen-span",
+        rows, mapped_folder_path, filename, _FROZEN_SPAN_DTYPES, "frozen-span",
     )
+
+
+class Sidecar(NamedTuple):
+    """One mapping sidecar: what it is called, its schema, and how it is made."""
+
+    filename: str
+    dtypes: dict
+    to_rows: Callable
+    write: Callable
+
+
+#: The mapping sidecars by name. A caller that handles them alike -- reading
+#: them all, or building one in a test -- reads this rather than repeating a
+#: filename or restating a schema. Each is keyed on the household dataset.
+SIDECARS = {
+    "cadence": Sidecar(
+        CADENCE_FILENAME, _COLUMN_CADENCE_DTYPES,
+        cadence_to_rows, write_column_cadence,
+    ),
+    "threshold_removals": Sidecar(
+        THRESHOLD_REMOVALS_FILENAME, _THRESHOLD_REMOVAL_DTYPES,
+        threshold_stats_to_rows, write_threshold_removals,
+    ),
+    "negative_diffs": Sidecar(
+        NEGATIVE_DIFF_FILENAME, _NEGATIVE_DIFF_DTYPES,
+        negative_diff_stats_to_rows, write_negative_diff_removals,
+    ),
+    "grid_collisions": Sidecar(
+        GRID_COLLISIONS_FILENAME, _GRID_COLLISION_DTYPES,
+        grid_collisions_to_rows, write_grid_collisions,
+    ),
+    "frozen_spans": Sidecar(
+        FROZEN_SPANS_FILENAME, _FROZEN_SPAN_DTYPES,
+        frozen_spans_to_rows, write_frozen_spans,
+    ),
+}
 
 
 def save_household_shard(df, household_id, household_batch_id, sharded_folder_path):
@@ -3001,19 +3048,22 @@ def save_household_shard(df, household_id, household_batch_id, sharded_folder_pa
     partition columns (the ids) live in the PATH, not the file -- hive convention,
     and consistent with the flat mapped file which also carries no id columns.
 
-    Per-household and idempotent: re-running one household overwrites only its shard
-    (exactly one part file, never stale duplicates), so a single changed household
-    can be re-mapped without touching the rest. Different batches of the same
-    household coexist as sibling ``HuisBatchIdBSV=*`` partitions.
+    Per-dataset and idempotent: re-running one household batch overwrites only its
+    shard (exactly one part file, never stale duplicates), so a single changed
+    dataset can be re-mapped without touching the rest. Different household
+    batches of the same household coexist as sibling ``HuisBatchIdBSV=*``
+    partitions.
 
     Parameters
     ----------
     df : pd.DataFrame
         The mapped household frame (ReadingDate + data columns, nullable dtypes).
     household_id : int
-        HuisIdBSV -- the household id (the flat pipeline's ``household_id``).
+        ``ids.HOUSEHOLD`` -- the household id (the flat pipeline's
+        ``household_id``).
     household_batch_id : int
-        HuisBatchIdBSV -- the household batch this body of data belongs to. A
+        ``ids.HOUSEHOLD_BATCH`` -- the household batch this body of data
+        belongs to. A
         household can have several: another data structure, or a period after a
         renovation. They coexist as sibling ``HuisBatchIdBSV=*`` partitions.
     sharded_folder_path : str or Path
@@ -3029,7 +3079,7 @@ def save_household_shard(df, household_id, household_batch_id, sharded_folder_pa
         f"HuisIdBSV={int(household_id)}",
         f"HuisBatchIdBSV={int(household_batch_id)}",
     )
-    # Idempotent per (household, batch): clear any prior part files for this shard
+    # Idempotent per (household, household batch): clear any prior part files for this shard
     # so a re-run leaves exactly one file, never stale duplicates.
     if os.path.isdir(part_dir):
         for name in os.listdir(part_dir):
@@ -3058,8 +3108,8 @@ def save_mapped_household(
 
     run_standard_pipeline calls this internally; mapper scripts that write
     household output directly (e.g. map_watch_e) MUST use this instead of a raw
-    ``to_parquet`` -- a direct write silently bypasses the format branch (this is
-    exactly how Watch-E produced zero shards on the first real sharded run).
+    ``to_parquet`` -- a direct write silently bypasses the format branch and
+    leaves a sharded run with no shards for that mapper.
 
     Returns the path written.
     """
@@ -3090,26 +3140,26 @@ _HOUSEBATCHID_DIR_RE = re.compile(r"^HuisBatchIdBSV=(\d+)$")
 
 def prune_stale_household_files(mapped_folder_path, keep_household_ids):
     """
-    Delete flat mapped household files whose HuisIdBSV is KNOWN stale -- i.e. not
+    Delete flat mapped household files whose household id is KNOWN stale -- i.e. not
     in ``keep_household_ids`` (the current authoritative household set, from the index).
 
     Only files matching ``household_<n>_table.parquet`` are considered; ``index.parquet``
     and any other content are never touched. This is a targeted delete-with-manifest,
     NOT a blanket glob-delete: it returns a manifest (one dict per removal with
-    ``HuisIdBSV`` + ``path``) so the caller can log/audit exactly what was removed.
+    ``ids.HOUSEHOLD`` + ``path``) so the caller can log/audit exactly what was removed.
 
     Parameters
     ----------
     mapped_folder_path : str or Path
         Folder holding the flat mapped household files.
     keep_household_ids : iterable of int
-        HuisIdBSV values that SHOULD exist; everything else matching the pattern is
+        Household ids that SHOULD exist; everything else matching the pattern is
         removed.
 
     Returns
     -------
     list of dict
-        Manifest of removed files: ``[{"HuisIdBSV": n, "path": ...}, ...]``.
+        Manifest of removed files: ``[{ids.HOUSEHOLD: n, "path": ...}, ...]``.
     """
     keep = {int(h) for h in keep_household_ids}
     folder = str(mapped_folder_path)
@@ -3125,29 +3175,29 @@ def prune_stale_household_files(mapped_folder_path, keep_household_ids):
             continue
         path = os.path.join(folder, name)
         os.remove(path)
-        removed.append({"HuisIdBSV": household_id, "path": path})
+        removed.append({ids.HOUSEHOLD: household_id, "path": path})
         logging.info(f"[mapping_helpers] Pruned stale household file: {path}")
     return removed
 
 
 def prune_stale_household_shards(sharded_folder_path, keep_pairs):
     """
-    Delete sharded household partitions whose ``(HuisIdBSV, HuisBatchIdBSV)`` is KNOWN
-    stale -- i.e. not in ``keep_pairs`` (the current authoritative set from
-    the index).
+    Delete sharded household partitions whose ``(ids.HOUSEHOLD,
+    ids.HOUSEHOLD_BATCH)`` is KNOWN stale -- i.e. not in ``keep_pairs`` (the
+    current authoritative set from the index).
 
     Only ``HuisIdBSV=<n>/HuisBatchIdBSV=<p>`` partition directories are considered;
     other content is never touched. A ``HuisIdBSV=<n>`` parent is removed once its last
-    remaining batch partition is pruned. Targeted delete-with-manifest, not a blanket
-    wipe: returns a manifest (one dict per removal with ``HuisIdBSV`` + ``HuisBatchIdBSV``
-    + ``path``).
+    remaining household-batch partition is pruned. Targeted delete-with-manifest, not a blanket
+    wipe: returns a manifest (one dict per removal with ``ids.HOUSEHOLD`` +
+    ``ids.HOUSEHOLD_BATCH`` + ``path``).
 
     Parameters
     ----------
     sharded_folder_path : str or Path
         Root of the sharded mapped dataset.
     keep_pairs : iterable of (int, int)
-        ``(HuisIdBSV, HuisBatchIdBSV)`` pairs that SHOULD exist.
+        ``(ids.HOUSEHOLD, ids.HOUSEHOLD_BATCH)`` pairs that SHOULD exist.
 
     Returns
     -------
@@ -3177,8 +3227,8 @@ def prune_stale_household_shards(sharded_folder_path, keep_pairs):
             part_dir = os.path.join(household_dir, batch_dir_name)
             shutil.rmtree(part_dir)
             removed.append({
-                "HuisIdBSV": household_id,
-                "HuisBatchIdBSV": household_batch_id,
+                ids.HOUSEHOLD: household_id,
+                ids.HOUSEHOLD_BATCH: household_batch_id,
                 "path": part_dir,
             })
             logging.info(f"[mapping_helpers] Pruned stale shard: {part_dir}")
@@ -3224,11 +3274,11 @@ def _detect_frozen_spans_for_household_batch(
     Parameters
     ----------
     df : pd.DataFrame
-        One household's data.
-    household_id : int
-        HuisIdBSV, recorded on each sidecar row.
+        One household batch's data.
+    household_batch_id : int
+        The household batch, recorded on each sidecar row.
     cadence : pd.DataFrame, optional
-        Per-column cadence for this household, from
+        Per-column cadence for this household batch, from
         :func:`detect_column_cadence`: one row per column, ``cadence_minutes``
         holding the interval its readings cover. It is what each column's upper
         bound is scaled by, and it also supplies the grid, for a column the
@@ -3254,8 +3304,8 @@ def _detect_frozen_spans_for_household_batch(
 
         # Which form the column holds, read from the cell findings rather than
         # re-derived: add_diff_columns records an outcome on every cell it
-        # wrote, and the branch is per household per column -- the same column
-        # is derived for one household and delivered by the next -- so no
+        # wrote, and the branch is per dataset per column -- the same column
+        # is derived for one dataset and delivered in the next -- so no
         # column-level rule can replace it. Later steps mutate the frame and a
         # second source would drift from it.
         #
@@ -3655,13 +3705,13 @@ def mark_cadence(
     Parameters
     ----------
     df : pd.DataFrame
-        One household's data, sorted by ReadingDate and already padded to the
-        grid by ``ensure_intervals``, so a row's position is its grid slot.
+        One household batch's data, sorted by ReadingDate and already padded to
+        the grid by ``ensure_intervals``, so a row's position is its grid slot.
     cadence : pd.DataFrame, optional
         The per-column cadence table :func:`detect_column_cadence` produces for
-        this household: one row per column, with ``cadence_minutes`` holding the
-        interval that column's readings cover. Measured on the timestamps as
-        delivered, before any padding or fill.
+        this household batch: one row per column, with ``cadence_minutes``
+        holding the interval that column's readings cover. Measured on the
+        timestamps as delivered, before any padding or fill.
 
         Each column is read from **its own row**. A variable delivered in both
         forms has a row for each, and a variable delivered as intervals only
@@ -3696,7 +3746,7 @@ def mark_cadence(
         }
     grid = grid_minutes if grid_minutes is not None else dataset_cadence_minutes(cadence)
 
-    # Mapping runs per household on one frame sorted by ReadingDate, and
+    # Mapping runs per household batch on one frame sorted by ReadingDate, and
     # ensure_intervals has given it one row per grid slot, so a row's position is
     # its slot.
     position = pd.Series(range(len(df)), index=df.index, dtype="Int64")
@@ -3789,7 +3839,7 @@ def run_standard_pipeline(
     household_batch_id: int | None = None,
 ) -> dict:
     """
-    Standard per-household processing pipeline shared by all ETD supplier mappers.
+    Standard per-dataset processing pipeline shared by all ETD supplier mappers.
 
     Call this after all supplier-specific preprocessing is complete: column rename,
     unit conversion, ReadingDate derived, identifier columns dropped, and any
@@ -3822,11 +3872,11 @@ def run_standard_pipeline(
     df : pd.DataFrame
         Household time-series data with BSV column names.
     household_id : int
-        BSV household ID (HuisIdBSV). The index row this returns is the
+        BSV household ID (``ids.HOUSEHOLD``). The index row this returns is the
         household's; the data and its sidecars are keyed on the household batch
         below.
     household_id_supplier : str
-        Supplier household ID (HuisIdLeverancier).
+        Supplier household ID (``ids.HOUSEHOLD_SUPPLIER``).
     mapped_folder_path : str or Path
         Destination folder for the processed parquet file.
     context : str
@@ -3843,14 +3893,14 @@ def run_standard_pipeline(
         The grid to place the data on. Resolved from the household batch's
         declared ``Gegevensfrequentie`` when not given.
     household_batch_id : int, optional
-        HuisBatchIdBSV -- the dataset being mapped. It keys the output shard
+        ``ids.HOUSEHOLD_BATCH`` -- the dataset being mapped. It keys the output shard
         and every sidecar row. Resolved from the household batch table when not
         given, which refuses a household that has several.
 
     Returns
     -------
     dict
-        {'HuisIdLeverancier': household_id_supplier, 'HuisIdBSV': household_id}
+        {ids.HOUSEHOLD_SUPPLIER: household_id_supplier, ids.HOUSEHOLD: household_id}
     """
     _report_etdmap_provenance()
 
@@ -4049,8 +4099,8 @@ def run_standard_pipeline(
     # One scan over every flag column before anything reaches disk. set_flags
     # refuses a write onto a missing history, but only sees the rows it is
     # asked to write, so a column no later step writes to would carry the
-    # damage out silently -- which is how 52 columns reached the 2026-10-21
-    # artifact while only 4 of them ever saw a write that could complain.
+    # damage out silently: most damaged columns never see a write that could
+    # complain.
     assert_flag_history_complete(df, context=context or "")
 
     # ------------------------------------------------------------------
@@ -4066,8 +4116,8 @@ def run_standard_pipeline(
     )
 
     return {
-        "HuisIdLeverancier": household_id_supplier,
-        "HuisIdBSV": household_id,
+        ids.HOUSEHOLD_SUPPLIER: household_id_supplier,
+        ids.HOUSEHOLD: household_id,
         # The cadence the pipeline ran on, which is the measured table plus any
         # tariff-root row step 6a derived. The sidecar is written from this, not
         # from the mapper's own copy, or the derived rows would be dropped.

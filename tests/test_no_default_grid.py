@@ -25,17 +25,33 @@ from etdmap.mapping_helpers import (
     run_standard_pipeline,
     snap_readings_to_grid,
 )
+from etdmap.testing import (
+    PAIRS_EMPTY,
+    batch_table_frame,
+    dataset_frame,
+    household_batch_of,
+)
 
 GRID = 5
 COL = "ElektriciteitsgebruikBoilervat"
 
+#: The dataset each household here is described through. The grid is declared
+#: per dataset, so each one is derived from its household rather than stated
+#: beside it.
+_DATASETS = {
+    household_id: household_batch_of(household_id)
+    for household_id in (1, 2)
+}
+
 
 def _frame(n=12, freq="5min"):
-    dates = pd.date_range("2024-01-01", periods=n, freq=freq)
-    return pd.DataFrame({
-        "ReadingDate": dates,
-        COL: pd.array([float(i) for i in range(n)], dtype="Float64"),
-    })
+    """A frame as a supplier delivered it: tz-naive, carrying no ids and no
+    project. COL is a cumulative variable, so there is no interval counterpart
+    to complete."""
+    return dataset_frame(
+        n_rows=n, freq=freq, tz=None, project=None,
+        **{COL: [float(i) for i in range(n)]},
+    )
 
 
 class TestTheGridIsRequired:
@@ -81,12 +97,12 @@ class TestTheGridCanComeFromMetadata:
 
     @pytest.fixture
     def batch_table(self, tmp_path):
+        """Two datasets, the second declaring no grid at all."""
         path = tmp_path / "huisbatch.csv"
-        pd.DataFrame({
-            "HuisIdBSV": pd.array([1, 2], dtype="Int64"),
-            "HuisBatchIdBSV": pd.array([1001, 1002], dtype="Int64"),
-            "Gegevensfrequentie": pd.array(["15min", None], dtype="string"),
-        }).to_csv(path, index=False)
+        batch_table_frame(
+            [_DATASETS[1], _DATASETS[2]],
+            Gegevensfrequentie=["15min", pd.NA],
+        ).to_csv(path, index=False)
         previous = etdmap.options.household_batch_csv_path
         etdmap.options.household_batch_csv_path = str(path)
         yield path
@@ -136,7 +152,7 @@ class TestAnUnresolvedCadenceIsNotAnUnscaledBound:
 
 
 class TestAResolvedCadenceScalesTheBound:
-    """The other half of the above, which only had the refusal and the
+    """The other half of the class above, which covers the refusal and the
     pass-through: what a resolved cadence actually produces. Pinned at 15 and 60
     rather than only at the base interval, because at the base interval the
     factor is one and a function that ignored the cadence would pass.
@@ -173,14 +189,18 @@ class TestAResolvedCadenceScalesTheBound:
     def test_the_pipeline_refuses_without_a_cadence(self, tmp_path):
         with pytest.raises(ValueError, match="no cadence was given"):
             run_standard_pipeline(
-                _frame(), household_id=1, household_batch_id=1001, household_id_supplier="H1",
+                _frame(), household_id=1, household_batch_id=_DATASETS[1],
+                household_id_supplier="H1",
                 mapped_folder_path=tmp_path, grid_minutes=GRID,
             )
 
     def test_the_threshold_pass_refuses_without_a_cadence(self):
-        df = pd.DataFrame({
-            "ElektriciteitNetgebruikHoogDiff": pd.array([1.0], dtype="Float64"),
-        })
+        # PAIRS_EMPTY: the bound looked up is the interval column's, so the
+        # cumulative counterpart is present but states no total of its own.
+        df = dataset_frame(
+            n_rows=1, tz=None, project=None, pairs=PAIRS_EMPTY,
+            ElektriciteitNetgebruikHoogDiff=1.0,
+        )
         with pytest.raises(ValueError, match="no cadence was resolved"):
             apply_thresholds_to_df(df)
 
@@ -203,16 +223,16 @@ class TestAnIntervalTheTableCannotRecord:
     sub-minute interval has no representation in it.
 
     Reachable from metadata: ``frequency_to_minutes`` parses '30s' as 0.5, so a
-    batch or a Meetfrequentie row written that way reaches here. Left to the
-    Int64 cast it raised a TypeError naming neither column nor value; rounded,
-    it became a zero-minute cadence.
+    batch or a Meetfrequentie row written that way reaches here. The refusal is
+    explicit because the Int64 cast alone raises a TypeError naming neither
+    column nor value, and rounding makes it a zero-minute cadence.
     """
 
     def _frame(self):
-        return pd.DataFrame({
-            "ReadingDate": pd.date_range("2024-01-01", periods=10, freq="30s"),
-            COL: pd.array([1.0] * 10, dtype="Float64"),
-        })
+        """The same supplier-shaped frame on a sub-minute grid."""
+        return dataset_frame(
+            n_rows=10, freq="30s", tz=None, project=None, **{COL: 1.0}
+        )
 
     def test_a_sub_minute_grid_is_refused(self):
         with pytest.raises(ValueError, match="records whole minutes"):

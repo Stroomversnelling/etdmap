@@ -6,9 +6,9 @@ from pandas import DataFrame, Series
 
 from etdmap.data_model import (
     cadence_minutes_by_column,
+    cumulative_columns,
     dataset_cadence_minutes,
     interval_column,
-    cumulative_columns,
     load_thresholds,
     resolve_bounds,
     thresholds_dict,
@@ -52,7 +52,7 @@ def _bounds_for(col: str, cadence) -> tuple:
     col : str
         The column to resolve bounds for.
     cadence : pd.DataFrame
-        Per-column cadence for this household, from
+        Per-column cadence for this household batch, from
         :func:`etdmap.mapping_helpers.detect_column_cadence`: one row per
         column, ``cadence_minutes`` holding the interval its readings cover. A
         column absent from it falls back to the interval the dataset itself is
@@ -207,8 +207,8 @@ def validate_observed_spacing(df: DataFrame) -> Series:
     Validate that each row sits one grid interval after the one before it.
 
     The interval checked against is the most common spacing in *df*, measured
-    rather than assumed: households are recorded on the grid their batch
-    declares, so a fixed interval would mark every row of a coarser household
+    rather than assumed: a dataset is recorded on the grid its household batch
+    declares, so a fixed interval would mark every row of a coarser dataset
     invalid.
 
     Parameters

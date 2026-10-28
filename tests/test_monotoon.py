@@ -6,7 +6,6 @@ declared Min of zero: a Min is a physical bound on a value, which is a
 different fact from whether a series can go backwards.
 """
 
-import pytest
 
 from etdmap.data_model import (
     cumulative_columns,

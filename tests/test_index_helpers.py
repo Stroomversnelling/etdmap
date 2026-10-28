@@ -6,6 +6,7 @@ import pytest
 import etdmap
 import etdmap.index_helpers as index_helpers
 import etdmap.mapping_helpers
+from etdmap import ids
 from etdmap.data_model import cumulative_columns, interval_column
 from etdmap.index_helpers import (
     bsv_metadata_columns,
@@ -127,11 +128,11 @@ def _include_index_df(household_ids, household_ids_supplier, data_supplier="etdm
     n = len(household_ids)
     assert n == len(household_ids_supplier)
     df = pd.DataFrame({
-        "HuisIdLeverancier": household_ids_supplier,
-        "HuisIdBSV": household_ids,
-        "ProjectIdLeverancier": ["P1"] * n,
-        "ProjectIdBSV": [1] * n,
-        "Dataleverancier": [data_supplier] * n,
+        ids.HOUSEHOLD_SUPPLIER: household_ids_supplier,
+        ids.HOUSEHOLD: household_ids,
+        ids.PROJECT_SUPPLIER: ["P1"] * n,
+        ids.PROJECT: [1] * n,
+        ids.SUPPLIER: [data_supplier] * n,
         "Meenemen": [pd.NA] * n,   # pre-existing column -> exercises the drop() path
         "Notities": [pd.NA] * n,
     })
@@ -143,11 +144,11 @@ def _include_bsv_df(household_ids, household_ids_supplier, include, data_supplie
     assert n == len(household_ids_supplier)
     assert n == len(include)
     return pd.DataFrame({
-        "HuisIdLeverancier": household_ids_supplier,
-        "HuisIdBSV": household_ids,
-        "ProjectIdLeverancier": ["P1"] * n,
-        "ProjectIdBSV": [1] * n,
-        "Dataleverancier": [data_supplier] * n,
+        ids.HOUSEHOLD_SUPPLIER: household_ids_supplier,
+        ids.HOUSEHOLD: household_ids,
+        ids.PROJECT_SUPPLIER: ["P1"] * n,
+        ids.PROJECT: [1] * n,
+        ids.SUPPLIER: [data_supplier] * n,
         "Meenemen": include,
         "Notities": [pd.NA] * n,
     })
@@ -169,7 +170,7 @@ class TestUpdateMeenemen:
             _include_bsv_df([1, 2, 3], ["H1", "H2", "H3"], [True, False, True]),
         )
         result = index_helpers.update_include()
-        got = dict(zip(result["HuisIdBSV"].tolist(), result["Meenemen"].tolist()))
+        got = dict(zip(result[ids.HOUSEHOLD].tolist(), result["Meenemen"].tolist()))
         assert got == {1: True, 2: False, 3: True}
         assert len(result) == 3
         # persisted to disk with no NA Meenemen

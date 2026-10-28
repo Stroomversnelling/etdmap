@@ -7,7 +7,6 @@ in etdmodel.csv. Fix: add the column to etdmodel.csv (with the correct Entiteit)
 run sync_data_model.py to rebuild the catalog.
 """
 
-import pytest
 
 from etdmap.catalog import load_catalog
 from etdmap.data_model import all_performance_data_columns

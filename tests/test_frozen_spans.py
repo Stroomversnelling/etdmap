@@ -20,11 +20,24 @@ from etdmap.flags import (
     frozen_span_flags,
     set_flags,
 )
+from etdmap.testing import (
+    PAIRS_EMPTY,
+    cadence_sidecar,
+    dataset_frame,
+    datasets_frame,
+    household_batch_of,
+)
 
-# A plausible 5-minute bound for a tap water variable, in litres.
 #: The grid these frames are built on and declared to sit on. Passed
 #: explicitly: there is no default grid.
 GRID = 5
+
+#: A plausible 5-minute bound for a tap water variable, in litres.
+MAX_PER_INTERVAL = 100.0
+
+#: The household dataset these frames describe. It is the key every sidecar
+#: row is recorded under, and the household it belongs to is derived from it.
+HOUSEHOLD_BATCH_ID = household_batch_of(1)
 
 
 def _measured_cadence(df):
@@ -32,10 +45,10 @@ def _measured_cadence(df):
     from etdmap.mapping_helpers import detect_column_cadence
     return detect_column_cadence(df, grid_minutes=GRID)
 
-MAX_PER_INTERVAL = 100.0
-
 
 def _intervals(values):
+    """The per-interval amounts frozen_span_flags reads, which it takes alone:
+    no frame, so the values are the whole input."""
     return pd.Series(pd.array(values, dtype="Float64"))
 
 
@@ -100,13 +113,13 @@ class TestFiresOnARealFrozenSpan:
 class TestTheSeededFirstIntervalIsNotAFrozenSpan:
     """``add_diff_columns`` seeds the first interval of a derived column with
     zero, because differencing has no predecessor there. That zero is
-    structural, not a measurement of a register standing still, so it must not
-    start a span.
+    structural, not a measurement of a cumulative variable standing still, so
+    it must not start a span.
 
-    Left in, any column whose FIRST real interval exceeds the bound reads as a
-    one-row frozen span with that interval as its catch-up -- and the treatment
-    then blanks row 0 of the register, which the supplier delivered. A clean,
-    monotonically rising register lost its first reading to this.
+    Counted as one, any column whose FIRST real interval exceeds the bound
+    reads as a one-row frozen span with that interval as its catch-up, and the
+    treatment then blanks row 0 of the cumulative variable, which the supplier
+    delivered.
     """
 
     def test_the_seed_alone_is_not_a_span(self):
@@ -194,7 +207,7 @@ class TestBounds:
 
 class TestNegativeIntervalsAreNotFrozen:
     def test_a_negative_interval_is_a_meter_reset_not_a_frozen_span(self):
-        """group D classifies a decreasing cumulative variable as CUMULATIVE_METER_RESET.
+        """A decreasing cumulative variable is CUMULATIVE_METER_RESET.
 
         Treating it as 'quiet' as well would have one fault wearing two names and
         would silently extend a span across a reset.
@@ -237,25 +250,37 @@ class TestIntervalColumnsInheritTheirCumulativeCadence:
     every interval bound would go unscaled."""
 
     def _frame(self):
-        n = 200
-        df = pd.DataFrame({"ReadingDate": pd.date_range("2024-01-01", periods=n, freq="5min")})
         # 300 sits between the two bounds this class contrasts: over the
         # five-minute bound of 100, under the shaped hourly bound of 100 * 12
         # ** 0.5 = 346.4. A value outside both would make the test pass for the
         # wrong reason.
-        df["WatergebruikWarmTapwaterDiff"] = pd.array(
-            [0.5] * 20 + [0.0] * 60 + [300.0] + [0.5] * (n - 81), dtype="Float64"
+        #
+        # PAIRS_EMPTY: the cumulative counterpart was not delivered, which is
+        # why the cadence table carries a row for it and none for this column,
+        # so it stands as mapping leaves it -- present and empty.
+        n = 200
+        return dataset_frame(
+            n_rows=n,
+            start="2024-01-01",
+            freq=f"{GRID}min",
+            tz=None,
+            project=None,
+            pairs=PAIRS_EMPTY,
+            WatergebruikWarmTapwaterDiff=(
+                [0.5] * 20 + [0.0] * 60 + [300.0] + [0.5] * (n - 81)
+            ),
         )
-        return df
 
     def _spans(self, cadence_minutes):
         from etdmap.mapping_helpers import _detect_frozen_spans_for_household_batch
-        cadence = pd.DataFrame({
-            "HuisIdBSV": pd.array([1], dtype="Int64"),
-            "column": pd.array(["WatergebruikWarmTapwater"], dtype="string"),
-            "cadence_minutes": pd.array([cadence_minutes], dtype="Int64"),
-        })
-        return _detect_frozen_spans_for_household_batch(self._frame(), 1, cadence=cadence)
+        return _detect_frozen_spans_for_household_batch(
+            self._frame(),
+            HOUSEHOLD_BATCH_ID,
+            cadence=cadence_sidecar(
+                {"WatergebruikWarmTapwater": cadence_minutes},
+                grid_minutes=GRID,
+            ),
+        )
 
     def test_a_five_minute_cadence_makes_the_jump_implausible(self):
         rows = self._spans(5)
@@ -285,10 +310,6 @@ class TestTreatment:
             else:
                 current += normal
             values.append(current)
-        df = pd.DataFrame({
-            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
-            "WatergebruikWarmTapwater": pd.array(values, dtype="Float64"),
-        })
         # Through add_diff_columns rather than a hand-rolled .diff(), so the
         # interval carries VALUE_DERIVED_FROM_CUMULATIVE as production
         # sets it. Detection and treatment read that bit to decide which form
@@ -296,7 +317,17 @@ class TestTreatment:
         # own interval amounts -- a different and deliberately different
         # treatment.
         from etdmap.mapping_helpers import add_diff_columns
-        return add_diff_columns(df, context="frozen-span fixture")
+        return add_diff_columns(
+            dataset_frame(
+                n_rows=n,
+                start="2026-01-01",
+                freq=f"{GRID}min",
+                tz=None,
+                project=None,
+                WatergebruikWarmTapwater=values,
+            ),
+            context="frozen-span fixture",
+        )
 
     def _treated(self, df):
         from etdmap.mapping_helpers import (
@@ -304,7 +335,7 @@ class TestTreatment:
             _treat_frozen_spans,
         )
         rows = _detect_frozen_spans_for_household_batch(
-            df, 1, cadence=_measured_cadence(df)
+            df, HOUSEHOLD_BATCH_ID, cadence=_measured_cadence(df)
         )
         _treat_frozen_spans(df, rows)
         return rows
@@ -352,13 +383,18 @@ class TestOnlyAccumulatingVariables:
     def _frame(self, column):
         # The shape that fires for a cumulative variable: flat, then an implausible jump.
         n = 30
-        df = pd.DataFrame({
-            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
-        })
-        df[column] = pd.array(
-            [230.0] * 8 + [230.0] * 10 + [9999.0] + [230.0] * (n - 19),
-            dtype="Float64",
+        df = dataset_frame(
+            n_rows=n,
+            start="2026-01-01",
+            freq=f"{GRID}min",
+            tz=None,
+            project=None,
+            **{column: [230.0] * 8 + [230.0] * 10 + [9999.0] + [230.0] * (n - 19)},
         )
+        # Differenced here rather than through add_diff_columns, which stamps
+        # VALUE_DERIVED_FROM_CUMULATIVE: without that finding the interval
+        # column is read as the supplier's own amounts, which is the form this
+        # class judges.
         df[column + "Diff"] = df[column].diff().round(10)
         df.loc[0, column + "Diff"] = 0
         return df
@@ -367,14 +403,14 @@ class TestOnlyAccumulatingVariables:
         from etdmap.mapping_helpers import _detect_frozen_spans_for_household_batch
         df = self._frame("SlimmemeterVoltageL1")
         assert _detect_frozen_spans_for_household_batch(
-            df, 1, cadence=_measured_cadence(df)
+            df, HOUSEHOLD_BATCH_ID, cadence=_measured_cadence(df)
         ) == []
 
     def test_a_cumulative_column_with_the_same_shape_is(self):
         from etdmap.mapping_helpers import _detect_frozen_spans_for_household_batch
         df = self._frame("WatergebruikWarmTapwater")
         assert len(_detect_frozen_spans_for_household_batch(
-            df, 1, cadence=_measured_cadence(df)
+            df, HOUSEHOLD_BATCH_ID, cadence=_measured_cadence(df)
         )) == 1
 
     def test_an_interval_column_follows_its_cumulative_variable(self):
@@ -384,46 +420,45 @@ class TestOnlyAccumulatingVariables:
 
 
 class TestARegisterIsNotScanned:
-    """frozen_spans reads its argument as per-interval amounts. On a register --
-    a running total -- a run of zeros means absent rather than idle, and a value
-    over the bound is a reading outside its declared range, which the threshold
-    pass already reports.
+    """frozen_spans reads its argument as per-interval amounts. On a cumulative
+    variable -- a running total -- a run of zeros means absent rather than idle,
+    and a value over the bound is a reading outside its declared range, which
+    the threshold pass already reports.
 
-    Scanning one was observed to fire: in data/mapped_g45, 3 of 993 span rows
-    were on a register (ElektriciteitNetgebruik for household 293, a 99999 meter
-    reading 109967.957 after an 80-reading absence; WarmteproductieRuimteverwarming
-    twice for household 34). Because cumulative_column(register) is None,
-    _treat_frozen_spans took its interval branch on the register and blanked that
+    Scanned anyway, cumulative_column of a cumulative variable is None, so
+    _treat_frozen_spans takes its interval branch on it and blanks that
     reading, stamping FROZEN_SPAN and CATCHUP for a span that never happened.
 
-    13 of the 30 columns carrying a Max and accumulating are registers, so this
-    is not a corner either.
+    13 of the 30 columns carrying a Max and accumulating are cumulative, so
+    this is not a corner either.
     """
 
-    #: An absence in the register, then a reading past its declared Max. The
-    #: shape that fired in g45: fillna(0) == 0 counts NA as "did not advance".
+    # An absence in the cumulative variable, then a reading past its declared
+    # Max. The shape that reaches the scan: fillna(0) == 0 counts NA as "did
+    # not advance". The counterpart is completed as a usable total, which is
+    # what an interval column derived from it is derived from.
     def _register_frame(self, column, over_bound):
         n = 12
-        df = pd.DataFrame({
-            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
-        })
-        df[column] = pd.array(
-            [100.0, 200.0, 300.0] + [pd.NA] * 5 + [over_bound] * 4,
-            dtype="Float64",
+        return dataset_frame(
+            n_rows=n,
+            start="2026-01-01",
+            freq=f"{GRID}min",
+            tz=None,
+            project=None,
+            **{column: [100.0, 200.0, 300.0] + [pd.NA] * 5 + [over_bound] * 4},
         )
-        return df
 
     def test_a_register_reports_no_span(self):
         from etdmap.mapping_helpers import _detect_frozen_spans_for_household_batch
         df = self._register_frame("ElektriciteitNetgebruik", 109967.957)
         assert _detect_frozen_spans_for_household_batch(
-            df, 1, cadence=_measured_cadence(df)
+            df, HOUSEHOLD_BATCH_ID, cadence=_measured_cadence(df)
         ) == []
 
     def test_the_same_shape_on_its_interval_column_still_does(self):
-        """The scan was narrowed, not disabled: an interval column DERIVED from
-        a register carries per-interval amounts and is still read, and there an
-        absence counts as not advancing -- so this frame's NA run is a span.
+        """An interval column DERIVED from a cumulative variable carries
+        per-interval amounts and is read, and there an absence counts as not
+        advancing -- so this frame's NA run is a span.
 
         The derivation is asserted by the flag, because that is what detection
         reads. Without it the same frame is the supplier's own amounts, where
@@ -437,16 +472,16 @@ class TestARegisterIsNotScanned:
             MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE,
         )
         rows = _detect_frozen_spans_for_household_batch(
-            df, 1, cadence=_measured_cadence(df)
+            df, HOUSEHOLD_BATCH_ID, cadence=_measured_cadence(df)
         )
         assert len(rows) == 1
         assert rows[0]["column"] == col
         assert rows[0]["span_kind"] == "derived_interval"
 
     def test_a_registers_over_bound_reading_survives_treatment(self):
-        """What the defect destroyed. The reading is out of bounds and the
-        threshold pass is what removes it; span treatment must not, because
-        blanking it here also claims the span that justified it."""
+        """The reading is out of bounds and the threshold pass is what removes
+        it; span treatment must not, because blanking it here also claims the
+        span that justified it."""
         from etdmap.mapping_helpers import (
             _detect_frozen_spans_for_household_batch,
             _treat_frozen_spans,
@@ -454,7 +489,7 @@ class TestARegisterIsNotScanned:
         col = "ElektriciteitNetgebruik"
         df = self._register_frame(col, 109967.957)
         rows = _detect_frozen_spans_for_household_batch(
-            df, 1, cadence=_measured_cadence(df)
+            df, HOUSEHOLD_BATCH_ID, cadence=_measured_cadence(df)
         )
         _treat_frozen_spans(df, rows)
         assert float(df[col].iloc[8]) == pytest.approx(109967.957)
@@ -467,25 +502,25 @@ class TestARegisterIsNotScanned:
 
 class TestFlagsSurviveTheColumnFilter:
     """`rearrange_model_columns` keeps only data model columns, and a findings
-    column is not one. It was therefore dropping every flag set in the mapper --
-    the fills run before the pipeline, so their record of which values were
-    invented was destroyed before anything could read it.
+    column is not one. Dropping it destroys every flag the mapper set: the
+    fills run before the pipeline, so that record of which values were invented
+    is the only thing distinguishing them from measurements.
 
-    Measured before the fix: 36 FILLED_DOWN rows in, 0 out. The column then
-    reappeared, recreated by span treatment with only its own bits, which is why
-    its mere presence was not evidence.
+    The column's presence is not evidence on its own -- span treatment
+    recreates it carrying only its own bits -- so the bits are asserted too.
     """
 
     def _filled_frame(self, n=40):
         from etdmap.mapping_helpers import fill_down_infrequent_devices
         col = "ElektriciteitsgebruikBoilervat"
-        df = pd.DataFrame({
-            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
-            col: pd.array(
-                [float(i) if i % 12 == 0 else pd.NA for i in range(n)],
-                dtype="Float64",
-            ),
-        })
+        df = dataset_frame(
+            n_rows=n,
+            start="2026-01-01",
+            freq=f"{GRID}min",
+            tz=None,
+            project=None,
+            **{col: [float(i) if i % 12 == 0 else pd.NA for i in range(n)]},
+        )
         return col, fill_down_infrequent_devices(df, columns=[col], grid_minutes=GRID)
 
     def test_a_findings_column_survives_with_the_column_it_describes(self):
@@ -509,6 +544,8 @@ class TestFlagsSurviveTheColumnFilter:
 
     def test_a_findings_column_for_an_unmapped_column_is_still_dropped(self):
         from etdmap.mapping_helpers import rearrange_model_columns
+        # Built here: the subject is a column the data model does not have,
+        # which no builder produces, carrying an Int64 findings column.
         df = pd.DataFrame({
             "ReadingDate": pd.date_range("2026-01-01", periods=3, freq="5min"),
             "nan [nan]": pd.array([1.0, 2.0, 3.0], dtype="Float64"),
@@ -529,13 +566,19 @@ class TestNullingIsBoundedToTheSpan:
     DIFF = "ElektriciteitNetgebruikDiff"
 
     def _frame_with_span(self, span_values):
+        # Both halves of the pair are stated, so nothing is completed: the
+        # cumulative column is what the derived treatment hands the span's
+        # energy back to, and the interval column is what it blanks.
         n = len(span_values)
-        return pd.DataFrame({
-            "HuisIdBSV": pd.array([1] * n, dtype="Int64"),
-            "ReadingDate": pd.date_range("2026-01-01", periods=n, freq="5min"),
-            self.CUM: pd.array([100.0 + i for i in range(n)], dtype="Float64"),
-            self.DIFF: pd.array(span_values, dtype="Float64"),
-        })
+        return datasets_frame(
+            {HOUSEHOLD_BATCH_ID: {
+                self.CUM: [100.0 + i for i in range(n)],
+                self.DIFF: list(span_values),
+            }},
+            start="2026-01-01",
+            freq=f"{GRID}min",
+            tz=None,
+        )
 
     def _treat(self, df, start, catchup):
         from etdmap.mapping_helpers import _treat_frozen_spans

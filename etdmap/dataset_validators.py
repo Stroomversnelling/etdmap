@@ -4,9 +4,9 @@ import pandas as pd
 from pandas import DataFrame
 
 from etdmap.data_model import (
-    interval_column,
     cumulative_columns,
     data_analysis_columns,
+    interval_column,
     load_thresholds,
     thresholds_dict,
 )
@@ -309,8 +309,8 @@ def validate_no_readingdate_gap(df: DataFrame) -> bool:
     Notes
     -----
     The spacing checked against is the most common spacing in *df*, not a fixed
-    interval: households are recorded on the grid their batch declares. A fixed
-    interval reports every row of a coarser household as a gap.
+    interval: a dataset is recorded on the grid its household batch declares. A
+    fixed interval reports every row of a coarser dataset as a gap.
     """
     time_diffs = df["ReadingDate"].diff().dt.total_seconds()[1:]
     if time_diffs.empty:

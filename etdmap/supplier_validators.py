@@ -17,9 +17,9 @@ Mapping_Meenemen == 0                                  -> OK (explicitly exclude
 Mapping_Meenemen missing / NaN                         -> ERROR (coverage undefined -- must be decided)
 Column not found in CSV at all                         -> ERROR (not covered at all)
 
-Two declaration styles exist and both are complete. Reading only
-Mapping_VariabeleBSV is blind to every combination-declared column: before
-2026-10-01 this validator rejected those rows as errors.
+Two declaration styles exist and both are complete, so a reader that looks
+only at Mapping_VariabeleBSV is blind to every combination-declared column
+and would reject those rows as errors.
 
 The function returns a list of human-readable error strings. An empty list means
 all columns are covered. The caller decides whether to raise or log.
@@ -29,6 +29,8 @@ import logging
 from pathlib import Path
 
 import pandas as pd
+
+import etdmap.ids as ids
 
 
 def _load_mapping_df(csv_path) -> pd.DataFrame:
@@ -41,7 +43,7 @@ def _load_mapping_df(csv_path) -> pd.DataFrame:
 
 
 def _project_id_matches(proj_id_cell: str, project_id: str) -> bool:
-    """Return True if project_id appears in a comma-separated ProjectIdBSV cell."""
+    """Return True if project_id appears in a comma-separated project-id cell."""
     if pd.isna(proj_id_cell):
         return False
     return project_id in [p.strip() for p in str(proj_id_cell).split(",")]
@@ -55,7 +57,8 @@ def _build_column_map(
     """
     Pre-index the mapping CSV for fast per-column lookup.
 
-    Matches rows by Dataleverancier == supplier AND ProjectIdBSV containing project_id.
+    Matches rows by ``ids.SUPPLIER`` == supplier AND ``ids.PROJECT`` containing
+    project_id.
     If project_id is None, matches all rows for the supplier regardless of project.
 
     Returns {source_variable: {"include": float|None, "target_variable": str|None}}
@@ -64,10 +67,10 @@ def _build_column_map(
     """
     column_map = {}
     for _, row in mapping_df.iterrows():
-        if row.get("Dataleverancier") != supplier:
+        if row.get(ids.SUPPLIER) != supplier:
             continue
         if project_id is not None:
-            if not _project_id_matches(row.get("ProjectIdBSV", ""), project_id):
+            if not _project_id_matches(row.get(ids.PROJECT, ""), project_id):
                 continue
 
         source_variable = str(row.get("Variabele", "")).strip()
@@ -126,7 +129,7 @@ def validate_mapping_coverage(
     supplier : str
         Supplier name to filter on.
     project_id : str or None
-        BSV project ID string to match against the comma-split ProjectIdBSV column
+        BSV project ID string to match against the comma-split ``ids.PROJECT`` column
         (e.g. '8', '9', '10'). Pass None to validate against all supplier rows.
     raw_columns : iterable of str
         Column names as they appear in the supplier data file.
@@ -145,7 +148,7 @@ def validate_mapping_coverage(
     column_map = _build_column_map(mapping_df, supplier, project_id)
 
     errors = []
-    project_label = f"ProjectIdBSV={project_id!r}" if project_id is not None else "all projects"
+    project_label = f"{ids.PROJECT}={project_id!r}" if project_id is not None else "all projects"
 
     for col in raw_columns:
         if col in skip:
@@ -235,18 +238,19 @@ def _build_site_to_project_id_map(project_df: pd.DataFrame, supplier: str = None
     Build a {site_name: bsv_project_id_str} map from the Project table.
 
     The synced Project table has:
-      - ProjectIdBSV: the BSV numeric project ID
-      - ProjectIdLeverancier: the supplier's own site/project identifier (raw data value)
-      - Dataleverancier: the supplier name
+      - ``ids.PROJECT``: the BSV numeric project ID
+      - ``ids.PROJECT_SUPPLIER``: the supplier's own site/project identifier
+        (raw data value)
+      - ``ids.SUPPLIER``: the supplier name
 
-    The ProjectIdLeverancier column must contain the exact values that appear in
-    the supplier's raw data project column (e.g. a 'Site' column).
+    The supplier's own project column must contain the exact values that appear
+    in the supplier's raw data project column (e.g. a 'Site' column).
     If these don't match, update the Project table in the source data model
     and re-sync.
     """
-    id_col = "ProjectIdBSV"
-    name_col = "ProjectIdLeverancier"
-    supplier_col = "Dataleverancier"
+    id_col = ids.PROJECT
+    name_col = ids.PROJECT_SUPPLIER
+    supplier_col = ids.SUPPLIER
 
     if id_col not in project_df.columns or name_col not in project_df.columns:
         logging.warning(
@@ -268,7 +272,7 @@ def _build_site_to_project_id_map(project_df: pd.DataFrame, supplier: str = None
         if pd.notna(proj_id) and pd.notna(site_name) and str(site_name).strip():
             site_map[str(site_name).strip()] = str(int(float(proj_id)))
 
-    logging.debug(f"[supplier_validators] Site->ProjectIdBSV map: {site_map}")
+    logging.debug(f"[supplier_validators] Site->{ids.PROJECT} map: {site_map}")
     return site_map
 
 
@@ -318,14 +322,14 @@ def run_mapping_coverage_preflight(
 
     all_errors: list[str] = []
 
-    # Build site->ProjectIdBSV map if project-level validation is requested
+    # Build site->project-id map if project-level validation is requested
     site_to_project_id: dict = {}
     if raw_project_col is not None and project_table_csv is not None:
         project_df = _load_project_table(project_table_csv)
         site_to_project_id = _build_site_to_project_id_map(project_df, supplier=supplier)
         if not site_to_project_id:
             logging.warning(
-                f"[run_mapping_coverage_preflight] Site->ProjectIdBSV map is empty -- "
+                f"[run_mapping_coverage_preflight] Site->{ids.PROJECT} map is empty -- "
                 f"check Project table CSV at {project_table_csv}. "
                 f"Falling back to supplier-level validation."
             )
@@ -358,10 +362,10 @@ def run_mapping_coverage_preflight(
 
             if folder_project_id is None:
                 raise RuntimeError(
-                    f"[run_mapping_coverage_preflight] Could not determine ProjectIdBSV "
+                    f"[run_mapping_coverage_preflight] Could not determine {ids.PROJECT} "
                     f"for folder '{project_folder}' -- no file in the folder returned a "
                     f"recognisable site value. Known sites: {list(site_to_project_id.keys())}. "
-                    f"Update ProjectIdLeverancier in the source Project table to match the "
+                    f"Update {ids.PROJECT_SUPPLIER} in the source Project table to match the "
                     f"exact values in the '{raw_project_col}' column of the raw parquet files, "
                     f"then re-sync the data model."
                 )
@@ -374,7 +378,7 @@ def run_mapping_coverage_preflight(
 
             logging.info(
                 f"[run_mapping_coverage_preflight] Folder '{project_folder}' -> "
-                f"ProjectIdBSV={folder_project_id!r}"
+                f"{ids.PROJECT}={folder_project_id!r}"
             )
             errors = validate_mapping_coverage(
                 csv_path=csv_path,

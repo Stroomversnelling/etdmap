@@ -20,6 +20,7 @@ import random
 import pandas as pd
 import pytest
 
+from etdmap import ids
 from etdmap.data_model import cumulative_columns
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import (
@@ -561,7 +562,7 @@ class TestTheInputContractIsEnforcedAtTheBoundary:
             mapped_folder_path=str(tmp_path), grid_minutes=5,
             cadence=detect_column_cadence(df, grid_minutes=5),
         )
-        assert entry["HuisIdBSV"] == 1
+        assert entry[ids.HOUSEHOLD] == 1
 
         # ...and the correction still did its work on the dip, so getting past
         # the guards is not the same as skipping step 7. Read through the
@@ -678,15 +679,15 @@ class TestGroupedInputIsCorrectedPerHousehold:
         for household, seed in enumerate(range(20, 26)):
             rng = random.Random(seed)
             frame = _frame(_generate(rng, 24))
-            frame["HuisIdBSV"] = household
+            frame[ids.HOUSEHOLD] = household
             frames.append(frame)
         return pd.concat(frames, ignore_index=True)
 
     def test_each_household_only_loses_its_own_readings(self):
         df = self._grouped()
-        out = _corrected(df, id_column="HuisIdBSV")
-        for household, delivered in df.groupby("HuisIdBSV")[COL]:
-            own = out[out["HuisIdBSV"] == household].sort_values("ReadingDate")
+        out = _corrected(df, id_column=ids.HOUSEHOLD)
+        for household, delivered in df.groupby(ids.HOUSEHOLD)[COL]:
+            own = out[out[ids.HOUSEHOLD] == household].sort_values("ReadingDate")
             _assert_only_removes(
                 list(delivered), own.reset_index(drop=True),
                 f"household {household}",
@@ -695,14 +696,14 @@ class TestGroupedInputIsCorrectedPerHousehold:
     def test_each_household_gets_its_own_seeded_first_interval(self):
         """Row 0 of a differenced series has no predecessor, and "row 0" is per
         household -- not per frame."""
-        out = _corrected(self._grouped(), id_column="HuisIdBSV")
-        for household, group in out.groupby("HuisIdBSV"):
+        out = _corrected(self._grouped(), id_column=ids.HOUSEHOLD)
+        for household, group in out.groupby(ids.HOUSEHOLD):
             first = group.sort_values("ReadingDate")[DIFF].iloc[0]
             assert float(first) == 0.0, household
 
     def test_the_interval_follows_each_households_own_register(self):
-        out = _corrected(self._grouped(), id_column="HuisIdBSV")
-        for household, group in out.groupby("HuisIdBSV"):
+        out = _corrected(self._grouped(), id_column=ids.HOUSEHOLD)
+        for household, group in out.groupby(ids.HOUSEHOLD):
             _assert_interval_follows_the_register(
                 group.sort_values("ReadingDate").reset_index(drop=True),
                 f"household {household}",
@@ -714,14 +715,14 @@ class TestGroupedInputIsCorrectedPerHousehold:
         frames = []
         for household, values in ((1, dipping), (2, clean)):
             frame = _frame(values)
-            frame["HuisIdBSV"] = household
+            frame[ids.HOUSEHOLD] = household
             frames.append(frame)
         out = _corrected(pd.concat(frames, ignore_index=True),
-                         id_column="HuisIdBSV")
+                         id_column=ids.HOUSEHOLD)
 
-        second = out[out["HuisIdBSV"] == 2].sort_values("ReadingDate")
+        second = out[out[ids.HOUSEHOLD] == 2].sort_values("ReadingDate")
         assert _values(second[COL]) == clean
-        first = out[out["HuisIdBSV"] == 1].sort_values("ReadingDate")
+        first = out[out[ids.HOUSEHOLD] == 1].sort_values("ReadingDate")
         assert _values(first[COL]) == [10.0, 11.0, None, 12.0]
 
 

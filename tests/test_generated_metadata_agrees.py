@@ -14,6 +14,7 @@ differently shaped dataset unresolved.
 import pandas as pd
 import pytest
 
+from etdmap import ids
 from etdmap.storage import mapped_household_paths
 
 GENERATED_METADATA = "_generated_metadata"
@@ -40,15 +41,15 @@ def generated(mapped_fixtures):
 
 class TestTheBatchSyncDescribesTheDataset:
     def test_it_covers_exactly_the_households_the_index_holds(self, generated):
-        assert set(generated["batch"]["HuisIdBSV"]) == set(
-            generated["index"]["HuisIdBSV"]
+        assert set(generated["batch"][ids.HOUSEHOLD]) == set(
+            generated["index"][ids.HOUSEHOLD]
         )
 
     def test_the_project_of_each_household_matches_the_index(self, generated):
         """Declaring one project for every household would contradict the
         index, which splits them, and nothing downstream would notice."""
-        batch = generated["batch"].set_index("HuisIdBSV")["ProjectIdBSV"]
-        index = generated["index"].set_index("HuisIdBSV")["ProjectIdBSV"]
+        batch = generated["batch"].set_index(ids.HOUSEHOLD)[ids.PROJECT]
+        index = generated["index"].set_index(ids.HOUSEHOLD)[ids.PROJECT]
 
         assert batch.sort_index().tolist() == index.sort_index().tolist()
         assert index.nunique() > 1, (
@@ -76,8 +77,8 @@ class TestTheReviewedMetadataDescribesTheDataset:
         """update_include compares the two household key sets and raises on a
         difference, so a metadata file covering a different set stops the
         downstream stages outright."""
-        assert set(generated["reviewed"]["HuisIdBSV"]) == set(
-            generated["index"]["HuisIdBSV"]
+        assert set(generated["reviewed"][ids.HOUSEHOLD]) == set(
+            generated["index"][ids.HOUSEHOLD]
         )
 
     def test_every_household_is_included(self, generated):
@@ -88,11 +89,11 @@ class TestTheReviewedMetadataDescribesTheDataset:
 
 class TestTheProjectMappingCoversEveryProject:
     def test_each_project_in_the_index_can_be_resolved(self, generated):
-        assert set(generated["index"]["ProjectIdBSV"].dropna()) <= set(
-            generated["projects"]["ProjectIdBSV"]
+        assert set(generated["index"][ids.PROJECT].dropna()) <= set(
+            generated["projects"][ids.PROJECT]
         )
 
     def test_no_household_is_left_without_a_project(self, generated):
         """ProjectIdBSV is joined through this mapping, so a project missing
         from it leaves its households unresolved rather than failing."""
-        assert generated["index"]["ProjectIdBSV"].notna().all()
+        assert generated["index"][ids.PROJECT].notna().all()

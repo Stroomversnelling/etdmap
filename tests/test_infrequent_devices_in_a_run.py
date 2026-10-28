@@ -15,6 +15,7 @@ same defaults, so a household's number is the same data in both.
 import pandas as pd
 import pytest
 
+from etdmap import ids
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import CADENCE_FILENAME
 from etdmap.storage import mapped_household_files
@@ -63,7 +64,7 @@ def cadence(mapped_fixtures):
     frame = pd.read_parquet(
         mapped_fixtures / CADENCE_FILENAME, dtype_backend="numpy_nullable"
     )
-    rows = frame[frame["HuisBatchIdBSV"] == HOUSEHOLD]
+    rows = frame[frame[ids.HOUSEHOLD_BATCH] == HOUSEHOLD]
     return rows.set_index("column")
 
 

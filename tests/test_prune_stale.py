@@ -11,8 +11,8 @@ Two helpers: flat mapped files and sharded shards.
 """
 
 import pandas as pd  # noqa: F401  (ensures etdmap import env is consistent)
-import pytest
 
+from etdmap import ids
 from etdmap.mapping_helpers import (
     prune_stale_household_files,
     prune_stale_household_shards,
@@ -38,7 +38,7 @@ class TestPruneStaleFlat:
         assert (tmp_path / "household_2_table.parquet").exists()
         assert (tmp_path / "index.parquet").exists()
         assert (tmp_path / "notes.txt").exists()
-        assert sorted(r["HuisIdBSV"] for r in removed) == [3]
+        assert sorted(r[ids.HOUSEHOLD] for r in removed) == [3]
 
     def test_nothing_removed_when_all_kept(self, tmp_path):
         for n in (1, 2):
@@ -60,7 +60,7 @@ class TestPruneStaleShards:
         assert not (tmp_path / "HuisIdBSV=3").exists()
         assert (tmp_path / "HuisIdBSV=1" / "HuisBatchIdBSV=1" / "part.parquet").exists()
         assert (tmp_path / "HuisIdBSV=2" / "HuisBatchIdBSV=2" / "part.parquet").exists()
-        assert sorted((r["HuisIdBSV"], r["HuisBatchIdBSV"]) for r in removed) == [(3, 3)]
+        assert sorted((r[ids.HOUSEHOLD], r[ids.HOUSEHOLD_BATCH]) for r in removed) == [(3, 3)]
 
     def test_prunes_stale_batch_keeps_other_batch_same_household(self, tmp_path):
         # Household 5 has two batches; keep only (5, 5) -> the (5, 9) shard is stale.
@@ -71,4 +71,4 @@ class TestPruneStaleShards:
 
         assert (tmp_path / "HuisIdBSV=5" / "HuisBatchIdBSV=5" / "part.parquet").exists()
         assert not (tmp_path / "HuisIdBSV=5" / "HuisBatchIdBSV=9").exists()
-        assert sorted((r["HuisIdBSV"], r["HuisBatchIdBSV"]) for r in removed) == [(5, 9)]
+        assert sorted((r[ids.HOUSEHOLD], r[ids.HOUSEHOLD_BATCH]) for r in removed) == [(5, 9)]

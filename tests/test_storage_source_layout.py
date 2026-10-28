@@ -19,6 +19,7 @@ produced three failures from one cause:
 import pandas as pd
 import pytest
 
+from etdmap import ids
 from etdmap.storage import (
     flat_glob,
     read_source_frame,
@@ -151,19 +152,19 @@ class TestAFlatDirectoryKeepsItsHouseholdIdentity:
 
     def test_the_frame_carries_the_ids_from_the_file_names(self, flat):
         out = read_source_frame(flat)
-        assert "HuisIdBSV" in out.columns
-        assert sorted(out["HuisIdBSV"].unique().tolist()) == [7, 9]
+        assert ids.HOUSEHOLD in out.columns
+        assert sorted(out[ids.HOUSEHOLD].unique().tolist()) == [7, 9]
 
     def test_the_batch_id_equals_the_household_id(self, flat):
         """One file per household, the same equivalence the mapped reader uses."""
         out = read_source_frame(flat)
-        assert (out["HuisIdBSV"] == out["HuisBatchIdBSV"]).all()
+        assert (out[ids.HOUSEHOLD] == out[ids.HOUSEHOLD_BATCH]).all()
 
     def test_every_row_is_read(self, flat):
         assert len(read_source_frame(flat)) == 6
 
     def test_the_ids_are_reported_in_the_schema(self, flat):
-        assert {"HuisIdBSV", "HuisBatchIdBSV"} <= source_schema_names(flat)
+        assert {ids.HOUSEHOLD, ids.HOUSEHOLD_BATCH} <= source_schema_names(flat)
 
     def test_sql_over_it_refuses_rather_than_dropping_the_id(self, flat):
         """A fragment with no HuisIdBSV and no error is how failure 3 hid."""
@@ -180,7 +181,7 @@ class TestTheTwoWaysIntoAMixedFolderAgree:
     def test_both_carry_the_household_ids(self, mixed):
         for path in (mixed, mixed / "sharded"):
             out = read_source_frame(path)
-            assert sorted(out["HuisIdBSV"].unique().tolist()) == [1, 2]
+            assert sorted(out[ids.HOUSEHOLD].unique().tolist()) == [1, 2]
 
     def test_the_sql_fragments_are_equivalent(self, mixed):
         assert source_sql(mixed) == source_sql(mixed / "sharded")

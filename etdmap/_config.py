@@ -99,7 +99,8 @@ project_mapping_csv_path = Option(
     key="project_mapping_csv_path",
     default_value=None,
     doc=(
-        "Path to the CSV that maps ProjectIdLeverancier values to ProjectIdBSV. "
+        "Path to the CSV that maps each supplier's own project identifier to "
+        "the BSV project id. "
         "Used to resolve project identifiers for suppliers whose "
         "households are not yet in the BSV metadata file at the time of mapping."
     ),
@@ -111,9 +112,7 @@ household_batch_csv_path = Option(
     key="household_batch_csv_path",
     default_value=None,
     doc=(
-        "Path to the synced HuisBatch table CSV: one row per household batch "
-        "with HuisIdBSV, HuisBatchIdBSV, BatchIdBSV, Meenemen, "
-        "Gegevensfrequentie, Leverancierfrequentie, Startdatum and Einddatum. "
+        "Path to the synced household batch table CSV: "
         "The project's data-management tooling produces this file; "
         "save_index_to_parquet reads it to populate the household-batch "
         "columns of index.parquet. When unset or missing, those columns are "

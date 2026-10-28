@@ -1,19 +1,23 @@
 """Blanking a value is an action and is recorded as one.
 
-Before this, a condemned value carried only the signal that condemned it --
-OUT_OF_BOUNDS_HIGH, CUMULATIVE_METER_RESET and so on -- and nothing said the
-value had been removed. A reader could not tell a value the pipeline blanked
-from one the supplier never sent.
+A condemned value carries the signal that condemned it -- OUT_OF_BOUNDS_HIGH,
+CUMULATIVE_METER_RESET and so on -- and, separately, NULLED saying the value
+was removed. Without the second, a reader cannot tell a value the pipeline
+blanked from one the supplier never sent.
 """
 
 import pandas as pd
-import pytest
 
+from etdmap import ids
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import apply_threshold_to_col
+from etdmap.testing import PAIRS_EMPTY, datasets_frame, household_of_batch
 
 COL = "ElektriciteitNetgebruik"
 DIFF = "ElektriciteitNetgebruikDiff"
+
+DATASET = 1001
+SECOND_DATASET = 2001
 
 
 def _flags(df, column):
@@ -25,11 +29,14 @@ def _flags(df, column):
 
 class TestThresholdRemovalRecordsTheBlanking:
     def _frame(self):
-        return pd.DataFrame({
-            "HuisIdBSV": pd.array([1] * 4, dtype="Int64"),
-            "ReadingDate": pd.date_range("2026-01-01", periods=4, freq="5min"),
-            DIFF: pd.array([0.5, 99.0, 0.5, 0.5], dtype="Float64"),
-        })
+        # PAIRS_EMPTY: the readings under test are the interval column's, so
+        # the cumulative counterpart is present but states no total of its own.
+        return datasets_frame(
+            {DATASET: {DIFF: [0.5, 99.0, 0.5, 0.5]}},
+            start="2026-01-01",
+            tz=None,
+            pairs=PAIRS_EMPTY,
+        )
 
     def test_the_value_is_blanked(self):
         df, _ = apply_threshold_to_col(self._frame(), DIFF, 0.0, 1.5)
@@ -69,18 +76,18 @@ class TestNulledIsAnAction:
 
 
 class TestFirstZeroMarksTheSeed:
-    """add_diff_columns writes 0 at each household's first interval because
+    """add_diff_columns writes 0 at each dataset's first interval because
     differencing has no predecessor there. That zero is structural."""
 
     def test_the_seed_carries_the_flag(self):
         from etdmap.mapping_helpers import add_diff_columns
 
-        df = pd.DataFrame({
-            "HuisIdBSV": pd.array([1] * 4, dtype="Int64"),
-            "ReadingDate": pd.date_range("2026-01-01", periods=4, freq="5min"),
-            COL: pd.array([10.0, 10.5, 11.0, 11.5], dtype="Float64"),
-        })
-        out = add_diff_columns(df, id_column="HuisIdBSV")
+        df = datasets_frame(
+            {DATASET: {COL: [10.0, 10.5, 11.0, 11.5]}},
+            start="2026-01-01",
+            tz=None,
+        )
+        out = add_diff_columns(df, id_column=ids.HOUSEHOLD_BATCH)
         assert float(out.loc[0, DIFF]) == 0.0
         assert _flags(out, DIFF)[0] & MappingFlag.FIRST_ZERO.value, (
             "the seeded zero is not marked, so it reads as a measurement"
@@ -89,28 +96,35 @@ class TestFirstZeroMarksTheSeed:
     def test_later_rows_are_not_marked(self):
         from etdmap.mapping_helpers import add_diff_columns
 
-        df = pd.DataFrame({
-            "HuisIdBSV": pd.array([1] * 4, dtype="Int64"),
-            "ReadingDate": pd.date_range("2026-01-01", periods=4, freq="5min"),
-            COL: pd.array([10.0, 10.5, 11.0, 11.5], dtype="Float64"),
-        })
-        out = add_diff_columns(df, id_column="HuisIdBSV")
+        df = datasets_frame(
+            {DATASET: {COL: [10.0, 10.5, 11.0, 11.5]}},
+            start="2026-01-01",
+            tz=None,
+        )
+        out = add_diff_columns(df, id_column=ids.HOUSEHOLD_BATCH)
         flags = _flags(out, DIFF)
         for row in (1, 2, 3):
             assert not (flags[row] & MappingFlag.FIRST_ZERO.value)
 
-    def test_each_household_gets_its_own_seed(self):
+    def test_each_dataset_gets_its_own_seed(self):
         from etdmap.mapping_helpers import add_diff_columns
 
-        df = pd.DataFrame({
-            "HuisIdBSV": pd.array([1, 1, 2, 2], dtype="Int64"),
-            "ReadingDate": list(pd.date_range("2026-01-01", periods=2, freq="5min")) * 2,
-            COL: pd.array([10.0, 10.5, 20.0, 20.5], dtype="Float64"),
-        })
-        out = add_diff_columns(df, id_column="HuisIdBSV")
+        # Both datasets in ONE household, which is what makes the count
+        # discriminate: two seeds can only come from grouping on the dataset,
+        # since grouping on the household would seed the pair once.
+        df = datasets_frame(
+            {
+                DATASET: {COL: [10.0, 10.5]},
+                SECOND_DATASET: {COL: [20.0, 20.5]},
+            },
+            household_of={SECOND_DATASET: household_of_batch(DATASET)},
+            start="2026-01-01",
+            tz=None,
+        )
+        out = add_diff_columns(df, id_column=ids.HOUSEHOLD_BATCH)
         flags = _flags(out, DIFF)
         seeded = [i for i in out.index if flags[i] & MappingFlag.FIRST_ZERO.value]
-        assert len(seeded) == 2, f"expected one seed per household, got {seeded}"
+        assert len(seeded) == 2, f"expected one seed per dataset, got {seeded}"
 
     def test_the_seed_is_excluded_from_the_average(self):
         assert MappingFlag.FIRST_ZERO & MappingFlag.NOT_A_MEASUREMENT

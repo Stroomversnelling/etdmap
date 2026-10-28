@@ -221,6 +221,10 @@ run everything all the time.
 
 ## Writing a new test
 
+**[docs/WRITING_TESTS.md](docs/WRITING_TESTS.md) names the builder to call for
+every artifact a test needs, and the idioms that go with them.** Read it first;
+what follows is the file layout and the house style only.
+
 Tests live in `tests/`, one file per module under test, named
 `tests/test_<module>.py`. pytest collects any function named `test_*`; group
 related cases in a `class Test<Thing>` when a file covers several behaviours.
@@ -256,9 +260,13 @@ What the suite expects, per ADR-005 and ADR-015 in `DECISIONS.md`:
 - Compare nullable Series with `pd.testing.assert_series_equal`, or cast with
   `.astype(float)` first. `pytest.approx` does not work against a `Float64`
   Series via `==`.
-- Datetime columns are UTC tz-aware: `pd.date_range(..., tz="UTC")`.
 - Write files only under `tmp_path` (a pytest built-in fixture). Never write
   into the repo, and never point a test at production data.
+
+The frame above is handmade because it is three columns wide. Anything that
+carries ids, a schema or a whole artifact comes from a builder - see
+[docs/WRITING_TESTS.md](docs/WRITING_TESTS.md), which also covers why the
+timezone of `ReadingDate` is a choice a test has to make rather than a default.
 
 Write the docstring as the behaviour being locked in, not as a description of
 the code. When a test fails a year from now, that sentence is what tells the
@@ -281,6 +289,10 @@ suite has already paid for them.
 
 Tests build the data they assert on. Nothing is committed under `tests/data/`
 and no test compares output against a stored copy of a previous run.
+
+`etdmap.testing` holds a builder per artifact.
+[docs/WRITING_TESTS.md](docs/WRITING_TESTS.md) lists them with the artifact each
+one produces; this section covers only the whole-dataset generators.
 
 ### A mapped dataset
 
@@ -454,14 +466,43 @@ From `index_helpers.py`:
 
 ## Households, batches, and the index
 
-A **batch** is one delivery of data: a set of households supplied together,
-covering a real period (`Startdatum` to `Einddatum`). A **household batch**
-(`HuisBatch`) is one household within one batch, identified by
-`HuisBatchIdBSV`. The distinction matters because the same household can be
-delivered more than once over time -- for example a second year of data, or a
-re-delivery at a different measurement frequency -- and each delivery can have
-its own period, its own frequency (`Gegevensfrequentie`) and its own quality
-review.
+Batches hold projects, which hold household datasets.
+
+A **batch** is one delivery of data, covering a real period (`Startdatum` to
+`Einddatum`). A **household dataset** (`HuisBatch`) describes one household
+over that period, scoped to its project and its batch. The same household is
+delivered more than once over time -- a second year of data, a re-delivery at a
+different measurement frequency, a period after a renovation -- and each of
+those is its own dataset with its own period, frequency
+(`Gegevensfrequentie`) and quality review.
+
+**The household dataset is the primary key**, of the index and of every mapped
+artifact: the shard, the rows in each mapping sidecar, and every computation
+that runs along one time series. The household is an *attribute* of a dataset,
+not a key; reach for it to count households or to join household-level
+metadata, and nowhere else.
+
+### Naming the id columns in code
+
+`etdmap.ids` holds the column names, so code names the id it means rather than
+repeating a string, and a rename in the data model is one edit:
+
+```python
+from etdmap import ids
+
+df.groupby(ids.DATASET_AXIS)              # one running total per time series
+df[ids.ACCOUNTING_AXIS].nunique()         # how many households
+```
+
+`ids.DATASET_AXIS` and `ids.ACCOUNTING_AXIS` carry the same strings as
+`ids.HOUSEHOLD_BATCH` and `ids.HOUSEHOLD`; writing the axis says which question
+the call is asking, so "is this keyed on the right thing?" is a grep rather
+than a judgement per site. `ids.DTYPES` gives each one its nullable dtype.
+
+**This section is the only place the raw column names are written.** Elsewhere
+-- code, comments, docstrings, messages -- use the `etdmap.ids` names. A
+comment that names a raw column, or that says what a column used to key, is a
+defect.
 
 The index is a single file, `index.parquet`, written by
 `save_index_to_parquet()`. It holds one row per household batch

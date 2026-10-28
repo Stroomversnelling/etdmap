@@ -7,21 +7,23 @@ from typing import NamedTuple
 import pandas as pd
 
 import etdmap
+import etdmap.ids as ids
 from etdmap.data_model import (
     BOOLEAN_SYNONYMS,
     allowed_supplier_metadata_columns,
-    supplier_metadata_dtypes,
     cumulative_columns,
     interval_column,
+    supplier_metadata_dtypes,
 )
 from etdmap.dataset_validators import dataset_flag_conditions
 from etdmap.storage import read_mapped_households
 
+
 class HouseholdKey(NamedTuple):
     """Composite key uniquely identifying a household within a supplier dataset.
 
-    HuisIdLeverancier alone is never unique -- the same address string can exist
-    in multiple projects. Always use both fields together.
+    The supplier's own household id alone is never unique -- the same address
+    string can exist in multiple projects. Always use both fields together.
     """
     project_id_supplier: str
     household_id_supplier: str
@@ -29,43 +31,45 @@ class HouseholdKey(NamedTuple):
 
 # Standard BSV column name constants.
 # Import these in supplier mapping scripts rather than redefining them locally.
-BSV_HOUSE_COL = "HuisIdLeverancier"
-BSV_ID_COL = "HuisIdBSV"
-BSV_PROJECT_COL = "ProjectIdLeverancier"
+BSV_HOUSE_COL = ids.HOUSEHOLD_SUPPLIER
+BSV_ID_COL = ids.HOUSEHOLD
+BSV_PROJECT_COL = ids.PROJECT_SUPPLIER
 
 bsv_metadata_columns = [
     BSV_HOUSE_COL,
     BSV_ID_COL,
     BSV_PROJECT_COL,
-    "ProjectIdBSV",
-    "Dataleverancier",
+    ids.PROJECT,
+    ids.SUPPLIER,
     "Meenemen",
     "Notities",
 ]
 
-# all nullable pandas series types
+# All nullable pandas dtypes (ADR-005). The identifier columns take theirs
+# from etdmap.ids, so the two maps cannot disagree about one column; the
+# review fields are this module's own.
 metadata_dtypes = {
-    "HuisIdLeverancier": pd.StringDtype(),
-    "HuisIdBSV": pd.Int64Dtype(),
+    ids.HOUSEHOLD_SUPPLIER: ids.DTYPES[ids.HOUSEHOLD_SUPPLIER],
+    ids.HOUSEHOLD: ids.DTYPES[ids.HOUSEHOLD],
     "Meenemen": pd.BooleanDtype(),
-    "ProjectIdLeverancier": pd.StringDtype(),
-    "ProjectIdBSV": pd.Int64Dtype(),
+    ids.PROJECT_SUPPLIER: ids.DTYPES[ids.PROJECT_SUPPLIER],
+    ids.PROJECT: ids.DTYPES[ids.PROJECT],
     "Notities": pd.StringDtype(),
-    "Dataleverancier": pd.StringDtype(),
+    ids.SUPPLIER: ids.DTYPES[ids.SUPPLIER],
 }
 
 class HouseBatchOverlapError(ValueError):
     """
-    Raised when a household (HuisIdBSV) has data in more than one household
-    batch (HuisBatchIdBSV) in a context that can only represent one batch per
-    household -- for example the per-household index file, a single-file read
-    for one household, or a computation that would silently combine two
-    deliveries. A household appearing in more than one batch is valid in the
-    data model but not yet supported by these code paths, so they stop loudly
-    instead of mixing deliveries.
+    Raised when a household (``ids.HOUSEHOLD``) has data in more than one
+    household batch (``ids.HOUSEHOLD_BATCH``) in a context that can only
+    represent one household batch per household -- for example the
+    per-household index file, a single-file read for one household, or a
+    computation that would silently combine two datasets. A household appearing
+    in more than one household batch is valid in the data model but not
+    supported by these code paths, so they stop loudly instead of mixing
+    datasets.
 
-    Subclasses ValueError so existing ``except ValueError`` sites still
-    catch it.
+    Subclasses ValueError so an ``except ValueError`` site catches it.
     """
 
 
@@ -74,8 +78,8 @@ def validate_data_frequency_present(index_df):
     Raise if a row with Meenemen == True lacks a Gegevensfrequentie.
 
     Included rows enter the pipeline and must be fully specified. Other rows
-    may legitimately have NA batch fields: Meenemen starts empty when a
-    household is first mapped, and a household may not have its synced
+    may legitimately have NA household-batch fields: Meenemen starts empty when
+    a household is first mapped, and a household may not have its synced
     HuisBatch row yet. An index without a Gegevensfrequentie column (an
     older dataset) is not checked.
     """
@@ -88,9 +92,9 @@ def validate_data_frequency_present(index_df):
         missing_mask = missing_mask & included_mask
     if bool(missing_mask.any()):
         id_col = (
-            "HuisBatchIdBSV"
-            if "HuisBatchIdBSV" in index_df.columns
-            else "HuisIdBSV"
+            ids.HOUSEHOLD_BATCH
+            if ids.HOUSEHOLD_BATCH in index_df.columns
+            else ids.HOUSEHOLD
         )
         bad = sorted(
             int(h) for h in
@@ -102,12 +106,14 @@ def validate_data_frequency_present(index_df):
         )
 
 
-# Household-batch columns of the index (one row per HuisBatchIdBSV).
-# All nullable pandas dtypes (ADR-005); Startdatum/Einddatum are parsed to
-# tz-aware UTC datetimes when the index is written.
+# The index's household-dataset columns: one row per dataset, carrying the
+# batch it was delivered in and the frequencies declared for it. All nullable
+# pandas dtypes (ADR-005), the identifier ones from etdmap.ids;
+# Startdatum/Einddatum are parsed to tz-aware UTC datetimes when the index is
+# written.
 batch_field_dtypes = {
-    "HuisBatchIdBSV": pd.Int64Dtype(),
-    "BatchIdBSV": pd.Int64Dtype(),
+    ids.HOUSEHOLD_BATCH: ids.DTYPES[ids.HOUSEHOLD_BATCH],
+    ids.BATCH: ids.DTYPES[ids.BATCH],
     "Gegevensfrequentie": pd.StringDtype(),
     "Leverancierfrequentie": pd.StringDtype(),
 }
@@ -144,7 +150,8 @@ def _household_batch_table():
     The synced HuisBatch table, or None when it is not configured or present.
 
     Read on demand rather than at import: the path is an option the caller sets,
-    and mapping runs that do not need the batch fields should not require it.
+    and mapping runs that do not need the household-batch fields should not
+    require it.
     """
     try:
         path = etdmap.options.household_batch_csv_path
@@ -167,7 +174,7 @@ def _batch_table_for_grid(context):
             f"the grid it is recorded on is unknown. Check the data model: set "
             f"etdmap.options.household_batch_csv_path and sync HuisBatch."
         )
-    for column in ("HuisBatchIdBSV", "Gegevensfrequentie"):
+    for column in (ids.HOUSEHOLD_BATCH, "Gegevensfrequentie"):
         if column not in table.columns:
             raise ValueError(
                 f"{context}: the household batch table carries no {column}, so "
@@ -180,20 +187,20 @@ def household_batch_for_household(household_id):
     """
     The household batch a household's single dataset is.
 
-    ``HuisBatchIdBSV`` identifies a dataset and is what the mapped artifacts
-    and their sidecars are keyed on; ``HuisIdBSV`` identifies the household it
-    belongs to. This resolves one to the other through the household batch
-    table, for callers that start from a household.
+    ``ids.HOUSEHOLD_BATCH`` identifies a dataset and is what the mapped
+    artifacts and their sidecars are keyed on; ``ids.HOUSEHOLD`` identifies the
+    household it belongs to. This resolves one to the other through the
+    household batch table, for callers that start from a household.
 
     Parameters
     ----------
     household_id : int
-        HuisIdBSV.
+        The household.
 
     Returns
     -------
     int
-        HuisBatchIdBSV.
+        The household batch.
 
     Raises
     ------
@@ -201,13 +208,13 @@ def household_batch_for_household(household_id):
         When the household has more than one household batch. There is then no
         single dataset to return, and the caller has to say which one it means.
     ValueError
-        When the batch table is absent or unconfigured, does not hold the
-        household, or holds it with no HuisBatchIdBSV.
+        When the household batch table is absent or unconfigured, does not hold
+        the household, or holds it with no household batch.
     """
     context = f"Household {household_id}"
     table = _batch_table_for_grid(context)
 
-    rows = table[table["HuisIdBSV"] == household_id]
+    rows = table[table[ids.HOUSEHOLD] == household_id]
     if rows.empty:
         raise ValueError(
             f"{context} is not in the household batch table, so the dataset it "
@@ -215,16 +222,16 @@ def household_batch_for_household(household_id):
             f"HuisBatch before mapping it."
         )
 
-    batch_ids = sorted(int(b) for b in rows["HuisBatchIdBSV"].dropna().unique())
+    batch_ids = sorted(int(b) for b in rows[ids.HOUSEHOLD_BATCH].dropna().unique())
     if len(batch_ids) > 1:
         raise HouseBatchOverlapError(
             f"{context} has data in more than one household batch "
-            f"(HuisBatchIdBSV {batch_ids}), so there is no single dataset to "
+            f"({ids.HOUSEHOLD_BATCH} {batch_ids}), so there is no single dataset to "
             f"return. Name the household batch the caller means."
         )
     if not batch_ids:
         raise ValueError(
-            f"{context} has a household batch row carrying no HuisBatchIdBSV, "
+            f"{context} has a household batch row carrying no {ids.HOUSEHOLD_BATCH}, "
             f"so its dataset cannot be identified. Check the data model."
         )
     return batch_ids[0]
@@ -239,7 +246,7 @@ def grid_minutes_for_household_batch(household_batch_id):
     reports at. It is what ``ensure_intervals`` pads to, and what every later
     stage reads back off the index to scale a threshold with.
 
-    ``HuisBatchIdBSV`` is the key. One ``HuisIdBSV`` may have several datasets
+    ``ids.HOUSEHOLD_BATCH`` is the key. One household may have several datasets
     and each declares its own frequency, so the household does not identify a
     grid.
 
@@ -251,7 +258,7 @@ def grid_minutes_for_household_batch(household_batch_id):
     Parameters
     ----------
     household_batch_id : int
-        HuisBatchIdBSV.
+        The household batch.
 
     Returns
     -------
@@ -261,14 +268,14 @@ def grid_minutes_for_household_batch(household_batch_id):
     Raises
     ------
     ValueError
-        When the batch table is absent or unconfigured, carries neither
-        required column, does not hold this batch, holds it more than once, or
-        declares no readable frequency for it.
+        When the household batch table is absent or unconfigured, carries
+        neither required column, does not hold this household batch, holds it
+        more than once, or declares no readable frequency for it.
     """
-    context = f"HuisBatchIdBSV {household_batch_id}"
+    context = f"{ids.HOUSEHOLD_BATCH} {household_batch_id}"
     table = _batch_table_for_grid(context)
 
-    rows = table[table["HuisBatchIdBSV"] == household_batch_id]
+    rows = table[table[ids.HOUSEHOLD_BATCH] == household_batch_id]
     if rows.empty:
         raise ValueError(
             f"{context} is not in the household batch table, so the grid it is "
@@ -278,8 +285,8 @@ def grid_minutes_for_household_batch(household_batch_id):
     if len(rows) > 1:
         raise ValueError(
             f"{context} has {len(rows)} rows in the household batch table. A "
-            f"batch identifies one dataset, so its grid is ambiguous. Check the "
-            f"data model."
+            f"household batch identifies one dataset, so its grid is ambiguous. "
+            f"Check the data model."
         )
 
     declared = rows["Gegevensfrequentie"].iloc[0]
@@ -297,15 +304,15 @@ def grid_minutes_for_household(household_id):
     """
     The grid a household's single dataset is recorded on, in minutes.
 
-    Resolves the household's ``HuisBatchIdBSV`` from the batch table and
-    delegates to :func:`grid_minutes_for_household_batch`, which is the
+    Resolves the household's ``ids.HOUSEHOLD_BATCH`` from the household batch
+    table and delegates to :func:`grid_minutes_for_household_batch`, which is the
     model-keyed form. Callers that know which dataset they are processing
     should use that one directly.
 
     Parameters
     ----------
     household_id : int
-        HuisIdBSV.
+        The household.
 
     Returns
     -------
@@ -315,11 +322,11 @@ def grid_minutes_for_household(household_id):
     Raises
     ------
     HouseBatchOverlapError
-        When the household has more than one batch. The grid is a property of
-        the dataset, so there is no household-wide answer to return.
+        When the household has more than one household batch. The grid is a
+        property of the dataset, so there is no household-wide answer to return.
     ValueError
         As :func:`grid_minutes_for_household_batch`, plus when the household is
-        not in the batch table.
+        not in the household batch table.
     """
     context = f"Household {household_id}"
     try:
@@ -352,11 +359,12 @@ def _parse_synced_datetime(series: pd.Series) -> pd.Series:
 
 def _read_include_from_bsv_metadata():
     """
-    HuisIdBSV -> Meenemen (include boolean) from the combined BSV metadata, or None when no
-    metadata file is configured or present (legacy and fixture datasets).
+    ``ids.HOUSEHOLD`` -> Meenemen (include boolean) from the combined BSV
+    metadata, or None when no metadata file is configured or present (legacy
+    and fixture datasets).
 
-    Reads ONLY those two columns: the metadata file carries PII columns
-    (HuisIdLeverancier) that must not be loaded here (ADR-002).
+    Reads ONLY those two columns: the metadata file carries PII columns (the
+    supplier's own household id) that must not be loaded here (ADR-002).
     """
     try:
         path = etdmap.options.bsv_metadata_file
@@ -366,12 +374,12 @@ def _read_include_from_bsv_metadata():
         return None
     p = str(path)
     if p.lower().endswith(".csv"):
-        df = pd.read_csv(p, usecols=["HuisIdBSV", "Meenemen"],
+        df = pd.read_csv(p, usecols=[ids.HOUSEHOLD, "Meenemen"],
                          dtype_backend="numpy_nullable")
     else:
-        df = get_bsv_metadata()[["HuisIdBSV", "Meenemen"]]
+        df = get_bsv_metadata()[[ids.HOUSEHOLD, "Meenemen"]]
     return pd.DataFrame({
-        "HuisIdBSV": df["HuisIdBSV"].astype("Int64"),
+        ids.HOUSEHOLD: df[ids.HOUSEHOLD].astype("Int64"),
         "Meenemen": df["Meenemen"].astype("boolean"),
     })
 
@@ -417,7 +425,7 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
     metadata_file : str
         The path to the Excel file containing the metadata for a data source.
     required_columns : list, optional
-        A list of column names that must be present in the metadata. Defaults to ['HuisIdLeverancier'].
+        A list of column names that must be present in the metadata. Defaults to [ids.HOUSEHOLD_SUPPLIER].
 
     Returns
     -------
@@ -430,7 +438,7 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
         If not all required columns are found in the metadata file.
     """
     if required_columns is None:
-        required_columns = ["HuisIdLeverancier"]
+        required_columns = [ids.HOUSEHOLD_SUPPLIER]
     if metadata_file is not None:
         xl = pd.ExcelFile(metadata_file)
     else:
@@ -442,7 +450,7 @@ def read_metadata(metadata_file: str, required_columns=None) -> pd.DataFrame:
     df = xl.parse(sheet_name="Data")
     df = set_metadata_dtypes(metadata_df = df)
 
-    if all(col in df.columns for col in required_columns): 
+    if all(col in df.columns for col in required_columns):
         return df
     else:
         logging.error(
@@ -461,19 +469,19 @@ def read_index(
     """
     Read index.parquet.
 
-    One row per household batch (HuisBatchIdBSV). Older datasets carry one
-    row per household without the household-batch columns; they are read
+    One row per household batch (``ids.HOUSEHOLD_BATCH``). Older datasets carry
+    one row per household without the household-batch columns; they are read
     unchanged. Raises when an included row (Meenemen == True) lacks a
-    Gegevensfrequentie while the batch fields are present.
+    Gegevensfrequentie while the household-batch fields are present.
 
     An ABSENT index is refused unless *allow_missing* says otherwise. The
-    index is the household-id registry: ``assign_ids`` looks HuisIdBSV up by
-    (Dataleverancier, ProjectIdLeverancier, HuisIdLeverancier) and invents a
-    new id only for a key it cannot find. Reading an empty index therefore
-    makes every household look new, so a mapping run into a folder without
-    one renumbers the whole dataset in mapper execution order -- silently,
-    and HuisIdBSV is the join key of every comparison against an earlier
-    run. Only a genuinely new dataset starts without an index.
+    index is the household-id registry: ``assign_ids`` looks the household id
+    up by (supplier, supplier project, supplier household) and invents a new id
+    only for a key it cannot find. Reading an empty index therefore makes every
+    household look new, so a mapping run into a folder without one renumbers
+    the whole dataset in mapper execution order -- silently, and the household
+    id is the join key of every comparison against an earlier run. Only a
+    genuinely new dataset starts without an index.
 
     Parameters
     ----------
@@ -519,9 +527,9 @@ def read_index(
         )
 
     if "HuisId" in index_df.columns:
-        index_df.rename(columns={"HuisId": "HuisIdLeverancier"}, inplace=True)
+        index_df.rename(columns={"HuisId": ids.HOUSEHOLD_SUPPLIER}, inplace=True)
     if "ProjectId" in index_df.columns:
-        index_df.rename(columns={"ProjectId": "ProjectIdLeverancier"}, inplace=True)
+        index_df.rename(columns={"ProjectId": ids.PROJECT_SUPPLIER}, inplace=True)
 
     index_df = set_metadata_dtypes(metadata_df=index_df, strict=True)
     for col, dtype in batch_field_dtypes.items():
@@ -538,7 +546,7 @@ def get_household_id_pairs(
     data_provider: str,
     list_files_func: callable,
 ) -> list:
-    """Generates pairs of HuisIdBSV and filenames for new and existing entries.
+    """Generates pairs of household id and filename for new and existing entries.
 
     Parameters
     ----------
@@ -554,17 +562,17 @@ def get_household_id_pairs(
     Returns
     -------
     list
-        A list of tuples containing HuisIdBSV and filenames.
+        A list of tuples containing a household id and a filename.
     """
     existing_ids = (
-        index_df[index_df["Dataleverancier"] == data_provider]
-        .set_index("HuisIdLeverancier")
-        .to_dict()["HuisIdBSV"]
+        index_df[index_df[ids.SUPPLIER] == data_provider]
+        .set_index(ids.HOUSEHOLD_SUPPLIER)
+        .to_dict()[ids.HOUSEHOLD]
     )
     data_files = list_files_func(data_folder_path)
 
     household_id_pairs = []
-    next_id = int(max(index_df["HuisIdBSV"], default=0) + 1)
+    next_id = int(max(index_df[ids.HOUSEHOLD], default=0) + 1)
 
     for household_id, file in data_files.items():
         if household_id in existing_ids:
@@ -584,18 +592,19 @@ def assign_bsv_ids(
     data_provider: str,
     household_keys: list,
 ) -> dict:
-    """Assign HuisIdBSV to (ProjectIdLeverancier, HuisIdLeverancier) pairs.
+    """Assign a household id to (supplier project, supplier household) pairs.
 
     Looks up existing assignments from the index by composite key. New pairs
-    receive sequential integers starting from max(HuisIdBSV) + 1 globally
-    (across all suppliers), so HuisIdBSV is unique across the entire dataset.
+    receive sequential integers starting from the highest household id in the
+    index + 1 globally (across all suppliers), so a household id is unique
+    across the entire dataset.
 
     Parameters
     ----------
     index_df : pd.DataFrame
         The current index DataFrame.
     data_provider : str
-        The supplier name (Dataleverancier).
+        The supplier name.
     household_keys : list[HouseholdKey]
         Ordered list of (project_id_supplier, household_id_supplier) pairs
         to assign. Duplicates are safe -- each unique key gets one ID.
@@ -603,21 +612,21 @@ def assign_bsv_ids(
     Returns
     -------
     dict[HouseholdKey, int]
-        Mapping from each HouseholdKey to its HuisIdBSV.
+        Mapping from each HouseholdKey to its household id.
     """
-    provider_rows = index_df[index_df["Dataleverancier"] == data_provider]
+    provider_rows = index_df[index_df[ids.SUPPLIER] == data_provider]
 
     existing = {}
-    if not provider_rows.empty and "ProjectIdLeverancier" in provider_rows.columns:
+    if not provider_rows.empty and ids.PROJECT_SUPPLIER in provider_rows.columns:
         lookup = (
             provider_rows
-            .set_index(["ProjectIdLeverancier", "HuisIdLeverancier"])["HuisIdBSV"]
+            .set_index([ids.PROJECT_SUPPLIER, ids.HOUSEHOLD_SUPPLIER])[ids.HOUSEHOLD]
             .dropna()
             .to_dict()
         )
         existing = {HouseholdKey(str(p), str(h)): int(v) for (p, h), v in lookup.items()}
 
-    valid_ids = index_df["HuisIdBSV"].dropna()
+    valid_ids = index_df[ids.HOUSEHOLD].dropna()
     next_id = int(valid_ids.max()) + 1 if not valid_ids.empty else 1
 
     result = {}
@@ -633,7 +642,7 @@ def assign_bsv_ids(
 
     logging.info(
         f"[assign_bsv_ids] {data_provider}: {len(result)} household(s) assigned. "
-        f"Next available HuisIdBSV: {next_id}"
+        f"Next available {ids.HOUSEHOLD}: {next_id}"
     )
     return result
 
@@ -688,28 +697,28 @@ def update_index(
         The updated index DataFrame.
     """
 
-    # Ensure HuisIdLeverancier is a string in new_entry
-    new_entry["HuisIdLeverancier"] = str(new_entry["HuisIdLeverancier"])
-    if "ProjectIdLeverancier" in new_entry:
-        new_entry["ProjectIdLeverancier"] = str(new_entry["ProjectIdLeverancier"])
-    new_entry["Dataleverancier"] = data_provider
+    # The lookup mask below matches the supplier ids as strings.
+    new_entry[ids.HOUSEHOLD_SUPPLIER] = str(new_entry[ids.HOUSEHOLD_SUPPLIER])
+    if ids.PROJECT_SUPPLIER in new_entry:
+        new_entry[ids.PROJECT_SUPPLIER] = str(new_entry[ids.PROJECT_SUPPLIER])
+    new_entry[ids.SUPPLIER] = data_provider
 
-    household_id = new_entry["HuisIdLeverancier"]
-    project_id = new_entry.get("ProjectIdLeverancier")
+    household_id = new_entry[ids.HOUSEHOLD_SUPPLIER]
+    project_id = new_entry.get(ids.PROJECT_SUPPLIER)
     if not project_id:
         raise ValueError(
-            f"update_index: 'ProjectIdLeverancier' is required but missing or empty "
-            f"for HuisIdLeverancier='{household_id}'. All mappers must supply it."
+            f"update_index: ids.PROJECT_SUPPLIER is required but missing or empty "
+            f"for {ids.HOUSEHOLD_SUPPLIER}='{household_id}'. All mappers must supply it."
         )
 
     mask = (
-        (index_df["HuisIdLeverancier"] == household_id)
-        & (index_df["ProjectIdLeverancier"] == project_id)
+        (index_df[ids.HOUSEHOLD_SUPPLIER] == household_id)
+        & (index_df[ids.PROJECT_SUPPLIER] == project_id)
     )
 
     if mask.any():
-        index_df.loc[mask, ["HuisIdBSV", "Dataleverancier"]] = (
-            new_entry["HuisIdBSV"],
+        index_df.loc[mask, [ids.HOUSEHOLD, ids.SUPPLIER]] = (
+            new_entry[ids.HOUSEHOLD],
             data_provider,
         )
     else:
@@ -721,20 +730,20 @@ def update_index(
     # Read format-aware. A mapped dataset is either flat
     # (household_<id>_table.parquet) or sharded
     # (sharded/HuisIdBSV=<id>/HuisBatchIdBSV=<n>/*.parquet), and sharded is the
-    # default. Building the flat filename here and guarding on os.path.exists
-    # meant that under the sharded layout the guard was always False, so NO
-    # dataset-level flag was computed for any household and the omission was
-    # silent.
+    # default. A flat filename built here and guarded on os.path.exists would
+    # never match under the sharded layout, leaving every household with no
+    # dataset-level flag and no error to say so.
     #
     # read_mapped_households resolves either layout and concatenates a
-    # multi-batch household into one frame, which is the grain these validators
-    # expect (they ask questions about a household's whole series).
-    household_id = new_entry["HuisIdBSV"]
+    # household's several household batches into one frame, which is the grain
+    # these validators expect (they ask questions about a household's whole
+    # series).
+    household_id = new_entry[ids.HOUSEHOLD]
     try:
         df = read_mapped_households([household_id])
     except FileNotFoundError as e:
         raise FileNotFoundError(
-            f"update_index: cannot compute dataset-level flags for HuisIdBSV "
+            f"update_index: cannot compute dataset-level flags for {ids.HOUSEHOLD} "
             f"{household_id} -- the household has no mapped data. {e}"
         ) from e
 
@@ -757,7 +766,7 @@ def update_index(
         # stopping the run (ADR-012).
         try:
             validation_result = condition(df, **kwargs)
-            index_df.loc[index_df["HuisIdBSV"] == household_id, flag] = (
+            index_df.loc[index_df[ids.HOUSEHOLD] == household_id, flag] = (
                 validation_result
             )
         except (ValueError, ArithmeticError) as e:
@@ -767,7 +776,7 @@ def update_index(
                 exc_info=True,
             )
             index_df.loc[
-                index_df["HuisIdBSV"] == household_id,
+                index_df[ids.HOUSEHOLD] == household_id,
                 flag,
             ] = pd.NA
 
@@ -831,8 +840,8 @@ def update_include() -> pd.DataFrame:
     2. Reads the current index DataFrame and its file path using the `read_index` function.
     3. Removes any existing 'Meenemen' column from the index DataFrame.
     4. Retrieves the BSV metadata DataFrame using the `get_bsv_metadata` function.
-    5. Extracts the 'HuisIdBSV' and 'Meenemen' columns from the BSV metadata DataFrame.
-    6. Merges the extracted BSV 'Meenemen' data with the index DataFrame on the 'HuisIdBSV' column.
+    5. Extracts the ids.HOUSEHOLD and 'Meenemen' columns from the BSV metadata DataFrame.
+    6. Merges the extracted BSV 'Meenemen' data with the index DataFrame on the ids.HOUSEHOLD column.
     7. Saves the updated index DataFrame back to its original file path in Parquet format using the PyArrow engine.
     8. Returns the updated index DataFrame.
 
@@ -849,7 +858,7 @@ def update_include() -> pd.DataFrame:
     bsv_metadata_df = get_bsv_metadata()
 
     # Validate that all households have a corresponding row
-    index_key_columns = ["HuisIdBSV", "HuisIdLeverancier", "Dataleverancier"]
+    index_key_columns = [ids.HOUSEHOLD, ids.HOUSEHOLD_SUPPLIER, ids.SUPPLIER]
 
     metadata_keys_df = (
         bsv_metadata_df[index_key_columns]
@@ -863,9 +872,9 @@ def update_include() -> pd.DataFrame:
     )
 
     # compare indices:
-    # Check for missing HuisIdBSV in either direction
-    metadata_householdids = set(metadata_keys_df['HuisIdBSV'])
-    index_householdids = set(index_keys_df['HuisIdBSV'])
+    # Check for a missing household in either direction
+    metadata_householdids = set(metadata_keys_df[ids.HOUSEHOLD])
+    index_householdids = set(index_keys_df[ids.HOUSEHOLD])
 
     missing_in_metadata = index_householdids - metadata_householdids
     missing_in_index = metadata_householdids - index_householdids
@@ -875,35 +884,35 @@ def update_include() -> pd.DataFrame:
         error_msg = "Household mismatch detected between metadata and index.\n"
 
         if missing_in_metadata:
-            # Retrieve ProjectIdBSV from the ORIGINAL index_df (not the filtered one)
-            missing_rows = index_df[index_df['HuisIdBSV'].isin(missing_in_metadata)][
-                ['HuisIdBSV', 'ProjectIdBSV']
-            ].sort_values('HuisIdBSV')
+            # Retrieve the project from the ORIGINAL index_df (not the filtered one)
+            missing_rows = index_df[index_df[ids.HOUSEHOLD].isin(missing_in_metadata)][
+                [ids.HOUSEHOLD, ids.PROJECT]
+            ].sort_values(ids.HOUSEHOLD)
 
             missing_str = "\n".join(
-                f"{row['HuisIdBSV']}\t{row['ProjectIdBSV']}"
+                f"{row[ids.HOUSEHOLD]}\t{row[ids.PROJECT]}"
                 for _, row in missing_rows.iterrows()
             )
-            error_msg += f"HuisIdBSV missing in metadata:\n{missing_str}\n"
+            error_msg += f"{ids.HOUSEHOLD} missing in metadata:\n{missing_str}\n"
 
         if missing_in_index:
-            # Retrieve ProjectIdBSV from the ORIGINAL bsv_metadata_df
-            missing_rows = bsv_metadata_df[bsv_metadata_df['HuisIdBSV'].isin(missing_in_index)][
-                ['HuisIdBSV', 'ProjectIdBSV']
-            ].sort_values('HuisIdBSV')
+            # Retrieve the project from the ORIGINAL bsv_metadata_df
+            missing_rows = bsv_metadata_df[bsv_metadata_df[ids.HOUSEHOLD].isin(missing_in_index)][
+                [ids.HOUSEHOLD, ids.PROJECT]
+            ].sort_values(ids.HOUSEHOLD)
 
             missing_str = "\n".join(
-                f"{row['HuisIdBSV']}\t{row['ProjectIdBSV']}"
+                f"{row[ids.HOUSEHOLD]}\t{row[ids.PROJECT]}"
                 for _, row in missing_rows.iterrows()
             )
-            error_msg += f"HuisIdBSV missing in index:\n{missing_str}\n"
+            error_msg += f"{ids.HOUSEHOLD} missing in index:\n{missing_str}\n"
 
         # Report row counts at the end
         error_msg += f"\nRow counts: metadata_keys_df={metadata_keys_df.shape[0]}, index_keys_df={index_keys_df.shape[0]}\n"
 
         raise ValueError(
-            error_msg + 
-            "Double check that the household table with Meenemen has been updated and has the exact same households as the index.parquet file. When adding new datasets, new household HuisIdBSV must be added."
+            error_msg +
+            "Double check that the household table with Meenemen has been updated and has the exact same households as the index.parquet file. When adding new datasets, the new households must be added to it."
         )
 
     # 1) value level differences
@@ -933,14 +942,14 @@ def update_include() -> pd.DataFrame:
     if bsv_metadata_df["Meenemen"].isna().sum() > 0:
         raise Exception("Not all rows in the BSV metadata file have defined Meenemen")
 
-    bsv_include = bsv_metadata_df[["HuisIdBSV", "Meenemen"]]
+    bsv_include = bsv_metadata_df[[ids.HOUSEHOLD, "Meenemen"]]
 
     index_df.drop(columns=["Meenemen"], inplace=True)
-    index_df = index_df.merge(bsv_include, on=["HuisIdBSV"])
+    index_df = index_df.merge(bsv_include, on=[ids.HOUSEHOLD])
 
 
-    #bsv_metadata_df.set_index("HuisIdBSV", inplace=True)
-    #index_df.set_index('HuisIdBSV', inplace=True)
+    #bsv_metadata_df.set_index(ids.HOUSEHOLD, inplace=True)
+    #index_df.set_index(ids.HOUSEHOLD, inplace=True)
     #columns_for_update = bsv_metadata_df.columns.intersection(allowed_supplier_metadata_columns)
 
     #index_df.update(bsv_metadata_df.loc[:, columns_for_update])
@@ -955,7 +964,7 @@ def validate_project_id_coverage(
     metadata_df: pd.DataFrame,
     data_supplier: str,
 ) -> None:
-    """Preflight check: every ProjectIdLeverancier in *metadata_df* must have a
+    """Preflight check: every supplier project id in *metadata_df* must have a
     matching row in the project mapping CSV for this supplier.
 
     Call this immediately after loading the physical metadata file, before the
@@ -965,8 +974,8 @@ def validate_project_id_coverage(
     Parameters
     ----------
     metadata_df : pd.DataFrame
-        The supplier's physical metadata DataFrame. Must contain a
-        ``ProjectIdLeverancier`` column.
+        The supplier's physical metadata DataFrame. Must contain an
+        ``ids.PROJECT_SUPPLIER`` column.
     data_supplier : str
         Supplier name.  Used to filter the project CSV.
 
@@ -974,7 +983,7 @@ def validate_project_id_coverage(
     ------
     ValueError
         If ``etdmap.options.project_mapping_csv_path`` is not configured, or if
-        any ``ProjectIdLeverancier`` value in *metadata_df* is absent from the
+        any ``ids.PROJECT_SUPPLIER`` value in *metadata_df* is absent from the
         project mapping CSV for this supplier.
     """
     project_mapping_csv_path = etdmap.options.project_mapping_csv_path
@@ -988,7 +997,7 @@ def validate_project_id_coverage(
     project_df = pd.read_csv(Path(project_mapping_csv_path), dtype=str)
     known = set(
         project_df.loc[
-            project_df["Dataleverancier"] == data_supplier, "ProjectIdLeverancier"
+            project_df[ids.SUPPLIER] == data_supplier, ids.PROJECT_SUPPLIER
         ]
     )
 
@@ -999,7 +1008,7 @@ def validate_project_id_coverage(
             f"({project_mapping_csv_path}). Add the supplier before running."
         )
 
-    metadata_projects = set(metadata_df["ProjectIdLeverancier"].dropna().unique())
+    metadata_projects = set(metadata_df[ids.PROJECT_SUPPLIER].dropna().unique())
     missing = metadata_projects - known
     if missing:
         raise ValueError(
@@ -1016,7 +1025,7 @@ def add_supplier_metadata_to_index(
     metadata_df: pd.DataFrame,
     data_supplier=None,
 ) -> pd.DataFrame:
-    """Adds metadata columns to the index matching on the HuisIdLeverancier column. It also adds the ProjectIdBSV.
+    """Adds metadata columns to the index matching on the supplier's own household id. It also adds the BSV project id.
 
     Parameters
     ----------
@@ -1043,36 +1052,37 @@ def add_supplier_metadata_to_index(
         )
 
     def metadata_format(df: pd.DataFrame):
-        df["HuisIdLeverancier"] = df["HuisIdLeverancier"].astype(str)
+        df[ids.HOUSEHOLD_SUPPLIER] = df[ids.HOUSEHOLD_SUPPLIER].astype(str)
         return df
 
     metadata_df = metadata_format(metadata_df)
 
     # Make sure data supplier is defined
-    if "Dataleverancier" not in metadata_df.columns:
+    if ids.SUPPLIER not in metadata_df.columns:
         if data_supplier is None:
             raise Exception("Data source not identified. Cannot add metadata.")
         else:
-            metadata_df["Dataleverancier"] = data_supplier
+            metadata_df[ids.SUPPLIER] = data_supplier
 
     # Define protected columns and drop them from provider metadata
-    protected_columns = ["HuisIdBSV", "ProjectIdBSV"]
+    protected_columns = [ids.HOUSEHOLD, ids.PROJECT]
     metadata_df = metadata_df.drop(
         columns=[col for col in protected_columns if col in metadata_df.columns],
     )
 
-    # Validate that ProjectIdLeverancier is populated before the join --
+    # Validate that the supplier's project id is populated before the join --
     # a null here means a silent failure (null != null in join keys).
-    null_project_supplier = metadata_df["ProjectIdLeverancier"].isna().sum() if "ProjectIdLeverancier" in metadata_df.columns else len(metadata_df)
+    null_project_supplier = metadata_df[ids.PROJECT_SUPPLIER].isna().sum() if ids.PROJECT_SUPPLIER in metadata_df.columns else len(metadata_df)
     if null_project_supplier > 0:
         raise ValueError(
             f"add_supplier_metadata_to_index [{data_supplier}]: "
             f"{null_project_supplier} row(s) in the supplier metadata file have "
-            f"no ProjectIdLeverancier. Fill these in before running."
+            f"no {ids.PROJECT_SUPPLIER}. Fill these in before running."
         )
 
-    # Load the project mapping CSV (Dataleverancier x ProjectIdLeverancier -> ProjectIdBSV).
-    # This is a project-level mapping, not household-level -- correct authority for ProjectIdBSV.
+    # Load the project mapping CSV (supplier x supplier project -> BSV project).
+    # This is a project-level mapping, not household-level -- the correct
+    # authority for the BSV project id.
     project_mapping_csv_path = etdmap.options.project_mapping_csv_path
     if project_mapping_csv_path is None:
         raise ValueError(
@@ -1082,9 +1092,9 @@ def add_supplier_metadata_to_index(
         )
     project_df = pd.read_csv(Path(project_mapping_csv_path), dtype=str)
     project_df_raw = project_df[
-        project_df["Dataleverancier"] == data_supplier
-    ][["Dataleverancier", "ProjectIdLeverancier", "ProjectIdBSV"]].copy()
-    project_df_raw["ProjectIdBSV"] = project_df_raw["ProjectIdBSV"].astype(
+        project_df[ids.SUPPLIER] == data_supplier
+    ][[ids.SUPPLIER, ids.PROJECT_SUPPLIER, ids.PROJECT]].copy()
+    project_df_raw[ids.PROJECT] = project_df_raw[ids.PROJECT].astype(
         pd.Int64Dtype()
     )
 
@@ -1096,41 +1106,41 @@ def add_supplier_metadata_to_index(
         )
 
     # The CSV stores household-level data (one row per household), but we only
-    # need the project-level mapping (ProjectIdLeverancier -> ProjectIdBSV) here.
+    # need the project-level mapping (supplier project -> BSV project) here.
     # Deduplicate to one row per project before the merge so we don't multiply
     # metadata rows. Raise if the same supplier project maps to conflicting BSV
     # project IDs -- that is a data entry error.
     conflicts = (
-        project_df_raw.dropna(subset=["ProjectIdBSV"])
-        .groupby(["Dataleverancier", "ProjectIdLeverancier"])["ProjectIdBSV"]
+        project_df_raw.dropna(subset=[ids.PROJECT])
+        .groupby([ids.SUPPLIER, ids.PROJECT_SUPPLIER])[ids.PROJECT]
         .nunique()
     )
     bad = conflicts[conflicts > 1]
     if not bad.empty:
         raise ValueError(
             f"add_supplier_metadata_to_index [{data_supplier}]: "
-            f"Conflicting ProjectIdBSV values for the same project in the mapping CSV. "
+            f"Conflicting {ids.PROJECT} values for the same project in the mapping CSV. "
             f"Affected: {bad.index.tolist()}"
         )
     project_df_filtered = project_df_raw.drop_duplicates(
-        subset=["Dataleverancier", "ProjectIdLeverancier"]
+        subset=[ids.SUPPLIER, ids.PROJECT_SUPPLIER]
     )
 
-    # Join ProjectIdBSV from the project mapping (project-level join, not household-level)
+    # Join the BSV project id from the project mapping (project-level join, not household-level)
     metadata_df = metadata_df.merge(
         project_df_filtered,
-        on=["Dataleverancier", "ProjectIdLeverancier"],
+        on=[ids.SUPPLIER, ids.PROJECT_SUPPLIER],
         how="left",
     )
 
-    null_bsv_project_id = metadata_df["ProjectIdBSV"].isna().sum()
+    null_bsv_project_id = metadata_df[ids.PROJECT].isna().sum()
     if null_bsv_project_id > 0:
         bad_rows = metadata_df.loc[
-            metadata_df["ProjectIdBSV"].isna(), ["ProjectIdLeverancier", "Dataleverancier"]
+            metadata_df[ids.PROJECT].isna(), [ids.PROJECT_SUPPLIER, ids.SUPPLIER]
         ].drop_duplicates().to_dict("records")
         raise ValueError(
             f"add_supplier_metadata_to_index [{data_supplier}]: "
-            f"{null_bsv_project_id} row(s) have no ProjectIdBSV in the project "
+            f"{null_bsv_project_id} row(s) have no {ids.PROJECT} in the project "
             f"mapping CSV. Add the missing project(s) before running. "
             f"Unmatched: {bad_rows}"
         )
@@ -1140,7 +1150,7 @@ def add_supplier_metadata_to_index(
         if column not in index_df.columns:
             index_df[column] = pd.NA
 
-    index_key_columns = ["HuisIdLeverancier", "ProjectIdLeverancier", "Dataleverancier"]
+    index_key_columns = [ids.HOUSEHOLD_SUPPLIER, ids.PROJECT_SUPPLIER, ids.SUPPLIER]
 
     # Update existing records
     index_df.set_index(
@@ -1154,7 +1164,7 @@ def add_supplier_metadata_to_index(
     )
     metadata_df.sort_index(inplace=True)
 
-    columns_for_update = metadata_df.columns.intersection([*allowed_supplier_metadata_columns, "ProjectIdBSV"])
+    columns_for_update = metadata_df.columns.intersection([*allowed_supplier_metadata_columns, ids.PROJECT])
 
     index_df.update(metadata_df.loc[:, columns_for_update])
     index_df.reset_index(inplace=True)
@@ -1167,7 +1177,7 @@ def add_supplier_metadata_to_index(
 def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     """
     THE single index write: one file, index.parquet, one row per
-    household batch (HuisBatchIdBSV).
+    household batch (``ids.HOUSEHOLD_BATCH``).
 
     1. Meenemen values are copied onto the index from the combined BSV
        metadata file -- the single source for Meenemen on disk. Households
@@ -1177,25 +1187,28 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
        metadata file the index values are left unchanged. Meenemen is
        defined per household within each batch (see the README,
        "Households, batches, and the index").
-    2. The household-batch columns are added: HuisBatchIdBSV (assigned
-       locally -- the externally maintained HuisBatch table is a
-       hand-maintained copy of these ids, never a source of new rows) plus
-       the batch fields (BatchIdBSV, Gegevensfrequentie,
-       Leverancierfrequentie, Startdatum, Einddatum) joined from the synced
-       HuisBatch CSV. Households without a synced row yet are PENDING: they
-       keep NA batch fields, a warning is logged, and a paste-ready
+    2. The household-batch columns are joined from the synced HuisBatch CSV:
+       ``ids.HOUSEHOLD_BATCH`` -- the dataset each row IS, and the key the
+       mapped artifacts and their sidecars are written under -- plus
+       ``ids.BATCH``, Gegevensfrequentie, Leverancierfrequentie, Startdatum
+       and Einddatum.
+       The synced table is the source of the dataset id, which is what
+       ``household_batch_for_household`` resolves for a mapper before it
+       writes anything. Households without a synced row yet are PENDING: they
+       keep NA household-batch fields, a warning is logged, and a paste-ready
        ``pending_household_batch_additions.csv`` is written to support adding
        them to the metadata administration. When the synced CSV is absent
-       entirely (datasets without batches, test fixtures) the batch fields
-       are omitted with a warning.
+       entirely (datasets with no synced household batch row, test fixtures)
+       the household-batch fields are omitted with a warning, the household
+       batch among them.
     3. index.parquet is written.
 
     Raises
     ------
     HouseBatchOverlapError
-        The synced CSV holds more than one batch row for a household. A
-        household in more than one batch is valid in the data model but
-        not yet supported.
+        The synced CSV holds more than one household batch row for a household.
+        A household in more than one household batch is valid in the data model
+        but not yet supported.
     ValueError
         Missing Gegevensfrequentie on a row with Meenemen == True.
     """
@@ -1206,18 +1219,16 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     include_df = _read_include_from_bsv_metadata()
     if include_df is not None:
         stamp = dict(zip(
-            (int(h) for h in include_df["HuisIdBSV"].dropna()),
-            include_df.loc[include_df["HuisIdBSV"].notna(), "Meenemen"],
+            (int(h) for h in include_df[ids.HOUSEHOLD].dropna()),
+            include_df.loc[include_df[ids.HOUSEHOLD].notna(), "Meenemen"],
         ))
         index_df["Meenemen"] = pd.array(
             [stamp.get(int(h), pd.NA) if pd.notna(h) else pd.NA
-             for h in index_df["HuisIdBSV"]],
+             for h in index_df[ids.HOUSEHOLD]],
             dtype="boolean",
         )
 
     # -- 2. the household-batch columns ---------------------------------------
-    index_df["HuisBatchIdBSV"] = index_df["HuisIdBSV"].astype("Int64")
-
     try:
         sync_csv = etdmap.options.household_batch_csv_path
     except Exception:
@@ -1235,19 +1246,19 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     mapped_folder = str(etdmap.options.mapped_folder_path)
     sync_df = pd.read_csv(sync_csv, dtype_backend="numpy_nullable")
 
-    dup = sync_df["HuisIdBSV"].duplicated()
+    dup = sync_df[ids.HOUSEHOLD].duplicated()
     if bool(dup.any()):
         multi = sorted(
-            int(h) for h in sync_df.loc[dup, "HuisIdBSV"].dropna().unique()
+            int(h) for h in sync_df.loc[dup, ids.HOUSEHOLD].dropna().unique()
         )
         raise HouseBatchOverlapError(
-            f"The synced HuisBatch table holds more than one batch row for "
-            f"HuisIdBSV {multi}. A household in more than one batch is valid "
-            f"in the data model but not yet supported."
+            f"The synced HuisBatch table holds more than one household batch row "
+            f"for {ids.HOUSEHOLD} {multi}. A household in more than one household "
+            f"batch is valid in the data model but not yet supported."
         )
 
-    index_ids = [int(h) for h in index_df["HuisIdBSV"].dropna().tolist()]
-    synced_ids = set(int(h) for h in sync_df["HuisIdBSV"].dropna().tolist())
+    index_ids = [int(h) for h in index_df[ids.HOUSEHOLD].dropna().tolist()]
+    synced_ids = set(int(h) for h in sync_df[ids.HOUSEHOLD].dropna().tolist())
 
     pending_path = os.path.join(
         mapped_folder, "pending_household_batch_additions.csv"
@@ -1255,26 +1266,27 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     missing = sorted(set(index_ids) - synced_ids)
     if missing:
         # PENDING households: newly mapped, not yet added to the HuisBatch
-        # table by the researcher. They stay in the index with NA batch
-        # fields; the paste-ready proposal supports the manual addition. It
+        # table by the researcher. They stay in the index with NA
+        # household-batch fields; the paste-ready proposal supports the manual
+        # addition. It
         # numbers the household batch with the household id, which is what the
         # mapping writes; a household's further household batches are added in
         # the HuisBatch table itself.
-        missing_df = index_df[index_df["HuisIdBSV"].isin(missing)]
+        missing_df = index_df[index_df[ids.HOUSEHOLD].isin(missing)]
         proposal = pd.DataFrame({
-            "HuisIdBSV": pd.array(missing, dtype="Int64"),
-            "HuisBatchIdBSV": pd.array(missing, dtype="Int64"),
-            "Dataleverancier": (
-                missing_df.set_index(missing_df["HuisIdBSV"].astype("Int64"))
-                ["Dataleverancier"].reindex(missing).astype("string").values
-                if "Dataleverancier" in missing_df.columns
+            ids.HOUSEHOLD: pd.array(missing, dtype="Int64"),
+            ids.HOUSEHOLD_BATCH: pd.array(missing, dtype="Int64"),
+            ids.SUPPLIER: (
+                missing_df.set_index(missing_df[ids.HOUSEHOLD].astype("Int64"))
+                [ids.SUPPLIER].reindex(missing).astype("string").values
+                if ids.SUPPLIER in missing_df.columns
                 else pd.array([pd.NA] * len(missing), dtype="string")
             ),
         })
         proposal.to_csv(pending_path, index=False)
         logging.warning(
             f"[save_index_to_parquet] {len(missing)} household(s) PENDING "
-            f"their HuisBatch addition (HuisIdBSV): {missing}. "
+            f"their HuisBatch addition ({ids.HOUSEHOLD}): {missing}. "
             f"Paste-ready proposal written to {pending_path}."
         )
     else:
@@ -1286,23 +1298,32 @@ def save_index_to_parquet(index_df: pd.DataFrame) -> None:
     if synced_only:
         logging.warning(
             f"[save_index_to_parquet] {len(synced_only)} synced HuisBatch "
-            f"row(s) reference households not in this index (HuisIdBSV): "
+            f"row(s) reference households not in this index ({ids.HOUSEHOLD}): "
             f"{synced_only}. Ignored: ids are assigned from the index."
         )
 
     join_cols = [
-        c for c in ["BatchIdBSV", "Gegevensfrequentie",
+        c for c in [ids.HOUSEHOLD_BATCH, ids.BATCH, "Gegevensfrequentie",
                     "Leverancierfrequentie", "Startdatum", "Einddatum"]
         if c in sync_df.columns
     ]
-    merged = index_df[["HuisIdBSV"]].merge(
-        sync_df[["HuisIdBSV"] + join_cols], on="HuisIdBSV", how="left"
+    merged = index_df[[ids.HOUSEHOLD]].merge(
+        sync_df[[ids.HOUSEHOLD] + join_cols], on=ids.HOUSEHOLD, how="left"
     )
 
     n = len(index_df)
-    index_df["BatchIdBSV"] = (
-        merged["BatchIdBSV"].astype("Int64")
-        if "BatchIdBSV" in merged.columns
+    # The dataset each row IS, read from the synced table rather than derived
+    # from the household: a household may be delivered as more than one
+    # dataset, and the mapped artifacts are already keyed on the synced id
+    # (household_batch_for_household is what the mappers resolve it through).
+    index_df[ids.HOUSEHOLD_BATCH] = (
+        merged[ids.HOUSEHOLD_BATCH].astype("Int64")
+        if ids.HOUSEHOLD_BATCH in merged.columns
+        else pd.array([pd.NA] * n, dtype="Int64")
+    )
+    index_df[ids.BATCH] = (
+        merged[ids.BATCH].astype("Int64")
+        if ids.BATCH in merged.columns
         else pd.array([pd.NA] * n, dtype="Int64")
     )
     index_df["Gegevensfrequentie"] = (
@@ -1466,15 +1487,70 @@ def get_mapped_data(household_id: int) -> pd.DataFrame:
     -----
     Format-aware: resolves the flat ``household_<id>_table.parquet`` or the
     sharded ``sharded/HuisIdBSV=<id>/HuisBatchIdBSV=<n>/*.parquet`` files. A
-    household spanning several batches is returned as one frame.
+    household spanning several household batches is returned as one frame.
 
     The returned frame carries the household's mapped COLUMNS ONLY. The
-    identifier columns that ``read_mapped_households`` injects for batch reads
-    are dropped here, because identifiers live in the index and in the shard
+    identifier columns that ``read_mapped_households`` injects for a
+    multi-household read are dropped here, because identifiers live in the
+    index and in the shard
     path, not in the household frame -- callers of this function iterate its
     columns (per-column statistics), so an injected id would be counted as a
     measured variable.
     """
 
     household_df = read_mapped_households([household_id])
-    return household_df.drop(columns=["HuisIdBSV", "HuisBatchIdBSV"])
+    return household_df.drop(columns=[ids.HOUSEHOLD, ids.HOUSEHOLD_BATCH])
+
+
+def households_of_household_batches(household_batch_ids) -> list:
+    """The households the given household batch datasets belong to.
+
+    From the index, which is the only place the two are related. A read prunes
+    directories by household because that is the level the shard path has;
+    selecting the datasets themselves is a separate, exact step.
+    """
+    wanted = {int(batch_id) for batch_id in household_batch_ids}
+    index_df, _ = read_index()
+    match = index_df.loc[
+        index_df[ids.HOUSEHOLD_BATCH].isin(wanted), ids.HOUSEHOLD
+    ]
+    return sorted(int(household) for household in match.dropna().unique())
+
+
+def get_mapped_dataset(household_batch_id: int) -> pd.DataFrame:
+    """
+    Retrieve ONE household batch dataset's mapped data.
+
+    Parameters
+    ----------
+    household_batch_id : int
+        The BSV household batch id: one household over one period.
+
+    Returns
+    -------
+    pd.DataFrame
+        The dataset's mapped columns, with no identifier columns, so a caller
+        iterating columns does not count an id as a measured variable.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the index does not place the dataset, or the shard holds no data.
+
+    Notes
+    -----
+    The dataset-keyed read. :func:`get_mapped_data` returns a household's
+    datasets concatenated, which pools two periods of one dwelling into one
+    series -- right for a question about the dwelling's files, wrong for any
+    statistic, because the household batch dataset is the unit.
+    """
+    households = households_of_household_batches([household_batch_id])
+    if not households:
+        raise FileNotFoundError(
+            f"The index does not place {ids.HOUSEHOLD_BATCH} "
+            f"{household_batch_id}, so its shard cannot be resolved."
+        )
+    frame = read_mapped_households(
+        households, household_batch_ids=[household_batch_id]
+    )
+    return frame.drop(columns=[ids.HOUSEHOLD, ids.HOUSEHOLD_BATCH])

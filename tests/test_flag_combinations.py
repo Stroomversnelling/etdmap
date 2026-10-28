@@ -32,6 +32,7 @@ import pytest
 import etdmap
 from etdmap.flags import MappingFlag, flag_column
 from etdmap.mapping_helpers import mark_delivered, run_standard_pipeline
+from etdmap.testing import cadence_sidecar, household_batch_of
 
 GRID = 5
 N = 12
@@ -53,25 +54,35 @@ def _floats(values):
     return pd.array(values, dtype="Float64")
 
 
-def _cadence(rows):
-    return pd.DataFrame({
-        "column": pd.array([r[0] for r in rows], dtype="string"),
-        "cadence_minutes": pd.array([r[1] for r in rows], dtype="Int64"),
-        "cadence_source": pd.array(["declared"] * len(rows), dtype="string"),
-        "cadence_detected": pd.array([r[1] for r in rows], dtype="Int64"),
-        "confidence": pd.array([1.0] * len(rows), dtype="Float64"),
-        "n_readings": pd.array([r[2] for r in rows], dtype="Int64"),
-    })
+#: Each column's cadence in minutes: the interval its readings cover. Also what
+#: a detection would have measured, because these timestamps sit exactly on the
+#: cadence each column is declared at.
+COLUMN_MINUTES = {
+    BOTH: GRID,
+    _diff(BOTH): GRID,
+    CUMULATIVE_ONLY: GRID,
+    _diff(INTERVAL_ONLY): GRID,
+    COARSE: GRID * COARSE_STEP,
+}
+
+#: Readings each column delivers over the span. Every column reports on every
+#: row except COARSE, which reports on every COARSE_STEP-th one: a cadence row
+#: claiming N readings there would state a delivery the frame does not hold.
+COLUMN_READINGS = {
+    BOTH: N,
+    _diff(BOTH): N,
+    CUMULATIVE_ONLY: N,
+    _diff(INTERVAL_ONLY): N,
+    COARSE: N // COARSE_STEP,
+}
 
 
-#: Per-interval magnitudes, chosen under the declared 5-minute bounds so the
-#: cleaning steps have nothing to act on: the subject here is which findings
-#: each column SHAPE produces, not what thresholds do to outliers. The
+#: Per-interval magnitudes, which must stay under the declared 5-minute bounds
+#: so the cleaning steps have nothing to act on: the subject here is which
+#: findings each column SHAPE produces, not what thresholds do to outliers. The
 #: electrical Max is 0.32 kWh per five minutes; WarmteproductieWarmtepompDiff's
-#: is 0.0576 GJ. An earlier draft of this file used 1.0 kWh steps, which read as
-#: a catch-up over the bound and had the frozen-span treatment blank a delivered
-#: register reading -- a reminder that unrealistic fixtures exercise the error
-#: paths rather than the ones under test.
+#: is 0.0576 GJ. A step over its bound reads as a catch-up, and the frozen-span
+#: treatment then blanks a delivered register reading.
 STEP = 0.1
 HEAT_STEP = 0.01
 
@@ -81,7 +92,12 @@ DELIVERED_INTERVAL = 0.2
 
 
 def _frame():
-    """The four shapes, on one five-minute grid with no missing rows."""
+    """The four shapes, on one five-minute grid with no missing rows.
+
+    Local: the column set is the subject -- one cumulative is absent on purpose
+    -- and the pipeline takes the frame as the supplier delivered it, with naive
+    timestamps and no id columns.
+    """
     rows = pd.date_range("2024-01-01 00:00", periods=N, freq=f"{GRID}min")
     return pd.DataFrame({
         "ReadingDate": rows,
@@ -108,6 +124,7 @@ def mapped(tmp_path_factory):
     """
     folder = tmp_path_factory.mktemp("flag_combinations")
     frame = _frame()
+    household_id = 9001
 
     # Delivery is recorded on the frame as delivered, which is what the mappers
     # do before padding and before any fill. Without it no column carries a
@@ -119,24 +136,31 @@ def mapped(tmp_path_factory):
     try:
         run_standard_pipeline(
             frame,
-            household_id=9001, household_batch_id=10001,
-            household_id_supplier="H9001",
+            household_id=household_id,
+            household_batch_id=household_batch_of(household_id),
+            household_id_supplier=f"H{household_id}",
             mapped_folder_path=folder,
             grid_minutes=GRID,
-            cadence=_cadence([
-                ("ReadingDate", GRID, N),
-                (BOTH, GRID, N),
-                (_diff(BOTH), GRID, N),
-                (CUMULATIVE_ONLY, GRID, N),
-                (_diff(INTERVAL_ONLY), GRID, N),
-                (COARSE, GRID * COARSE_STEP, N // COARSE_STEP),
-            ]),
+            # The cadence a detection would have reported, declared instead:
+            # each column at the interval its readings cover, and the grid on
+            # the timestamp row. Measured throughout -- a detected value equal
+            # to the cadence, full confidence, and the readings each column
+            # actually delivers -- so a step reading any of the three gets a
+            # number rather than pd.NA. No dataset id, which is the shape
+            # detect_column_cadence returns and the pipeline expects.
+            cadence=cadence_sidecar(
+                COLUMN_MINUTES,
+                grid_minutes=GRID,
+                detected={"ReadingDate": GRID, **COLUMN_MINUTES},
+                confidence=1.0,
+                n_readings={"ReadingDate": N, **COLUMN_READINGS},
+            ),
         )
     finally:
         etdmap.options.mapped_output_format = previous
 
     return pd.read_parquet(
-        folder / "household_9001_table.parquet",
+        folder / f"household_{household_id}_table.parquet",
         dtype_backend="numpy_nullable",
     )
 
