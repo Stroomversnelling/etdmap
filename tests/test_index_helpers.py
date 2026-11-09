@@ -1,22 +1,21 @@
-import logging
 import os
-from pathlib import Path
 
 import pandas as pd
 import pytest
-import yaml
 
 import etdmap
 import etdmap.index_helpers as index_helpers
 import etdmap.mapping_helpers
-import etdmap.mapping_helpers as mapping
-from etdmap.data_model import cumulative_columns
+from etdmap import ids
+from etdmap.data_model import cumulative_columns, interval_column
 from etdmap.index_helpers import (
     bsv_metadata_columns,
     get_bsv_metadata,
     read_metadata,
 )
-from etdmap.record_validators import columns_5min_momentaan, record_flag_conditions
+from etdmap.record_validators import columns_with_value_bounds
+from etdmap.storage import mapped_household_paths
+from etdmap.testing import DEFAULT_HOUSEHOLDS_PER_PROJECT, DEFAULT_PROJECTS
 
 
 def test_read_metadata(valid_metadata_file, invalid_metadata_file):
@@ -47,140 +46,44 @@ def test_get_bsv_metadata(valid_metadata_file, invalid_metadata_file):
     assert "Not all required columns in" in str(excinfo.value)
 
 
-def _list_files_data_fixture(folder_path):
-    return {f[:-8]: f for f in os.listdir(folder_path) if f.endswith(".parquet") and "index" not in f}
-
-
-def _process_data_fixture_file(huis_code, file_name, etd_test_fixture_path, mapped_folder_path):
-    file_path = os.path.join(etd_test_fixture_path, file_name)
-    new_file_path = os.path.join(
-        mapped_folder_path, f"household_{int(huis_code)}_table.parquet"
-    )
-
-    data_fixture_df = pd.read_parquet(file_path)
-
-    ## Later potentially use if using the renaming of columns in the test fixtures
-    # data_fixture_df.rename(columns=fixture_mapping_dict, inplace=True)
-
-    data_fixture_df = mapping.ensure_intervals(data_fixture_df)
-
-    data_fixture_df = mapping.rearrange_model_columns(
-        household_df=data_fixture_df, add_columns=True, context=f"{huis_code}/{file_name}"
-    )
-
-    data_fixture_df = mapping.fill_down_infrequent_devices(df=data_fixture_df)
-
-    data_fixture_df = mapping.add_diff_columns(data_fixture_df, context=f"{huis_code}/{file_name}")
-
-    # Add validation flags
-    for flag, condition in record_flag_conditions.items():
-        try:
-            data_fixture_df[flag] = condition(data_fixture_df)
-        except Exception as e:
-            logging.error(
-                f"Error validating with {flag} for household {huis_code} / {file_name}: {e}",
-                exc_info=True,
-            )
-            data_fixture_df[flag] = pd.NA
-
-    data_fixture_df.to_parquet(new_file_path, engine="pyarrow")
-
-    return {
-        "HuisIdLeverancier": f'Huis{int(file_name.replace("household_", "").replace("_table.parquet", "")):02}',
-        # "ProjectId": 3,
-        "HuisCode": huis_code,
-        "HuisIdBSV": huis_code
-    }
-
-def _run_mapping_of_etd_fixtures(raw_data_fixture: str, limit_houses:int=20) -> None:
-    """
-    Generate the mapping of the etd_fixtures.
-
-    Calls the necessary functions in mapping_helpers
-    and index_helpers to generate the household_i_table.parquet
-    files.
-
-    Also calls the validator functions of the record_validators
-    and dataset_validators.py creating the additional columns.
-
-    Setup:
-    Before running this, ensure the index_bsv.parquet is copied from
-    the 01 Raw data/etd_test_fixtures folder and renamed to index_bsv
-    in your mapping folder (specified in your config_test.yaml)
-    The path to the metadata file should also be specified there and refers
-    to the etd_bsv_metadata file in the 01 Raw data/etd_test_fixtures folder.
-    """
-    def load_config(config_path):
-        with open(config_path, 'r') as file:
-            return yaml.safe_load(file)
-
-    test_config_path = Path("config_test.yaml")
-    if os.path.isfile(test_config_path):
-        config = load_config(test_config_path)
-
-    etdmap.options.mapped_folder_path = Path(config['etdmap_configuration']['mapped_folder_path'])
-    fixture_metadata_file = Path(config['etdmap_configuration']['bsv_metadata_file'])
-    etdmap.options.bsv_metadata_file = fixture_metadata_file
-
-    index_df, index_path = index_helpers.read_index()
-    if 'Dataleverancier' not in index_df.columns:
-        index_df.loc[:, 'Dataleverancier'] = 'etdmap'
-    household_id_pairs = index_helpers.get_household_id_pairs(
-        index_df, raw_data_fixture, data_provider="etdmap", list_files_func=_list_files_data_fixture
-    )
-
-    # limit nmbr of files/households
-    count = 0
-    for huis_code, file_name in household_id_pairs:
-        if count >= limit_houses:
-            break
-        else:
-            count += 1
-        logging.info(f"Starting {file_name}")
-        new_entry = _process_data_fixture_file(
-            huis_code, file_name, raw_data_fixture, etdmap.options.mapped_folder_path
-        )
-        index_df = etdmap.index_helpers.update_index(index_df, new_entry, data_provider="etdmap")
-
-    metadata_file_path = Path(config['etdmap_configuration']['supplier_metadata_xlsx_file'])
-    metadata_df = read_metadata(metadata_file_path)
-    etdmap.index_helpers.add_supplier_metadata_to_index(index_df, metadata_df, data_leverancier="etdmap")
-
-
-def test_creation_validation_columns_index_data_files(raw_data_fixture, request):
+def test_creation_validation_columns_index_data_files(mapped_fixtures, request):
     """
     Functional test of dataset_validators.dataset_flag_conditions.
 
-    0. Runs the creation of the household parquet files (a selection) and index.parquet
+    0. The mapped_fixtures fixture (in conftest.py) creates the household
+       parquet files and index.parquet.
     Then Checks if:
-    1. Appropirate columns are created in datafiles (record_validators) and index file (dataset validators)
+    1. Appropirate columns are created in datafiles (record_validators) and index file (``dataset_validators``)
     2. If True/False values are found as expected.
     """
-    ### 0: Create files ###
-    # limit houses:
-    limit_houses=10
-    # generate the mapped household parquet files & index file
-    _run_mapping_of_etd_fixtures(raw_data_fixture, limit_houses)
+    # The count the generated dataset was built with. The shape is a parameter
+    # of the generator, so a literal here would contradict any other shape.
+    limit_houses = DEFAULT_HOUSEHOLDS_PER_PROJECT * DEFAULT_PROJECTS
+    folder_path = mapped_fixtures
 
-    ### 1: Test household.parquet creation ###
-    # Test if all household files are created
-    folder_path = etdmap.options.mapped_folder_path
-    files = os.listdir(folder_path)
-    files = [f for f in files if (
-        os.path.isfile(os.path.join(folder_path, f)) and \
-            ('household' in f))]
-    assert len(files) == limit_houses, f"Expected {limit_houses} files, but found {len(files)} \
-        perhaps forgot to delete files in mapping directory at start of test."
+    ### 1: Test household file creation ###
+    # Through the storage reader, which resolves whichever layout the mapping
+    # wrote.
+    files = mapped_household_paths(folder_path)
+    assert len(files) == limit_houses, f"Expected {limit_houses} files, but found {len(files)}"
 
     # check for 1 file if it contains all the right columns
-    df_hh = pd.read_parquet(os.path.join(folder_path, files[0]))
+    df_hh = pd.read_parquet(files[min(files)], dtype_backend="numpy_nullable")
     # columns that should be added by record_validators
-    assert all("validate_" + col + "Diff" in df_hh.columns for col in cumulative_columns)
-    assert all('validate_' + col + 'Diff_outliers' in df_hh.columns for col in cumulative_columns)
-    assert all('validate_' + col in df_hh.columns for col in columns_5min_momentaan)
+    # The interval column is the one the data model links to the cumulative
+    # variable, not its name plus "Diff".
+    assert all(
+        "validate_" + interval_column(col) in df_hh.columns
+        for col in cumulative_columns
+    )
+    assert all(
+        "validate_" + interval_column(col) + "_outliers" in df_hh.columns
+        for col in cumulative_columns
+    )
+    assert all('validate_' + col in df_hh.columns for col in columns_with_value_bounds)
 
     # Check the index.parquet file
-    df_index = pd.read_parquet(os.path.join(folder_path, 'index.parquet'))
+    df_index = pd.read_parquet(os.path.join(folder_path, 'index.parquet'), dtype_backend="numpy_nullable")
     # Columns that should be added to index.parquet
     # as defined in dataset_validors.py (and applied in the index_helpers.py)
     special_checks = (
@@ -198,7 +101,10 @@ def test_creation_validation_columns_index_data_files(raw_data_fixture, request)
     assert all(check in df_index.columns for check in standard_columns)
     assert all(check in df_index.columns for check in special_checks)
     assert all('validate_' + col in df_index.columns for col in cumulative_columns)
-    assert all('validate_' + col + 'Diff' in df_index.columns for col in cumulative_columns)
+    assert all(
+        "validate_" + interval_column(col) in df_index.columns
+        for col in cumulative_columns
+    )
     # check for columns with 'validate' if it contains bool or NA datatypes
     validate_cols = df_index.filter(like='validate')
 
@@ -207,6 +113,108 @@ def test_creation_validation_columns_index_data_files(raw_data_fixture, request)
 
     # check for 1 household file if the values are correct.
     # When we have files.
+
+# ---------------------------------------------------------------------------
+# update_include(): populates the index `Meenemen` column from BSV metadata,
+# and is the ADR-002/003 guard (raises on household-key mismatch, key-value
+# mismatch, and any NA Meenemen). Self-contained: builds a tiny aligned index +
+# BSV metadata in tmp_path and points etdmap.options at them via monkeypatch
+# (auto-restored). Never touches the shared mapped folder, so the session
+# autouse clean fixture is irrelevant here.
+# ---------------------------------------------------------------------------
+
+# Creates fixtures
+def _include_index_df(household_ids, household_ids_supplier, data_supplier="etdmap"):
+    n = len(household_ids)
+    assert n == len(household_ids_supplier)
+    df = pd.DataFrame({
+        ids.HOUSEHOLD_SUPPLIER: household_ids_supplier,
+        ids.HOUSEHOLD: household_ids,
+        ids.PROJECT_SUPPLIER: ["P1"] * n,
+        ids.PROJECT: [1] * n,
+        ids.SUPPLIER: [data_supplier] * n,
+        "Meenemen": [pd.NA] * n,   # pre-existing column -> exercises the drop() path
+        "Notities": [pd.NA] * n,
+    })
+    return df.astype(index_helpers.metadata_dtypes)
+
+
+def _include_bsv_df(household_ids, household_ids_supplier, include, data_supplier="etdmap"):
+    n = len(household_ids)
+    assert n == len(household_ids_supplier)
+    assert n == len(include)
+    return pd.DataFrame({
+        ids.HOUSEHOLD_SUPPLIER: household_ids_supplier,
+        ids.HOUSEHOLD: household_ids,
+        ids.PROJECT_SUPPLIER: ["P1"] * n,
+        ids.PROJECT: [1] * n,
+        ids.SUPPLIER: [data_supplier] * n,
+        "Meenemen": include,
+        "Notities": [pd.NA] * n,
+    })
+
+
+def _setup_include(tmp_path, monkeypatch, index_df, bsv_df):
+    index_df.to_parquet(tmp_path / "index.parquet", engine="pyarrow")
+    bsv_path = tmp_path / "bsv.csv"
+    bsv_df.to_csv(bsv_path, index=False)
+    monkeypatch.setattr(etdmap.options, "mapped_folder_path", tmp_path)
+    monkeypatch.setattr(etdmap.options, "bsv_metadata_file", str(bsv_path))
+
+
+class TestUpdateMeenemen:
+    def test_happy_path_populates_include(self, tmp_path, monkeypatch):
+        _setup_include(
+            tmp_path, monkeypatch,
+            _include_index_df([1, 2, 3], ["H1", "H2", "H3"]),
+            _include_bsv_df([1, 2, 3], ["H1", "H2", "H3"], [True, False, True]),
+        )
+        result = index_helpers.update_include()
+        got = dict(zip(result[ids.HOUSEHOLD].tolist(), result["Meenemen"].tolist()))
+        assert got == {1: True, 2: False, 3: True}
+        assert len(result) == 3
+        # persisted to disk with no NA Meenemen
+        on_disk = pd.read_parquet(tmp_path / "index.parquet", dtype_backend="numpy_nullable")
+        assert int(on_disk["Meenemen"].isna().sum()) == 0
+
+    def test_raises_when_household_missing_in_metadata(self, tmp_path, monkeypatch):
+        _setup_include(
+            tmp_path, monkeypatch,
+            _include_index_df([1, 2, 3], ["H1", "H2", "H3"]),
+            _include_bsv_df([1, 2], ["H1", "H2"], [True, False]),
+        )
+        with pytest.raises(ValueError, match="Household mismatch detected"):
+            index_helpers.update_include()
+
+    def test_raises_when_household_missing_in_index(self, tmp_path, monkeypatch):
+        _setup_include(
+            tmp_path, monkeypatch,
+            _include_index_df([1, 2], ["H1", "H2"]),
+            _include_bsv_df([1, 2, 3], ["H1", "H2", "H3"], [True, False, True]),
+        )
+        with pytest.raises(ValueError, match="Household mismatch detected"):
+            index_helpers.update_include()
+
+    def test_raises_on_key_value_mismatch(self, tmp_path, monkeypatch):
+        # Same ids.HOUSEHOLD set (so the missing-household check passes) but a key
+        # column value differs -> reaches and trips the compare/merge branch.
+        _setup_include(
+            tmp_path, monkeypatch,
+            _include_index_df([1, 2, 3], ["H1", "H2", "H3"]),
+            _include_bsv_df([1, 2, 3], ["H1", "DIFFERENT", "H3"], [True, False, True]),
+        )
+        with pytest.raises(Exception, match="Mismatching index and bsv metadata values"):
+            index_helpers.update_include()
+
+    def test_raises_on_na_include(self, tmp_path, monkeypatch):
+        _setup_include(
+            tmp_path, monkeypatch,
+            _include_index_df([1, 2, 3], ["H1", "H2", "H3"]),
+            _include_bsv_df([1, 2, 3], ["H1", "H2", "H3"], [True, pd.NA, True]),
+        )
+        with pytest.raises(Exception, match="Not all rows in the BSV metadata file have defined Meenemen"):
+            index_helpers.update_include()
+
 
 if __name__ == "__main__":
     # Run pytest for debugging the testing

@@ -6,8 +6,9 @@ from pandas import DataFrame
 from etdmap.data_model import (
     cumulative_columns,
     data_analysis_columns,
+    interval_column,
     load_thresholds,
-    load_thresholds_as_dict,
+    thresholds_dict,
 )
 
 """
@@ -23,7 +24,10 @@ over a timeperiod. It checks for example:
 
 def validate_columns(df: DataFrame, columns: list, condition_func) -> bool:
     """
-    Validate a dataset based on specified columns in a DataFrame based on a given condition function.
+    Validate the given DataFrame's *columns* against *condition_func*.
+
+    Generic over whatever frame it is handed: the caller decides what the rows
+    are.
 
     Parameters
     ----------
@@ -55,56 +59,49 @@ def validate_columns(df: DataFrame, columns: list, condition_func) -> bool:
     else:
         return pd.NA
 
-def validate_cumm_thesholds(df: DataFrame, col: str, thresholds:dict) -> bool:
+def validate_monitoring_data_counts(df: DataFrame, grid_minutes=None) -> bool:
     """
-    Validate cumulative thresholds for a specific column in a DataFrame.
+    Validate the number of records in a DataFrame against its grid.
 
-    Parameters
-    ----------
-    df : DataFrame
-        The input DataFrame containing the data to be validated.
-    col : str
-        The name of the column to be validated.
-    thresholds : dict
-        A dictionary containing the threshold values for the specified column.
-    Returns
-    -------
-    bool or pd.NA
-        True if the column values meet the specified thresholds, pd.NA if validation cannot be performed.
+    How many rows a complete year holds depends on the interval the household is
+    recorded on: 105,120 at five minutes, 35,040 at fifteen, 8,760 hourly. A
+    fixed row count is therefore a statement about one grid only, and marks
+    every household on any other grid invalid.
 
-    Notes
-    -----
-    This function checks if the differences between consecutive values in the specified column fall within the given thresholds.
-    """
-    min_tresh = thresholds[col]['Min']
-    max_tresh = thresholds[col]['Max']
-    def condition_func(df: pd.DataFrame) -> bool:
-        return (df[col].diff().dropna() >= min_tresh) & (
-            df[col].diff().dropna() <= max_tresh
-        )
-    return validate_columns(df, [col], condition_func)
-
-
-def validate_monitoring_data_counts(df: DataFrame) -> bool:
-    """
-    Validate the number of records in a DataFrame.
+    The expected count is derived from the grid and the span the rows cover,
+    with the same tolerance ``validate_approximately_one_year_of_records`` uses.
 
     Parameters
     ----------
     df : DataFrame
         The input DataFrame to be validated.
+    grid_minutes : float, optional
+        The interval the household is recorded on, in minutes. Declared per
+        household batch as ``Gegevensfrequentie``.
 
     Returns
     -------
     bool or pd.NA
-        True if the number of records falls within the specified range, pd.NA if the DataFrame is empty.
-
-    Notes
-    -----
-    This function checks if the number of records in the DataFrame is between 100,000 and 110,000.
+        True if the number of records matches the grid over roughly a year.
+        pd.NA if the DataFrame is empty, if it carries no ReadingDate, or if
+        the grid is unknown -- in which case nothing was checked.
     """
-    min_count, max_count = 100000, 110000
-    return pd.NA if df.empty else min_count <= len(df) <= max_count
+    if df.empty or "ReadingDate" not in df.columns:
+        return pd.NA
+
+    if grid_minutes is None or pd.isna(grid_minutes):
+        logging.warning(
+            "[dataset_validators] validate_monitoring_data_counts: no grid was "
+            "given, so the expected row count is unknown and nothing was "
+            "checked. The grid is declared per household batch as "
+            "Gegevensfrequentie."
+        )
+        return pd.NA
+
+    rows_per_day = (24 * 60) / float(grid_minutes)
+    expected_min = (365 - year_allowed_jitter) * rows_per_day
+    expected_max = (365 + year_allowed_jitter) * rows_per_day
+    return bool(expected_min <= len(df) <= expected_max)
 
 
 def validate_cumulative_variable(df: DataFrame, column: str) -> bool:
@@ -274,13 +271,28 @@ def validate_energiegebruik_warmteopwekker(df: DataFrame) -> bool:
     -----
     This function calculates the total energy usage of the heat generator by summing the electricity usage
     of the heat pump, booster, and boiler tank, and then validates if this total falls within a specified range.
+
+    Returns pd.NA when any of the three columns is absent: the total cannot be
+    formed, so there is nothing to judge. The sum is built on a copy, so the
+    frame handed in keeps the columns it arrived with.
     """
-    df["EnergiegebruikWarmteopwekker"] = (
-        df["ElektriciteitsgebruikWarmtepomp"]
-        + df["ElektriciteitsgebruikBooster"]
-        + df["ElektriciteitsgebruikBoilervat"]
-    )
-    return validate_range(df, "EnergiegebruikWarmteopwekker", 100, 20000)
+    parts = [
+        "ElektriciteitsgebruikWarmtepomp",
+        "ElektriciteitsgebruikBooster",
+        "ElektriciteitsgebruikBoilervat",
+    ]
+    missing = [col for col in parts if col not in df.columns]
+    if missing:
+        logging.debug(
+            f"[dataset_validators] Cannot validate "
+            f"EnergiegebruikWarmteopwekker: {missing} not in DataFrame -- "
+            f"returning NA."
+        )
+        return pd.NA
+
+    totals = df[["ReadingDate"]].copy() if "ReadingDate" in df.columns else df.copy()
+    totals["EnergiegebruikWarmteopwekker"] = sum(df[col] for col in parts)
+    return validate_range(totals, "EnergiegebruikWarmteopwekker", 100, 20000)
 
 
 def validate_no_readingdate_gap(df: DataFrame) -> bool:
@@ -299,11 +311,18 @@ def validate_no_readingdate_gap(df: DataFrame) -> bool:
 
     Notes
     -----
-    This function checks if the time difference between consecutive reading dates is consistently 300 seconds.
+    The spacing checked against is the most common spacing in *df*, not a fixed
+    interval: a household batch is recorded on the grid it declares. A
+    fixed interval reports every row of a coarser household batch as a gap.
     """
-    time_diffs = df["ReadingDate"].diff().dt.total_seconds()
-    valid = all(time_diffs[1:] == 300)
-    return valid
+    time_diffs = df["ReadingDate"].diff().dt.total_seconds()[1:]
+    if time_diffs.empty:
+        return True
+
+    spacing = time_diffs.mode()
+    if spacing.empty:
+        return False
+    return bool((time_diffs == spacing.iloc[0]).all())
 
 
 def create_validate_func_col(col:str, tresholds) -> callable:
@@ -357,24 +376,40 @@ def create_validate_func_outliers_neg_cum(
     Notes
     -----
     This function creates a validation function that checks if all non-null values in the 'validate_<col>Diff' column are True.
+
+    The flag column it reads is written by the record validators during mapping.
+    A frame that does not carry it yields pd.NA: the per-record verdict this
+    summarises was never recorded, so there is nothing to summarise.
     """
+
+    interval_col = interval_column(col)
+    if interval_col is None:
+        raise ValueError(
+            f"etdmodel.csv: '{col}' is a cumulative variable with no "
+            f"ComplementVariabele, so its interval column is unknown and no "
+            f"validator can be built for it. Declare the link in the data model."
+        )
 
     def validate_no_outliers_negative_cumulative_diff(
         df: DataFrame,
-        cum_col=col,
+        flag_col="validate_" + interval_col,
     ) -> bool:
+        if flag_col not in df.columns:
+            logging.debug(
+                f"[dataset_validators] Cannot validate {flag_col}: not in "
+                f"DataFrame -- returning NA."
+            )
+            return pd.NA
         return all(
-            df["validate_" + cum_col + "Diff"].isna()
-            | df["validate_" + cum_col + "Diff"],
+            df[flag_col].isna() | df[flag_col],
         )
     return validate_no_outliers_negative_cumulative_diff
 
 year_allowed_jitter = 18  # approx 5% of the year can be missing
 thresholds_df = load_thresholds()
-thresholds_dict = load_thresholds_as_dict()
 
 cumulative_columns_thresholds = thresholds_df[
-    thresholds_df['VariabelType']=='cumulatief']
+    thresholds_df['ThresholdType']=='cumulatief']
 
 # print(cumulative_columns_threholds.columns)
 
@@ -413,10 +448,45 @@ for col in cumulative_columns:
     dataset_flag_conditions["validate_" + col] = \
         create_validate_func_col(col, thresholds_dict)
 
-    # note that the household.parquet files also contain a column
-    # "validate_" + col + "Diff", but these are from the
-    # record_validators (from validate + col in record_validators)
-    # plus the col_Diff from the theshold file.
-    dataset_flag_conditions["validate_" + col + "Diff"] = (
+    # The household parquet files also carry a "validate_<interval column>"
+    # flag, written by the record validators from that column and its threshold
+    # row. The interval column is the one the data model links to this
+    # cumulative variable, which is not always its name plus "Diff".
+    dataset_flag_conditions["validate_" + interval_column(col)] = (
         create_validate_func_outliers_neg_cum(col)
     )
+
+
+#: The checks that hold whatever the model declares, as opposed to the
+#: per-column ones a rebuild replaces.
+_FIXED_FLAG_CONDITIONS = dict(dataset_flag_conditions)
+
+
+def rebuild_flag_conditions() -> None:
+    """
+    Rebuild the per-column ``dataset_flag_conditions`` in place from the model
+    as it stands.
+
+    Called by :func:`etdmap.data_model.rebuild_model`, which owns when the
+    model changes. The per-column entries are rebuilt rather than added to, so
+    a column the model no longer declares leaves no check behind; the
+    whole-file checks are kept as they are.
+    """
+    dataset_flag_conditions.clear()
+    dataset_flag_conditions.update(_FIXED_FLAG_CONDITIONS)
+
+    for col in cumulative_columns:
+        if col not in thresholds_dict:
+            raise ValueError(
+                f"'{col}' is a cumulative variable with no row in the "
+                f"thresholds, so the bounds its whole-file check reads are "
+                f"unknown. A cumulative variable needs a 'cumulatief' "
+                f"threshold row of its own, and its interval column needs one "
+                f"written per interval."
+            )
+        dataset_flag_conditions["validate_" + col] = create_validate_func_col(
+            col, thresholds_dict
+        )
+        dataset_flag_conditions["validate_" + interval_column(col)] = (
+            create_validate_func_outliers_neg_cum(col)
+        )

@@ -4,7 +4,6 @@ data_summary.csv
 *.log
 */*.log
 *.csv
-!etdmodel.csv
 *.xlsx
 *.ipynb
 *.html
@@ -17,7 +16,12 @@ test_output.txt
 *_files
 
 # gitignore exceptions to above extensions
-!.\data\thresholds.csv
+!etdmap/data/etdmodel.csv
+!etdmap/data/thresholds.csv
+!etdmap/data/catalog.parquet
+!etdmap/data/constraints.parquet
+!etdmap/data/Rule.csv
+!etdmap/data/model.yaml
 !config_test_template.yaml
 
 # Byte-compiled / optimized / DLL files
@@ -185,3 +189,7 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Agent files
+.claude/*
+CLAUDE.md

@@ -1,0 +1,259 @@
+"""MappingFlag members divide into signals and actions, and the composites
+follow that division.
+
+A signal names something observed about a value. An action names something the
+pipeline did to it. The two are independent: a value can carry a signal with no
+action, an action with no signal, or both. Composites that mix the categories
+cannot be filtered on cleanly, which is what these tests pin.
+"""
+
+import pytest
+
+from etdmap.flags import MappingFlag
+
+SIGNALS = {
+    MappingFlag.OUT_OF_BOUNDS_LOW,
+    MappingFlag.OUT_OF_BOUNDS_HIGH,
+    MappingFlag.CUMULATIVE_JUMP_BACK,
+    MappingFlag.CUMULATIVE_REPEAT_NEGATIVE,
+    MappingFlag.CUMULATIVE_METER_RESET,
+    MappingFlag.CUMULATIVE_NO_RECOVERY,
+    MappingFlag.CUMULATIVE_ZERO_TOTAL,
+    MappingFlag.FROZEN_SPAN,
+    MappingFlag.CATCHUP,
+    MappingFlag.TARIFF_SIMULTANEOUS,
+    MappingFlag.RAW_DELIVERED_VALUE,
+    MappingFlag.OFF_CADENCE_NA,
+    MappingFlag.ON_CADENCE_NA,
+    MappingFlag.UNPARSEABLE_VALUE,
+    MappingFlag.SOURCES_INCOMPLETE,
+    MappingFlag.SLOT_COLLISION,
+    MappingFlag.NEGATIVE_INTERVAL,
+    MappingFlag.SLOT_NOT_DELIVERED,
+    MappingFlag.DELIVERED_NA,
+}
+ACTIONS = {
+    MappingFlag.FILLED_DOWN,
+    MappingFlag.FILLED_ZERO,
+    MappingFlag.FIRST_ZERO,
+    MappingFlag.NULLED,
+    MappingFlag.CUMULATIVE_CONSTRUCTED,
+    MappingFlag.NOT_CHANGED,
+    MappingFlag.TARIFF_COMBINED,
+    MappingFlag.COMBINED_COLUMNS,
+    MappingFlag.VALUE_DERIVED_FROM_CUMULATIVE,
+    MappingFlag.NULL_DERIVED_FROM_CUMULATIVE,
+    MappingFlag.FROZEN_DELIVERED_INTERVAL_SPREAD,
+}
+
+
+def _single_bits():
+    return {m for m in MappingFlag if m.name and bin(m.value).count("1") == 1}
+
+
+class TestTheTaxonomyIsComplete:
+    def test_every_member_is_a_signal_or_an_action(self):
+        missing = sorted(m.name for m in _single_bits() - SIGNALS - ACTIONS)
+        assert not missing, (
+            f"MappingFlag members classified as neither signal nor action: "
+            f"{missing}. Add each to SIGNALS or ACTIONS in this file."
+        )
+
+    def test_no_member_is_both(self):
+        both = sorted(m.name for m in SIGNALS & ACTIONS)
+        assert not both, f"members in both categories: {both}"
+
+
+class TestInventedHoldsActionsOnly:
+    """INVENTED selects values the pipeline wrote, so a reader can exclude them.
+    A signal in it would exclude values that were merely observed."""
+
+    def test_invented_contains_no_signal(self):
+        leaked = sorted(m.name for m in SIGNALS if m & MappingFlag.INVENTED)
+        assert not leaked, f"signals inside INVENTED: {leaked}"
+
+    def test_invented_holds_the_writing_actions(self):
+        assert MappingFlag.INVENTED == (
+            MappingFlag.FILLED_DOWN
+            | MappingFlag.FILLED_ZERO
+            | MappingFlag.NULLED
+            | MappingFlag.FIRST_ZERO
+            | MappingFlag.FROZEN_DELIVERED_INTERVAL_SPREAD
+        )
+
+    def test_a_constructed_cumulative_is_not_invented(self):
+        """The column was built, but its values carry the delivered intervals'
+        information. Excluding them from averaging would discard real data."""
+        assert not (MappingFlag.CUMULATIVE_CONSTRUCTED & MappingFlag.INVENTED)
+
+    def test_a_combined_tariff_root_is_not_invented(self):
+        """Same reasoning as the constructed cumulative: the combined root
+        carries what the delivered registers reported."""
+        assert not (MappingFlag.TARIFF_COMBINED & MappingFlag.INVENTED)
+
+    def test_a_combined_target_is_not_invented(self):
+        """A sum or mean of delivered source columns carries what those
+        sources reported, so it is a measurement like any other."""
+        assert not (MappingFlag.COMBINED_COLUMNS & MappingFlag.INVENTED)
+        assert MappingFlag.COMBINED_COLUMNS & MappingFlag.ACTIONS_TAKEN
+
+
+class TestNotAMeasurement:
+    """The one test a project average filters on."""
+
+    @pytest.mark.parametrize("flag", [
+        MappingFlag.FROZEN_SPAN,
+        MappingFlag.CATCHUP,
+        MappingFlag.OUT_OF_BOUNDS_LOW,
+        MappingFlag.OUT_OF_BOUNDS_HIGH,
+        MappingFlag.FILLED_DOWN,
+        MappingFlag.FILLED_ZERO,
+        MappingFlag.FIRST_ZERO,
+        MappingFlag.FROZEN_DELIVERED_INTERVAL_SPREAD,
+    ])
+    def test_excluded_from_the_average(self, flag):
+        assert flag & MappingFlag.NOT_A_MEASUREMENT, (
+            f"{flag.name} does not reach NOT_A_MEASUREMENT, so the project "
+            f"average would use it"
+        )
+
+    def test_frozen_span_reaches_it_directly_not_through_invented(self):
+        """FROZEN_SPAN is a signal, so it leaves INVENTED. It must be named in
+        NOT_A_MEASUREMENT in its own right or the average silently regains it."""
+        assert not (MappingFlag.FROZEN_SPAN & MappingFlag.INVENTED)
+        assert MappingFlag.FROZEN_SPAN & MappingFlag.NOT_A_MEASUREMENT
+
+    def test_a_constructed_cumulative_still_counts_as_a_measurement(self):
+        assert not (
+            MappingFlag.CUMULATIVE_CONSTRUCTED & MappingFlag.NOT_A_MEASUREMENT
+        )
+
+    def test_a_combined_tariff_root_still_counts_as_a_measurement(self):
+        assert not (
+            MappingFlag.TARIFF_COMBINED & MappingFlag.NOT_A_MEASUREMENT
+        )
+
+    def test_a_simultaneous_tariff_reading_still_counts_as_a_measurement(self):
+        """The signal marks a suspicious delivered pattern; the readings were
+        delivered and removing them from the average is a separate decision
+        no one has taken."""
+        assert not (
+            MappingFlag.TARIFF_SIMULTANEOUS & MappingFlag.NOT_A_MEASUREMENT
+        )
+
+
+class TestValuesAreStable:
+    """Bits are written into every mapped dataset. Members are appended, so an
+    existing member keeps its value and the enum is built with auto()."""
+
+    @pytest.mark.parametrize("name,value", [
+        ("OUT_OF_BOUNDS_LOW", 1),
+        ("OUT_OF_BOUNDS_HIGH", 2),
+        ("CUMULATIVE_JUMP_BACK", 4),
+        ("CUMULATIVE_REPEAT_NEGATIVE", 8),
+        ("CUMULATIVE_METER_RESET", 16),
+        ("CUMULATIVE_NO_RECOVERY", 32),
+        ("CUMULATIVE_ZERO_TOTAL", 64),
+        ("FROZEN_SPAN", 128),
+        ("CATCHUP", 256),
+        ("FILLED_DOWN", 512),
+        ("FILLED_ZERO", 1024),
+    ])
+    def test_existing_members_keep_their_value(self, name, value):
+        assert MappingFlag[name].value == value
+
+    def test_new_members_were_appended(self):
+        for name in ("FIRST_ZERO", "NULLED", "CUMULATIVE_CONSTRUCTED",
+                     "NOT_CHANGED", "TARIFF_COMBINED", "TARIFF_SIMULTANEOUS"):
+            assert MappingFlag[name].value > MappingFlag.FILLED_ZERO.value, (
+                f"{name} was inserted rather than appended, which renumbers "
+                f"every member after it"
+            )
+
+    def test_the_tariff_members_took_the_next_free_bits(self):
+        """Appended after NOT_CHANGED: these values are now written into
+        mapped datasets and must never move."""
+        assert MappingFlag.TARIFF_COMBINED.value == 32768
+        assert MappingFlag.TARIFF_SIMULTANEOUS.value == 65536
+
+    @pytest.mark.parametrize("name,value", [
+        ("RAW_DELIVERED_VALUE", 131072),
+        ("OFF_CADENCE_NA", 262144),
+        ("ON_CADENCE_NA", 524288),
+        ("COMBINED_COLUMNS", 1048576),
+        ("UNPARSEABLE_VALUE", 2097152),
+        ("SOURCES_INCOMPLETE", 4194304),
+        ("SLOT_COLLISION", 8388608),
+        ("VALUE_DERIVED_FROM_CUMULATIVE", 16777216),
+        ("NEGATIVE_INTERVAL", 33554432),
+        ("FROZEN_DELIVERED_INTERVAL_SPREAD", 67108864),
+        ("SLOT_NOT_DELIVERED", 134217728),
+        ("DELIVERED_NA", 268435456),
+        ("NULL_DERIVED_FROM_CUMULATIVE", 536870912),
+    ])
+    def test_the_later_members_took_the_next_free_bits(self, name, value):
+        """Each was appended at the end of the class in this order. Pinning the
+        values is what catches an insertion, which would renumber every member
+        after it and reinterpret data already written."""
+        assert MappingFlag[name].value == value
+
+
+class TestNotChangedIsDerivable:
+    """NOT_CHANGED is the absence of every other action. Defining the action
+    set once keeps the two from drifting apart as flags are added."""
+
+    def test_the_action_set_is_named_once(self):
+        """The derivation enters as its composite, not as one outcome: a cell
+        the differencing wrote and produced nothing in is still a cell mapping
+        acted on, so NOT_CHANGED must not be stamped on it."""
+        assert MappingFlag.ACTIONS_TAKEN == (
+            MappingFlag.INVENTED
+            | MappingFlag.CUMULATIVE_CONSTRUCTED
+            | MappingFlag.TARIFF_COMBINED
+            | MappingFlag.COMBINED_COLUMNS
+            | MappingFlag.INTERVAL_DERIVED_FROM_CUMULATIVE
+        )
+
+    def test_it_holds_every_action_except_not_changed(self):
+        expected = {m for m in ACTIONS if m is not MappingFlag.NOT_CHANGED}
+        held = {m for m in ACTIONS if m & MappingFlag.ACTIONS_TAKEN}
+        assert held == expected
+
+    def test_not_changed_is_not_one_of_them(self):
+        assert not (MappingFlag.NOT_CHANGED & MappingFlag.ACTIONS_TAKEN)
+
+    def test_it_holds_no_signal(self):
+        leaked = sorted(m.name for m in SIGNALS if m & MappingFlag.ACTIONS_TAKEN)
+        assert not leaked, f"signals inside ACTIONS_TAKEN: {leaked}"
+
+
+class TestTheCategoriesAreDeclaredNotDescribed:
+    """SIGNALS and ACTIONS are composites on the class, so a report can label any
+    flag without keeping its own copy of the split. A copy is what drifts."""
+
+    def test_every_single_bit_is_in_exactly_one_category(self):
+        for member in _single_bits():
+            in_signals = bool(member & MappingFlag.SIGNALS)
+            in_actions = bool(member & MappingFlag.ACTIONS)
+            assert in_signals != in_actions, (
+                f"{member.name} is in "
+                f"{'both' if in_signals else 'neither'} category"
+            )
+
+    def test_the_declared_categories_match_this_file(self):
+        """The lists at the top of this file are the human statement; the
+        composites are what code reads. They must agree."""
+        assert {m.name for m in _single_bits() if m & MappingFlag.SIGNALS} == {
+            m.name for m in SIGNALS
+        }
+        assert {m.name for m in _single_bits() if m & MappingFlag.ACTIONS} == {
+            m.name for m in ACTIONS
+        }
+
+    def test_the_two_categories_do_not_overlap(self):
+        assert not (MappingFlag.SIGNALS & MappingFlag.ACTIONS)
+
+    def test_together_they_cover_every_bit_in_use(self):
+        covered = MappingFlag.SIGNALS | MappingFlag.ACTIONS
+        for member in _single_bits():
+            assert member & covered, f"{member.name} is in neither category"

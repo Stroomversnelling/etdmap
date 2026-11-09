@@ -1,0 +1,498 @@
+"""
+Contract tests for the sharded-mapping WRITE primitive.
+
+Sharding originates at mapping: `save_household_shard` writes ONE household's
+mapped data as a hive-partitioned shard -- the atomic, per-household,
+idempotent unit the mapping pipeline builds on.
+
+Contract:
+- Writes to `<root>/HuisIdBSV=<n>/HuisBatchIdBSV=<p>/part.parquet`.
+- Partition columns (the ids) live in the PATH, not the file -- hive convention,
+  and consistent with the flat mapped file which also carries no id columns.
+- Round-trips the mapped DataFrame identically (nullable dtypes preserved, ADR-005).
+- Per-household + idempotent: re-running one household overwrites only its shard
+  (no stale duplicate part files); different household batches of the same household coexist.
+"""
+
+import os
+
+import pandas as pd
+import pytest
+
+import etdmap
+from etdmap import ids
+from etdmap.mapping_helpers import run_standard_pipeline, save_household_shard
+from etdmap.testing import household_batch_table_frame, index_frame, supplier_label
+
+#: The grid these frames are built on and declared to sit on. Passed
+#: explicitly: there is no default grid.
+GRID = 5
+
+
+# Local: the pipeline's input is the supplier shape, so the frame carries naive
+# timestamps, no id columns and no interval counterpart to complete.
+def _pipeline_df(n=12, freq="5min"):
+    """Tiny valid input for run_standard_pipeline (mirrors _minimal_pipeline_df)."""
+    from etdmap.data_model import cumulative_columns
+    col = cumulative_columns[0]
+    dates = pd.date_range("2023-01-01", periods=n, freq=freq)
+    return pd.DataFrame({"ReadingDate": dates, col: range(n)})
+
+
+def _pipeline_cadence(df):
+    """The cadence table a mapper measures before calling the pipeline."""
+    from etdmap.mapping_helpers import detect_column_cadence
+    return detect_column_cadence(df, grid_minutes=GRID)
+
+
+class _output_format:
+    """Temporarily set etdmap.options.mapped_output_format (global option)."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def __enter__(self):
+        self.prev = etdmap.options.mapped_output_format
+        etdmap.options.mapped_output_format = self.value
+
+    def __exit__(self, *exc):
+        etdmap.options.mapped_output_format = self.prev
+
+
+# Local: these columns and their dtypes are what the round-trip pins -- Float64
+# carrying pd.NA beside Int64, and no id column of any kind.
+def _mapped_df():
+    """A minimal mapped-household frame: ReadingDate (UTC) + nullable data cols,
+    no id columns -- exactly what run_standard_pipeline writes today."""
+    idx = pd.to_datetime(
+        ["2024-01-01 00:00", "2024-01-01 00:05", "2024-01-01 00:10"], utc=True
+    )
+    return pd.DataFrame({
+        "ReadingDate": idx,
+        "ElektriciteitNetgebruik": pd.array([1.0, 2.0, pd.NA], dtype="Float64"),
+        "SomeCount": pd.array([10, 20, 30], dtype="Int64"),
+    })
+
+
+class TestSaveHouseholdShard:
+    def test_roundtrip_and_hive_path(self, tmp_path):
+        df = _mapped_df()
+        out = save_household_shard(df, 42, 7, tmp_path)
+        expected = os.path.join(
+            str(tmp_path), "HuisIdBSV=42", "HuisBatchIdBSV=7", "part.parquet"
+        )
+        assert os.path.normpath(str(out)) == os.path.normpath(expected)
+        assert os.path.exists(out)
+
+        back = pd.read_parquet(out, dtype_backend="numpy_nullable")
+        # ids live in the path, not the file
+        assert ids.HOUSEHOLD not in back.columns
+        assert ids.HOUSEHOLD_BATCH not in back.columns
+        pd.testing.assert_frame_equal(back, df)
+
+    def test_idempotent_single_part_file(self, tmp_path):
+        df = _mapped_df()
+        save_household_shard(df, 42, 7, tmp_path)
+        save_household_shard(df, 42, 7, tmp_path)  # re-run one household
+        part_dir = tmp_path / "HuisIdBSV=42" / "HuisBatchIdBSV=7"
+        assert len(list(part_dir.glob("*.parquet"))) == 1
+
+    def test_two_batches_same_household_coexist(self, tmp_path):
+        df = _mapped_df()
+        save_household_shard(df, 42, 7, tmp_path)
+        save_household_shard(df, 42, 9, tmp_path)
+        assert (tmp_path / "HuisIdBSV=42" / "HuisBatchIdBSV=7" / "part.parquet").exists()
+        assert (tmp_path / "HuisIdBSV=42" / "HuisBatchIdBSV=9" / "part.parquet").exists()
+
+
+class TestSaveMappedHousehold:
+    """The SINGLE save primitive every mapper must use (run_standard_pipeline
+    internally; older scripts like map_watch_e that write directly must call it
+    too -- Watch-E wrote zero shards on the first real run because its direct
+    to_parquet bypassed the format branch)."""
+
+    def test_sharded_mode(self, tmp_path):
+        from etdmap.mapping_helpers import save_mapped_household
+        with _output_format("sharded"):
+            path = save_mapped_household(_mapped_df(), 42, 9, tmp_path)
+        assert (tmp_path / "sharded" / "HuisIdBSV=42" / "HuisBatchIdBSV=9" / "part.parquet").exists()
+        assert not (tmp_path / "household_42_table.parquet").exists()
+        assert "HuisIdBSV=42" in str(path)
+
+    def test_flat_mode(self, tmp_path):
+        from etdmap.mapping_helpers import save_mapped_household
+        with _output_format("flat"):
+            path = save_mapped_household(_mapped_df(), 42, 9, tmp_path)
+        # The flat layout has no household-batch level, so the household id
+        # names the file and the household batch id is not in the path.
+        assert (tmp_path / "household_42_table.parquet").exists()
+        assert not (tmp_path / "sharded").exists()
+        assert str(path).endswith("household_42_table.parquet")
+
+    def test_invalid_format_raises(self, tmp_path):
+        from etdmap.mapping_helpers import save_mapped_household
+        with _output_format("banana"):
+            with pytest.raises(ValueError):
+                save_mapped_household(_mapped_df(), 1, 1, tmp_path)
+
+
+class TestPipelineOutputFormat:
+    """run_standard_pipeline honours etdmap.options.mapped_output_format --
+    the same existing API, no new caller-facing parameter. Sharded is the
+    default; "flat" writes the legacy one-file-per-household layout. Sharded
+    output goes to <mapped_folder_path>/sharded/; the writer numbers the
+    household batch with the household id (mapping a household delivered in
+    more than one household batch is not yet supported)."""
+
+    def test_default_output_format_is_sharded(self):
+        assert etdmap.options.mapped_output_format == "sharded"
+
+    def test_sharded_mode_writes_shard_not_flat(self, tmp_path):
+        with _output_format("sharded"):
+            run_standard_pipeline(
+                _pipeline_df(), household_id=42, household_batch_id=1042, household_id_supplier="HuisX",
+                mapped_folder_path=tmp_path, grid_minutes=GRID,
+                cadence=_pipeline_cadence(_pipeline_df()))
+        shard = (
+            tmp_path / "sharded" / "HuisIdBSV=42" / "HuisBatchIdBSV=1042"
+            / "part.parquet"
+        )
+        assert shard.exists()
+        assert not (tmp_path / "household_42_table.parquet").exists()
+
+    def test_flat_mode_unchanged_legacy(self, tmp_path):
+        with _output_format("flat"):
+            run_standard_pipeline(
+                _pipeline_df(), household_id=42, household_batch_id=1042, household_id_supplier="HuisX",
+                mapped_folder_path=tmp_path, grid_minutes=GRID,
+                cadence=_pipeline_cadence(_pipeline_df()))
+        assert (tmp_path / "household_42_table.parquet").exists()
+        assert not (tmp_path / "sharded").exists()
+
+    def test_sharded_equals_flat_content(self, tmp_path):
+        """Per-household cross-format correctness gate at the mapping stage:
+        the SAME input through both modes yields identical data (the shard
+        carries no id columns, same as the flat file)."""
+        flat_dir = tmp_path / "flat"
+        shard_dir = tmp_path / "shard"
+        flat_dir.mkdir()
+        shard_dir.mkdir()
+        with _output_format("flat"):
+            run_standard_pipeline(
+                _pipeline_df(), household_id=7, household_batch_id=1007, household_id_supplier="H7",
+                mapped_folder_path=flat_dir, grid_minutes=GRID,
+                cadence=_pipeline_cadence(_pipeline_df()))
+        with _output_format("sharded"):
+            run_standard_pipeline(
+                _pipeline_df(), household_id=7, household_batch_id=1007, household_id_supplier="H7",
+                mapped_folder_path=shard_dir, grid_minutes=GRID,
+                cadence=_pipeline_cadence(_pipeline_df()))
+        flat = pd.read_parquet(flat_dir / "household_7_table.parquet",
+                               dtype_backend="numpy_nullable")
+        shard = pd.read_parquet(
+            shard_dir / "sharded" / "HuisIdBSV=7" / "HuisBatchIdBSV=1007" / "part.parquet",
+            dtype_backend="numpy_nullable",
+        )
+        pd.testing.assert_frame_equal(flat, shard)
+
+    def test_invalid_output_format_raises(self, tmp_path):
+        with _output_format("banana"):
+            with pytest.raises(ValueError):
+                run_standard_pipeline(
+                    _pipeline_df(), household_id=1, household_batch_id=1001, household_id_supplier="H1",
+                    mapped_folder_path=tmp_path, grid_minutes=GRID,
+                    cadence=_pipeline_cadence(_pipeline_df()))
+
+
+class TestDatasetValidatorsReadBothLayouts:
+    """Dataset-level flags must be computed under BOTH mapped layouts.
+
+    update_index used to build the flat filename `household_<id>_table.parquet`
+    and guard on os.path.exists. Under the sharded default that guard was always
+    False, so NO household-batch flag was computed for any household -- and the
+    omission was silent, which is why it survived. These tests fail against that
+    version under "sharded" and pass under "flat".
+    """
+
+    HOUSEHOLD_ID = 42
+    HOUSEHOLD_BATCH_ID = 9
+    #: update_index matches an existing row on the household batch, so the index
+    #: and the entry have to name the same one. The project is carried because
+    #: update_index requires it of every entry.
+    PROJECT_SUPPLIER = "P1"
+
+    def _index_df(self):
+        return index_frame(
+            [self.HOUSEHOLD_BATCH_ID],
+            household_of={self.HOUSEHOLD_BATCH_ID: self.HOUSEHOLD_ID},
+            **{
+                ids.HOUSEHOLD_SUPPLIER: supplier_label(self.HOUSEHOLD_ID),
+                ids.PROJECT_SUPPLIER: self.PROJECT_SUPPLIER,
+            },
+        )
+
+    @pytest.fixture
+    def _declared_batch(self, tmp_path, monkeypatch):
+        """The household batch this household is recorded in. ``dataset_validators`` read
+        the declared grid from it to know how many rows a year should hold."""
+        path = tmp_path / "huisbatch.csv"
+        household_batch_table_frame(
+            [self.HOUSEHOLD_BATCH_ID],
+            household_of={self.HOUSEHOLD_BATCH_ID: self.HOUSEHOLD_ID},
+            grid=f"{GRID}min",
+        ).to_csv(path, index=False)
+        monkeypatch.setattr(
+            etdmap.options, "household_batch_csv_path", str(path)
+        )
+        return path
+
+    def _update_index_for(self, tmp_path, monkeypatch, fmt):
+        from etdmap.index_helpers import update_index
+        from etdmap.mapping_helpers import save_mapped_household
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        with _output_format(fmt):
+            save_mapped_household(
+                _mapped_df(), self.HOUSEHOLD_ID, self.HOUSEHOLD_BATCH_ID, tmp_path
+            )
+
+        entry = {
+            ids.HOUSEHOLD_SUPPLIER: supplier_label(self.HOUSEHOLD_ID),
+            ids.PROJECT_SUPPLIER: self.PROJECT_SUPPLIER,
+            ids.HOUSEHOLD: self.HOUSEHOLD_ID,
+            ids.HOUSEHOLD_BATCH: self.HOUSEHOLD_BATCH_ID,
+        }
+        return update_index(
+            self._index_df(), entry, data_provider="etdmap", save=False
+        )
+
+    @pytest.mark.parametrize("fmt", ["flat", "sharded"])
+    def test_dataset_flags_are_evaluated(
+        self, tmp_path, monkeypatch, fmt, _declared_batch
+    ):
+        from etdmap.dataset_validators import dataset_flag_conditions
+
+        out = self._update_index_for(tmp_path, monkeypatch, fmt)
+
+        present = [f for f in dataset_flag_conditions if f in out.columns]
+        assert present, (
+            f"no dataset_validators flag column was created under the {fmt} layout -- "
+            f"the validators did not run"
+        )
+
+        evaluated = [f for f in present if out[f].notna().any()]
+        assert evaluated, (
+            f"dataset_validators flag columns exist but none holds a verdict under the "
+            f"{fmt} layout"
+        )
+
+    def test_missing_household_raises(self, tmp_path, monkeypatch):
+        """A household with no mapped data is a hard failure, not a silent skip.
+
+        update_index cannot do half its job: without the data there are no
+        household-batch flags, and an index row that merely lacks them is
+        indistinguishable from one whose validators all returned NA.
+        """
+        from etdmap.index_helpers import update_index
+        from etdmap.mapping_helpers import save_mapped_household
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        # Another household's shard exists, so the layout is detectable but
+        # household 42 has no data of its own.
+        with _output_format("sharded"):
+            save_mapped_household(_mapped_df(), 99, 990, tmp_path)
+
+        entry = {
+            ids.HOUSEHOLD_SUPPLIER: supplier_label(self.HOUSEHOLD_ID),
+            ids.PROJECT_SUPPLIER: self.PROJECT_SUPPLIER,
+            ids.HOUSEHOLD: self.HOUSEHOLD_ID,
+            ids.HOUSEHOLD_BATCH: self.HOUSEHOLD_BATCH_ID,
+        }
+        with pytest.raises(FileNotFoundError, match=str(self.HOUSEHOLD_ID)):
+            update_index(
+                self._index_df(), entry, data_provider="etdmap", save=False
+            )
+
+
+class TestTwoHouseholdBatchesOfOneHousehold:
+    """Each household batch's flags come from its own readings.
+
+    update_index used to read the HOUSEHOLD and judge its household batches
+    concatenated, so the interval between two deliveries read as a gap in the
+    data and both index rows carried the one pooled verdict. Each frame below
+    is contiguous on the declared grid and the two are six months apart, which
+    is what lets the test tell the two keys apart.
+
+    The second household batch is a second delivery of the same household, so
+    it carries its own project and its own delivery batch.
+    """
+
+    HOUSEHOLD_ID = 7
+    FIRST_BATCH = 701
+    SECOND_BATCH = 702
+    PROJECTS = (1, 2)
+    DELIVERY_BATCHES = (1, 2)
+    GAP_FLAG = "validate_no_readingdate_gap"
+
+    def _contiguous(self, start):
+        dates = pd.date_range(start, periods=12, freq=f"{GRID}min", tz="UTC")
+        return pd.DataFrame({
+            "ReadingDate": dates,
+            "ElektriciteitNetgebruik": pd.array(range(12), dtype="Float64"),
+            "SomeCount": pd.array(range(12), dtype="Int64"),
+        })
+
+    def _household_of(self):
+        return {
+            self.FIRST_BATCH: self.HOUSEHOLD_ID,
+            self.SECOND_BATCH: self.HOUSEHOLD_ID,
+        }
+
+    def _index_df(self):
+        return index_frame(
+            [self.FIRST_BATCH, self.SECOND_BATCH],
+            household_of=self._household_of(),
+            **{
+                ids.PROJECT: self.PROJECTS,
+                ids.PROJECT_SUPPLIER: [f"P{p}" for p in self.PROJECTS],
+                ids.BATCH: self.DELIVERY_BATCHES,
+            },
+        )
+
+    def test_the_fixture_tells_the_two_keys_apart(self):
+        """Anchor: pooled, these readings DO carry the gap verdict.
+
+        Without this the per-household-batch assertions below would also pass
+        against a pooled read of two contiguous, adjacent periods.
+        """
+        from etdmap.dataset_validators import validate_no_readingdate_gap
+
+        pooled = pd.concat(
+            [self._contiguous("2024-01-01"), self._contiguous("2024-07-01")],
+            ignore_index=True,
+        )
+        assert validate_no_readingdate_gap(pooled) is False
+        assert validate_no_readingdate_gap(self._contiguous("2024-01-01")) is True
+
+    def test_each_household_batch_is_flagged_on_its_own_readings(
+        self, tmp_path, monkeypatch
+    ):
+        from etdmap.index_helpers import update_index
+        from etdmap.mapping_helpers import save_mapped_household
+
+        batch_table = tmp_path / "huisbatch.csv"
+        household_batch_table_frame(
+            [self.FIRST_BATCH, self.SECOND_BATCH],
+            household_of=self._household_of(),
+            grid=f"{GRID}min",
+            **{
+                ids.PROJECT: self.PROJECTS,
+                ids.BATCH: self.DELIVERY_BATCHES,
+            },
+        ).to_csv(batch_table, index=False)
+        monkeypatch.setattr(
+            etdmap.options, "household_batch_csv_path", str(batch_table)
+        )
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+
+        with _output_format("sharded"):
+            save_mapped_household(
+                self._contiguous("2024-01-01"),
+                self.HOUSEHOLD_ID, self.FIRST_BATCH, tmp_path,
+            )
+            save_mapped_household(
+                self._contiguous("2024-07-01"),
+                self.HOUSEHOLD_ID, self.SECOND_BATCH, tmp_path,
+            )
+
+        index_df = self._index_df()
+        # The supplier-side ids as the index itself states them, so the entries
+        # do not restate the derivation index_frame applies.
+        entries = index_df[
+            [ids.HOUSEHOLD_BATCH, ids.HOUSEHOLD_SUPPLIER, ids.PROJECT_SUPPLIER]
+        ].to_dict("records")
+
+        for entry in entries:
+            index_df = update_index(
+                index_df,
+                {**entry, ids.HOUSEHOLD: self.HOUSEHOLD_ID},
+                data_provider="etdmap",
+                save=False,
+            )
+
+        assert len(index_df) == 2, (
+            "one household delivered twice is two index rows; update_index "
+            "collapsed them or appended a third"
+        )
+        verdicts = index_df.set_index(ids.HOUSEHOLD_BATCH)[self.GAP_FLAG]
+        assert bool(verdicts.loc[self.FIRST_BATCH]) is True, (
+            "the first household batch is contiguous, so its own readings carry "
+            "no gap -- False is the pooled verdict"
+        )
+        assert bool(verdicts.loc[self.SECOND_BATCH]) is True, (
+            "the second household batch is contiguous, so its own readings "
+            "carry no gap -- False is the pooled verdict"
+        )
+
+    def test_an_entry_naming_no_household_batch_raises(self, tmp_path, monkeypatch):
+        """The household alone cannot say which row an entry is for."""
+        from etdmap.index_helpers import update_index
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        index_df = self._index_df()
+        with pytest.raises(ValueError, match=ids.HOUSEHOLD_BATCH):
+            update_index(
+                index_df,
+                {
+                    ids.HOUSEHOLD_SUPPLIER: index_df[ids.HOUSEHOLD_SUPPLIER].iloc[0],
+                    ids.PROJECT_SUPPLIER: index_df[ids.PROJECT_SUPPLIER].iloc[0],
+                    ids.HOUSEHOLD: self.HOUSEHOLD_ID,
+                },
+                data_provider="etdmap",
+                save=False,
+            )
+
+
+class TestGetMappedDataReadsBothLayouts:
+    """get_mapped_data resolved the flat filename and raised when it was
+    absent, so under the sharded layout it raised for EVERY household -- which
+    took the per-household statistics collector down with it."""
+
+    @pytest.mark.parametrize("fmt", ["flat", "sharded"])
+    def test_reads_either_layout(self, tmp_path, monkeypatch, fmt):
+        from etdmap.index_helpers import get_mapped_data
+        from etdmap.mapping_helpers import save_mapped_household
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        written = _mapped_df()
+        with _output_format(fmt):
+            save_mapped_household(written, 42, 9, tmp_path)
+
+        got = get_mapped_data(42)
+        pd.testing.assert_frame_equal(got, written)
+
+    @pytest.mark.parametrize("fmt", ["flat", "sharded"])
+    def test_does_not_leak_identifier_columns(self, tmp_path, monkeypatch, fmt):
+        """Callers iterate the returned columns to compute per-column stats, so
+        an injected identifier would be counted as a measured variable."""
+        from etdmap.index_helpers import get_mapped_data
+        from etdmap.mapping_helpers import save_mapped_household
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        with _output_format(fmt):
+            save_mapped_household(_mapped_df(), 42, 9, tmp_path)
+
+        cols = get_mapped_data(42).columns
+        assert ids.HOUSEHOLD not in cols
+        assert ids.HOUSEHOLD_BATCH not in cols
+
+    def test_missing_household_raises(self, tmp_path, monkeypatch):
+        from etdmap.index_helpers import get_mapped_data
+        from etdmap.mapping_helpers import save_mapped_household
+
+        monkeypatch.setattr(etdmap.options, "mapped_folder_path", str(tmp_path))
+        with _output_format("sharded"):
+            save_mapped_household(_mapped_df(), 99, 990, tmp_path)
+
+        with pytest.raises(FileNotFoundError, match="42"):
+            get_mapped_data(42)

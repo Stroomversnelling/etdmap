@@ -3,26 +3,29 @@ from etdmap.index_helpers import read_index, read_metadata, update_index
 
 from . import (
     _config,
+    catalog,
     data_model,
     dataset_validators,
+    ids,  # noqa: F401
     index_helpers,
-    mapping_clock_helpers,
     record_validators,
+    supplier_validators,
 )
 
 # Explicitly export modules and functions
 __all__ = [
     # Modules
     "_config",
+    "catalog",
     "data_model",
     "dataset_validators",
     "index_helpers",
-    "mapping_clock_helpers",
+    "record_validators",
+    "supplier_validators",
     # Specific imports from etdmap
     "options",
     "read_index",
     "read_metadata",
-    "record_validators",
     "update_index",
 ]
 

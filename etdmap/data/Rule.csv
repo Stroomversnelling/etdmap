@@ -1,0 +1,11 @@
+target,expression,rhs_vars,physical_model,not_physical
+Netuitwisseling,ElektriciteitsgebruikTotaalNetto - TerugleveringTotaalNetto,"ElektriciteitsgebruikTotaalNetto, TerugleveringTotaalNetto","Universeel, All-Electric, Hybride",False
+ElektriciteitsgebruikTotaalWarmtepomp,ElektriciteitsgebruikWarmtepompDiff + ElektriciteitsgebruikBoosterDiff + ElektriciteitsgebruikBoilervatDiff,"ElektriciteitsgebruikWarmtepompDiff, ElektriciteitsgebruikBoosterDiff, ElektriciteitsgebruikBoilervatDiff","Universeel, All-Electric, Hybride",False
+ElektriciteitsgebruikTotaalGebouwgebonden,ElektriciteitsgebruikTotaalWarmtepomp + ElektriciteitsgebruikWTWDiff + ElektriciteitsgebruikRadiatorDiff,"ElektriciteitsgebruikTotaalWarmtepomp, ElektriciteitsgebruikWTWDiff, ElektriciteitsgebruikRadiatorDiff","Universeel, All-Electric, Hybride",False
+ElektriciteitsgebruikTotaalHuishoudelijk,ElektriciteitsgebruikTotaalBruto - ElektriciteitsgebruikTotaalGebouwgebonden,"ElektriciteitsgebruikTotaalBruto, ElektriciteitsgebruikTotaalGebouwgebonden","Universeel, All-Electric, Hybride",False
+Zelfgebruik,ZonopwekBruto - TerugleveringTotaalNetto,"ZonopwekBruto, TerugleveringTotaalNetto","Universeel, All-Electric, Hybride",False
+ElektriciteitsgebruikTotaalBruto,ElektriciteitsgebruikTotaalNetto + Zelfgebruik,"Zelfgebruik, ElektriciteitsgebruikTotaalNetto","Universeel, All-Electric, Hybride",False
+ElektriciteitsgebruikWTWDiff,-ElektriciteitsgebruikRadiatorDiff + ElektriciteitsgebruikTotaalGebouwgebonden - ElektriciteitsgebruikTotaalWarmtepomp,"ElektriciteitsgebruikRadiatorDiff, ElektriciteitsgebruikTotaalGebouwgebonden, ElektriciteitsgebruikTotaalWarmtepomp","Universeel, All-Electric, Hybride",False
+TerugleveringTotaalNetto,ElektriciteitTerugleveringDiff,ElektriciteitTerugleveringDiff,"Universeel, All-Electric, Hybride",False
+ElektriciteitsgebruikTotaalNetto,ElektriciteitNetgebruikDiff,ElektriciteitNetgebruikDiff,"Universeel, All-Electric, Hybride",False
+ZelfgebruikPercentage,100 * Zelfgebruik / ZonopwekBruto,"ZonopwekBruto, Zelfgebruik","Universeel, All-Electric, Hybride",False
