@@ -7,6 +7,8 @@ name = "etdmap"
 version = "0.1.0"
 description = "Mapping helper functions for EnergieTransitieDataset."
 readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 authors = [{ name = "Nicolas Dickinson", email = "dickinson@washnote.com"},
 { name = "Marten Witkamp", email = "marten@wattopia.nl"},
 {name = 'Petra Izeboud', email = 'petra.izeboud@live.nl'}]
