@@ -1,0 +1,294 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>etdmap.data_model &mdash; etdmap - &#34;Energietransitie Dataset&#34; mapping package 0.1.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=01f34227"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            etdmap - "Energietransitie Dataset" mapping package
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Functions</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/modules.html">etdmap</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">etdmap - "Energietransitie Dataset" mapping package</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">etdmap.data_model</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for etdmap.data_model</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">importlib.resources</span><span class="w"> </span><span class="kn">import</span> <span class="n">files</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="n">data_analysis_columns</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"ReadingDate"</span><span class="p">,</span>
+    <span class="s2">"Ventilatiedebiet"</span><span class="p">,</span>
+    <span class="s2">"CO2"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitNetgebruikHoog"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitNetgebruikLaag"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitTerugleveringHoog"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitTerugleveringLaag"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitVermogen"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitsgebruikWTW"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitsgebruikWarmtepomp"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitsgebruikBooster"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitsgebruikBoilervat"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitsgebruikHuishoudelijk"</span><span class="p">,</span>
+    <span class="s2">"TemperatuurWarmTapwater"</span><span class="p">,</span>
+    <span class="s2">"TemperatuurWoonkamer"</span><span class="p">,</span>
+    <span class="s2">"WarmteproductieWarmtepomp"</span><span class="p">,</span>
+    <span class="s2">"TemperatuurSetpointWoonkamer"</span><span class="p">,</span>
+    <span class="s2">"Zon-opwekMomentaan"</span><span class="p">,</span>
+    <span class="s2">"Zon-opwekTotaal"</span><span class="p">,</span>
+    <span class="s2">"Luchtvochtigheid"</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="n">cumulative_columns</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s1">'ElektriciteitNetgebruikHoog'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitNetgebruikLaag'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitTerugleveringHoog'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitTerugleveringLaag'</span><span class="p">,</span>
+    <span class="s1">'Gasgebruik'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikWTW'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikWarmtepomp'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikBooster'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikBoilervat'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikRadiator'</span><span class="p">,</span>
+    <span class="s1">'WarmteproductieWarmtepomp'</span><span class="p">,</span>
+    <span class="s1">'WatergebruikWarmTapwater'</span><span class="p">,</span>
+    <span class="s1">'Zon-opwekTotaal'</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="n">model_column_order</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s1">'ReadingDate'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitNetgebruikHoog'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitNetgebruikLaag'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitTerugleveringHoog'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitTerugleveringLaag'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitVermogen'</span><span class="p">,</span>
+    <span class="s1">'Gasgebruik'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikWTW'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikWarmtepomp'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikBooster'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikBoilervat'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikRadiator'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikHuishoudelijk'</span><span class="p">,</span>
+    <span class="s1">'TemperatuurWarmTapwater'</span><span class="p">,</span>
+    <span class="s1">'TemperatuurWoonkamer'</span><span class="p">,</span>
+    <span class="s1">'TemperatuurSetpointWoonkamer'</span><span class="p">,</span>
+    <span class="s1">'WarmteproductieWarmtepomp'</span><span class="p">,</span>
+    <span class="s1">'WatergebruikWarmTapwater'</span><span class="p">,</span>
+    <span class="s1">'Zon-opwekMomentaan'</span><span class="p">,</span>
+    <span class="s1">'Zon-opwekTotaal'</span><span class="p">,</span>
+    <span class="s1">'CO2'</span><span class="p">,</span>
+    <span class="s1">'Luchtvochtigheid'</span><span class="p">,</span>
+    <span class="s1">'Ventilatiedebiet'</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="n">model_column_type</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s1">'ReadingDate'</span><span class="p">:</span> <span class="s1">'datetime64[ns]'</span><span class="p">,</span>  <span class="c1"># pandas datetime column</span>
+    <span class="s1">'ElektriciteitNetgebruikHoog'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitNetgebruikLaag'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitTerugleveringHoog'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitTerugleveringLaag'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitVermogen'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'Gasgebruik'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikWTW'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikWarmtepomp'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikBooster'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikBoilervat'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'ElektriciteitsgebruikRadiator'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="c1"># 'ElektriciteitsgebruikHuishoudelijk': 'Float64',</span>
+    <span class="s1">'TemperatuurWarmTapwater'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'TemperatuurWoonkamer'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'TemperatuurSetpointWoonkamer'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'WarmteproductieWarmtepomp'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'WatergebruikWarmTapwater'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'Zon-opwekMomentaan'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'Zon-opwekTotaal'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'CO2'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'Luchtvochtigheid'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+    <span class="s1">'Ventilatiedebiet'</span><span class="p">:</span> <span class="s1">'Float64'</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="n">allowed_supplier_metadata_columns</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">"ProjectIdLeverancier"</span><span class="p">,</span> <span class="s2">"HuisIdLeverancier"</span><span class="p">,</span> <span class="s2">"Weerstation"</span><span class="p">,</span> <span class="s2">"Oppervlakte"</span><span class="p">,</span> <span class="s2">"PlatOfZadelDak"</span><span class="p">,</span>
+    <span class="s2">"Compactheid"</span><span class="p">,</span> <span class="s2">"Warmtebehoefte"</span><span class="p">,</span> <span class="s2">"PrimairFossielGebruik"</span><span class="p">,</span> <span class="s2">"Bouwjaar"</span><span class="p">,</span> <span class="s2">"Renovatiejaar"</span><span class="p">,</span>
+    <span class="s2">"WoningType"</span><span class="p">,</span> <span class="s2">"WoningTypeDetail"</span><span class="p">,</span> <span class="s2">"WarmteopwekkerType"</span><span class="p">,</span> <span class="s2">"WarmteopwekkerCategorie"</span><span class="p">,</span>
+    <span class="s2">"Warmteopwekker"</span><span class="p">,</span> <span class="s2">"Ventilatiesysteem"</span><span class="p">,</span> <span class="s2">"Kookinstallatie"</span><span class="p">,</span> <span class="s2">"PVJaarbundel"</span><span class="p">,</span> <span class="s2">"PVMerk"</span><span class="p">,</span>
+    <span class="s2">"PVType"</span><span class="p">,</span> <span class="s2">"PVAantalPanelen"</span><span class="p">,</span> <span class="s2">"PVWattpiekPerPaneel"</span><span class="p">,</span> <span class="s2">"EPV"</span><span class="p">,</span> <span class="s2">"GasgebruikVoorRenovatie"</span><span class="p">,</span>
+    <span class="s2">"ElektriciteitVoorRenovatie"</span><span class="p">,</span> <span class="s2">"Meenemen"</span><span class="p">,</span> <span class="s2">"ProjectIdBSV"</span>
+<span class="p">]</span>
+
+
+<div class="viewcode-block" id="load_thresholds">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.data_model.load_thresholds">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_thresholds</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Load thresholds from a CSV file.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pandas.DataFrame</span>
+<span class="sd">        A DataFrame containing the thresholds data.</span>
+<span class="sd">    """</span>
+    <span class="n">thresholds_file</span> <span class="o">=</span> <span class="n">files</span><span class="p">(</span><span class="s2">"etdmap.data"</span><span class="p">)</span><span class="o">.</span><span class="n">joinpath</span><span class="p">(</span><span class="s2">"thresholds.csv"</span><span class="p">)</span>
+
+    <span class="n">dtype_dict</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"Variabele"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"VariabelType"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"Eenheid"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"Min"</span><span class="p">:</span> <span class="s2">"Float64"</span><span class="p">,</span>
+        <span class="s2">"Max"</span><span class="p">:</span> <span class="s2">"Float64"</span><span class="p">,</span>
+        <span class="s2">"Toelichting"</span><span class="p">:</span> <span class="s2">"string"</span>
+    <span class="p">}</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span>
+        <span class="n">thresholds_file</span><span class="p">,</span>
+        <span class="n">dtype</span><span class="o">=</span><span class="n">dtype_dict</span><span class="p">,</span>
+        <span class="n">na_values</span><span class="o">=</span><span class="p">[</span><span class="s2">"n.a."</span><span class="p">,</span> <span class="s2">"NA"</span><span class="p">,</span> <span class="s2">"N/A"</span><span class="p">,</span> <span class="s2">""</span><span class="p">],</span>  <span class="c1"># Specify values to be treated as NA</span>
+        <span class="n">keep_default_na</span><span class="o">=</span><span class="kc">True</span>  <span class="c1"># Keep pandas' default NA values</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">df</span></div>
+
+
+<div class="viewcode-block" id="load_thresholds_as_dict">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.data_model.load_thresholds_as_dict">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_thresholds_as_dict</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Load thresholds from the package thresholds CSV file and convert to a dictionary.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict</span>
+<span class="sd">        A dictionary containing the thresholds data.</span>
+<span class="sd">    """</span>
+    <span class="n">thresholds_dict</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">thresholds_df</span> <span class="o">=</span> <span class="n">load_thresholds</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">thresholds_df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+        <span class="n">col</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="s1">'Variabele'</span><span class="p">]</span>
+        <span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">'Min'</span><span class="p">]</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="s1">'Min'</span><span class="p">]</span>
+        <span class="n">thresholds_dict</span><span class="p">[</span><span class="n">col</span><span class="p">][</span><span class="s1">'Max'</span><span class="p">]</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="s1">'Max'</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">thresholds_dict</span></div>
+
+
+<div class="viewcode-block" id="load_etdmodel">
+<a class="viewcode-back" href="../../source/etdmap.html#etdmap.data_model.load_etdmodel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_etdmodel</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Load ETD model from the package ETD model definition CSV file.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pandas.DataFrame</span>
+<span class="sd">        A DataFrame containing the ETD model data.</span>
+<span class="sd">    """</span>
+    <span class="n">etdmodel_file</span> <span class="o">=</span> <span class="n">files</span><span class="p">(</span><span class="s2">"etdmap.data"</span><span class="p">)</span><span class="o">.</span><span class="n">joinpath</span><span class="p">(</span><span class="s2">"etdmodel.csv"</span><span class="p">)</span>
+
+    <span class="n">dtype_dict</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"Entiteit"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"Variabele"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"Key"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"Type variabele"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"Vereist"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"Resolutie"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"Wie vult?"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"Bron"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"Definitie"</span><span class="p">:</span> <span class="s2">"string"</span><span class="p">,</span>
+        <span class="s2">"AVG gevoelig"</span><span class="p">:</span> <span class="s2">"string"</span>
+    <span class="p">}</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span>
+        <span class="n">etdmodel_file</span><span class="p">,</span>
+        <span class="n">dtype</span><span class="o">=</span><span class="n">dtype_dict</span><span class="p">,</span>
+        <span class="n">na_values</span><span class="o">=</span><span class="p">[</span><span class="s2">"n.a."</span><span class="p">,</span> <span class="s2">"NA"</span><span class="p">,</span> <span class="s2">"N/A"</span><span class="p">,</span> <span class="s2">""</span><span class="p">],</span>  <span class="c1"># Specify values to be treated as NA</span>
+        <span class="n">keep_default_na</span><span class="o">=</span><span class="kc">True</span>  <span class="c1"># Keep pandas' default NA values</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">df</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, Nicolas Dickinson, Marten Witkamp, Petra Izeboud.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
